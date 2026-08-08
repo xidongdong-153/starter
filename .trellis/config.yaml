@@ -171,4 +171,4 @@ packages:
     path: packages/eslint-config
   theme:
     path: packages/theme
-default_package: @starter/admin
+default_package: admin
