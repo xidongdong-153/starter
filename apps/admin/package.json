@@ -1,0 +1,50 @@
+{
+  "name": "@starter/admin",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "build": "pnpm check-types && vite build",
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "tsc -p tsconfig.app.json --noEmit && tsc -p tsconfig.node.json --noEmit",
+    "dev": "vite --host 0.0.0.0 --port 2333",
+    "preview": "vite preview --host 0.0.0.0 --port 2333",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@starter/contracts": "workspace:*",
+    "@starter/theme": "workspace:*",
+    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-router": "catalog:",
+    "antd": "catalog:",
+    "better-auth": "catalog:",
+    "clsx": "catalog:",
+    "dayjs": "catalog:",
+    "i18next": "catalog:",
+    "lucide-react": "catalog:",
+    "react": "catalog:",
+    "react-dom": "catalog:",
+    "react-i18next": "catalog:",
+    "react-icons": "catalog:",
+    "react-use": "catalog:",
+    "styled-components": "catalog:",
+    "zod": "catalog:",
+    "zustand": "catalog:"
+  },
+  "devDependencies": {
+    "@starter/eslint-config": "workspace:*",
+    "@tailwindcss/vite": "catalog:",
+    "@types/node": "catalog:",
+    "@types/react": "catalog:",
+    "@types/react-dom": "catalog:",
+    "@vitejs/plugin-react": "catalog:",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "tailwindcss": "catalog:",
+    "typescript": "catalog:",
+    "vite": "catalog:"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "name": "@starter/eslint-config",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    ".": "./index.js",
+    "./prettier": "./prettier.config.js"
+  },
+  "dependencies": {
+    "@antfu/eslint-config": "catalog:",
+    "eslint": "catalog:",
+    "eslint-config-prettier": "catalog:",
+    "prettier": "catalog:"
+  },
+  "devDependencies": {
+    "typescript": "catalog:"
+  },
+  "scripts": {
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "tsc --noEmit",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "clean": "rm -rf dist"
+  }
+}

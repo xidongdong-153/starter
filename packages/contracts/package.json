@@ -1,0 +1,32 @@
+{
+  "name": "@starter/contracts",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --out-dir dist",
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "tsc --noEmit",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@starter/eslint-config": "workspace:*",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,73 @@
+/* Rose Pine 主题变量。dawn 为浅色，moon 为深色 */
+:root,
+[data-theme='dawn'] {
+  color-scheme: light;
+
+  --theme-base: #faf4ed;
+  --theme-base-muted: #f4ede8;
+  --theme-base-subtle: #f2e9e1;
+
+  --theme-surface-0: #fffaf3;
+  --theme-surface-1: #dfdad9;
+  --theme-surface-2: #cecacd;
+  --theme-overlay-0: #cecacd;
+  --theme-overlay-1: #9893a5;
+  --theme-overlay-2: #797593;
+  --theme-overlay: var(--theme-surface-1);
+  --theme-overlay-strong: var(--theme-surface-2);
+
+  --theme-text: #575279;
+  --theme-text-muted: #797593;
+  --theme-text-subtle: #9893a5;
+
+  --theme-love: #b4637a;
+  --theme-gold: #ea9d34;
+  --theme-rose: #d7827e;
+  --theme-pine: #286983;
+  --theme-foam: #56949f;
+  --theme-iris: #907aa9;
+
+  --theme-primary: var(--theme-pine);
+  --theme-primary-contrast: #faf4ed;
+  --theme-highlight: var(--theme-rose);
+  --theme-danger: var(--theme-love);
+  --theme-success: var(--theme-foam);
+  --theme-warning: var(--theme-gold);
+  --theme-info: var(--theme-iris);
+}
+
+[data-theme='moon'] {
+  color-scheme: dark;
+
+  --theme-base: #232136;
+  --theme-base-muted: #1f1d2e;
+  --theme-base-subtle: #191724;
+
+  --theme-surface-0: #2a273f;
+  --theme-surface-1: #393552;
+  --theme-surface-2: #44415a;
+  --theme-overlay-0: #56526e;
+  --theme-overlay-1: #6e6a86;
+  --theme-overlay-2: #908caa;
+  --theme-overlay: var(--theme-surface-1);
+  --theme-overlay-strong: var(--theme-surface-2);
+
+  --theme-text: #e0def4;
+  --theme-text-muted: #908caa;
+  --theme-text-subtle: #6e6a86;
+
+  --theme-love: #eb6f92;
+  --theme-gold: #f6c177;
+  --theme-rose: #ea9a97;
+  --theme-pine: #3e8fb0;
+  --theme-foam: #9ccfd8;
+  --theme-iris: #c4a7e7;
+
+  --theme-primary: var(--theme-pine);
+  --theme-primary-contrast: #191724;
+  --theme-highlight: var(--theme-rose);
+  --theme-danger: var(--theme-love);
+  --theme-success: var(--theme-foam);
+  --theme-warning: var(--theme-gold);
+  --theme-info: var(--theme-iris);
+}

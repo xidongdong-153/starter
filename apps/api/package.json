@@ -1,0 +1,64 @@
+{
+  "name": "@starter/api",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "exports": {
+    ".": {
+      "development": "./src/app.ts",
+      "types": "./dist/app.d.ts",
+      "import": "./dist/app.js"
+    },
+    "./rpc": {
+      "development": "./src/rpc.ts",
+      "types": "./dist/rpc.d.ts",
+      "import": "./dist/rpc.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup src/index.ts src/app.ts src/rpc.ts --format esm --dts --out-dir dist",
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "tsc --noEmit",
+    "dev": "NODE_OPTIONS='--conditions=development' dotenv -e .env.development -- tsx watch src/index.ts",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "test": "vitest run --config vitest.config.ts",
+    "auth:generate": "dotenv -e .env.development -- better-auth generate --config src/modules/auth/auth.ts --output src/modules/auth/auth.generated.ts --yes",
+    "db:generate": "dotenv -e .env.development -- drizzle-kit generate",
+    "db:migrate": "dotenv -e .env.development -- drizzle-kit migrate",
+    "db:check": "dotenv -e .env.development -- drizzle-kit check",
+    "db:studio": "dotenv -e .env.development -- drizzle-kit studio",
+    "clean": "rm -rf dist"
+  },
+  "dependencies": {
+    "@hono/node-server": "catalog:",
+    "@hono/zod-openapi": "catalog:",
+    "@hono/zod-validator": "catalog:",
+    "@scalar/hono-api-reference": "catalog:",
+    "@starter/contracts": "workspace:*",
+    "better-auth": "catalog:",
+    "better-sqlite3": "catalog:",
+    "drizzle-orm": "catalog:",
+    "hono": "catalog:",
+    "pino": "catalog:",
+    "pino-roll": "catalog:",
+    "uuidv7": "catalog:",
+    "zod": "catalog:"
+  },
+  "devDependencies": {
+    "@better-auth/cli": "catalog:",
+    "@starter/eslint-config": "workspace:*",
+    "@types/better-sqlite3": "catalog:",
+    "@types/node": "catalog:",
+    "dotenv-cli": "catalog:",
+    "drizzle-kit": "catalog:",
+    "eslint": "catalog:",
+    "pino-pretty": "catalog:",
+    "prettier": "catalog:",
+    "tsup": "catalog:",
+    "tsx": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
+  }
+}

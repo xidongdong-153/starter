@@ -1,0 +1,38 @@
+@import './core.css';
+
+@theme inline {
+  --font-sans: var(--font-maple-mono);
+  --font-mono: var(--font-maple-mono);
+
+  --color-background: var(--theme-base);
+  --color-foreground: var(--theme-text);
+  --color-surface: var(--theme-surface-0);
+  --color-surface-muted: var(--theme-base-muted);
+  --color-surface-subtle: var(--theme-base-subtle);
+  --color-surface-elevated: var(--theme-surface-1);
+
+  --color-muted-foreground: var(--theme-text-muted);
+  --color-subtle-foreground: var(--theme-text-subtle);
+
+  --color-primary: var(--theme-primary);
+  --color-primary-foreground: var(--theme-primary-contrast);
+  --color-primary-hover: var(--theme-foam);
+  --color-highlight: var(--theme-highlight);
+  --color-danger: var(--theme-danger);
+  --color-success: var(--theme-success);
+  --color-warning: var(--theme-warning);
+  --color-info: var(--theme-info);
+
+  --color-border: color-mix(in srgb, var(--theme-overlay-0) 58%, transparent);
+  --color-border-subtle: color-mix(in srgb, var(--theme-overlay-0) 34%, transparent);
+  --color-ring: color-mix(in srgb, var(--theme-primary) 55%, transparent);
+
+  --color-love: var(--theme-love);
+  --color-gold: var(--theme-gold);
+  --color-rose: var(--theme-rose);
+  --color-pine: var(--theme-pine);
+  --color-foam: var(--theme-foam);
+  --color-iris: var(--theme-iris);
+}
+
+@custom-variant dark (&:where([data-theme='moon'], [data-theme='moon'] *));

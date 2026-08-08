@@ -1,0 +1,14 @@
+/* 全局基础样式 */
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--color-surface);
+    color: var(--color-fg);
+  }
+}

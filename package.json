@@ -1,0 +1,31 @@
+{
+  "name": "starter",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "packageManager": "pnpm@11.9.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "turbo run check-types",
+    "dev": "turbo run dev",
+    "dev:web": "turbo run dev --filter=@starter/web",
+    "dev:admin": "turbo run dev --filter=@starter/admin",
+    "dev:api": "turbo run dev --filter=@starter/api",
+    "format": "prettier --write .",
+    "lint": "eslint --no-error-on-unmatched-pattern --max-warnings 0 . && turbo run lint",
+    "format:check": "prettier --check . && turbo run format:check",
+    "test": "pnpm --filter=@starter/api test",
+    "clean": "turbo run clean"
+  },
+  "devDependencies": {
+    "@starter/eslint-config": "workspace:*",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "turbo": "catalog:",
+    "typescript": "catalog:"
+  }
+}

@@ -1,0 +1,27 @@
+import { serve } from "@hono/node-server";
+import { createApp, createRuntime } from "./bootstrap/index.js";
+import { createChildLogger } from "./infra/log/index.js";
+
+const runtime = createRuntime();
+const logger = createChildLogger(runtime.logger, "server");
+await runtime.storage.init();
+const app = createApp(runtime);
+const server = serve({ fetch: app.fetch, port: runtime.env.PORT }, (info) => {
+  logger.info({ port: info.port }, `API 已启动 http://localhost:${info.port}`);
+});
+
+let closing = false;
+function shutdown() {
+  if (closing) return;
+  closing = true;
+  server.close((error) => {
+    runtime.database.sqlite.close();
+    if (error) {
+      logger.error({ err: error }, "API 关闭失败");
+      process.exitCode = 1;
+    }
+  });
+}
+
+process.once("SIGINT", shutdown);
+process.once("SIGTERM", shutdown);

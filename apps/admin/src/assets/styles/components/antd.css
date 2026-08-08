@@ -1,0 +1,129 @@
+/* Ant Design 组件覆盖 */
+@layer antd {
+  .ant-app {
+    color: var(--color-fg);
+  }
+
+  .ant-btn {
+    border-radius: 999px;
+    box-shadow: none;
+  }
+
+  .ant-btn-default,
+  .ant-btn-color-default,
+  .ant-btn-variant-outlined {
+    border-color: color-mix(in srgb, var(--color-border-subtle) 86%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 78%, transparent);
+  }
+
+  .ant-btn-default:hover,
+  .ant-btn-color-default:hover,
+  .ant-btn-variant-outlined:hover {
+    border-color: color-mix(in srgb, var(--color-primary) 36%, var(--color-border-subtle));
+    background: color-mix(in srgb, var(--color-surface-muted) 68%, transparent);
+  }
+
+  .ant-card {
+    overflow: hidden;
+    border-radius: 1rem;
+    border-color: color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+    box-shadow: 0 16px 40px -32px color-mix(in srgb, var(--color-primary) 14%, transparent);
+    backdrop-filter: blur(6px);
+  }
+
+  .ant-card .ant-card-head {
+    min-height: auto;
+    padding: 1.125rem 1.5rem 0.875rem;
+    border-bottom-color: color-mix(in srgb, var(--color-border-subtle) 78%, transparent);
+  }
+
+  .ant-card .ant-card-head-title {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: var(--color-fg);
+  }
+
+  .ant-card .ant-card-body {
+    padding: 1.25rem 1.5rem 1.5rem;
+  }
+
+  .ant-dropdown .ant-dropdown-menu,
+  .ant-select-dropdown,
+  .ant-picker-dropdown .ant-picker-panel-container {
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+    border-radius: 1.25rem;
+    background: color-mix(in srgb, var(--color-surface) 86%, transparent);
+    box-shadow: 0 18px 42px -34px color-mix(in srgb, var(--color-primary) 16%, transparent);
+    backdrop-filter: blur(8px);
+  }
+
+  .ant-input,
+  .ant-input-affix-wrapper,
+  .ant-input-outlined,
+  .ant-select-outlined:not(.ant-select-customize-input) .ant-select-selector {
+    border-color: color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+    background: color-mix(in srgb, var(--color-surface) 72%, transparent);
+    box-shadow: none;
+  }
+
+  .ant-input:hover,
+  .ant-input-affix-wrapper:hover,
+  .ant-select-outlined:not(.ant-select-customize-input):hover .ant-select-selector {
+    border-color: color-mix(in srgb, var(--color-primary) 34%, var(--color-border-subtle));
+    background: color-mix(in srgb, var(--color-surface-muted) 68%, transparent);
+  }
+
+  .ant-input-affix-wrapper.ant-input-outlined:focus,
+  .ant-input-affix-wrapper.ant-input-outlined:focus-within,
+  .ant-input-outlined:focus,
+  .ant-input-outlined:focus-within,
+  .ant-select-focused.ant-select-outlined:not(.ant-select-disabled):not(.ant-select-customize-input)
+    .ant-select-selector {
+    border-color: color-mix(in srgb, var(--color-primary) 48%, var(--color-border-subtle));
+    background: color-mix(in srgb, var(--color-surface) 82%, transparent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-primary) 12%, transparent);
+  }
+
+  .ant-table-wrapper .ant-table {
+    background: transparent;
+  }
+
+  .ant-table-wrapper .ant-table-container {
+    overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--color-border-subtle) 82%, transparent);
+    border-radius: 1rem;
+    background: color-mix(in srgb, var(--color-surface) 68%, transparent);
+  }
+
+  .ant-table-wrapper .ant-table-thead > tr > th {
+    font-size: 0.74rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-fg-muted);
+    background: color-mix(in srgb, var(--color-surface-muted) 64%, transparent);
+  }
+
+  .ant-table-wrapper .ant-table-tbody > tr > td {
+    background: transparent;
+  }
+
+  .ant-table-wrapper .ant-table-thead > tr > th::before {
+    display: none;
+  }
+
+  .ant-table-wrapper .ant-pagination {
+    margin-top: 1.125rem;
+  }
+
+  .ant-tag {
+    border-radius: 999px;
+  }
+
+  .ant-empty .ant-empty-description,
+  .ant-pagination .ant-pagination-total-text,
+  .ant-select-selection-placeholder {
+    color: var(--color-fg-muted);
+  }
+}

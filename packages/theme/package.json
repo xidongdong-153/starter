@@ -1,0 +1,64 @@
+{
+  "name": "@starter/theme",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "sideEffects": [
+    "*.css",
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "development": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./palette": {
+      "development": "./src/palette.ts",
+      "types": "./dist/palette.d.ts",
+      "import": "./dist/palette.js"
+    },
+    "./color": {
+      "development": "./src/color.ts",
+      "types": "./dist/color.d.ts",
+      "import": "./dist/color.js"
+    },
+    "./antd": {
+      "development": "./src/antd.ts",
+      "types": "./dist/antd.d.ts",
+      "import": "./dist/antd.js"
+    },
+    "./styles/core.css": "./styles/core.css",
+    "./styles/admin.css": "./styles/admin.css",
+    "./styles/web.css": "./styles/web.css"
+  },
+  "files": [
+    "dist",
+    "styles"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts src/palette.ts src/color.ts src/antd.ts --format esm --dts --out-dir dist",
+    "check": "pnpm check-types && pnpm lint && pnpm format:check",
+    "check-types": "tsc --noEmit",
+    "format": "prettier --write . --ignore-path ../../.prettierignore",
+    "lint": "eslint . --max-warnings 0",
+    "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "clean": "rm -rf dist"
+  },
+  "peerDependencies": {
+    "antd": "catalog:"
+  },
+  "peerDependenciesMeta": {
+    "antd": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@starter/eslint-config": "workspace:*",
+    "antd": "catalog:",
+    "eslint": "catalog:",
+    "prettier": "catalog:",
+    "tsup": "catalog:",
+    "typescript": "catalog:"
+  }
+}

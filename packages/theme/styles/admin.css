@@ -1,0 +1,69 @@
+@import './core.css';
+
+@theme inline {
+  --color-background: var(--theme-base);
+  --color-foreground: var(--theme-text);
+
+  --color-fg: var(--theme-text);
+  --color-fg-subtle: var(--theme-text-subtle);
+  --color-fg-muted: var(--theme-text-muted);
+
+  --color-surface: var(--theme-base);
+  --color-surface-muted: var(--theme-base-muted);
+  --color-surface-subtle: var(--theme-base-subtle);
+  --color-surface-elevated: var(--theme-overlay);
+  --color-surface-0: var(--theme-surface-0);
+  --color-surface-1: var(--theme-surface-1);
+  --color-surface-2: var(--theme-surface-2);
+
+  --color-overlay: var(--theme-overlay);
+  --color-overlay-0: var(--theme-overlay-0);
+  --color-overlay-1: var(--theme-overlay-1);
+  --color-overlay-2: var(--theme-overlay-2);
+
+  --color-primary: var(--theme-primary);
+  --color-primary-hover: var(--theme-foam);
+  --color-primary-light: var(--theme-rose);
+  --color-primary-foreground: var(--theme-primary-contrast);
+  --color-highlight: var(--theme-highlight);
+  --color-ring: color-mix(in srgb, var(--theme-primary) 45%, transparent);
+
+  --color-border: color-mix(in srgb, var(--theme-base-subtle) 82%, var(--theme-overlay));
+  --color-border-subtle: color-mix(in srgb, var(--theme-base-subtle) 72%, var(--theme-overlay));
+  --color-input: var(--color-border);
+
+  --color-card: var(--theme-base);
+  --color-card-foreground: var(--theme-text);
+  --color-popover: var(--theme-base);
+  --color-popover-foreground: var(--theme-text);
+  --color-muted: var(--theme-base-muted);
+  --color-muted-foreground: var(--theme-text-muted);
+
+  --color-destructive: var(--theme-danger);
+  --color-danger: var(--theme-danger);
+  --color-error: var(--theme-danger);
+  --color-success: var(--theme-success);
+  --color-warning: var(--theme-warning);
+  --color-info: var(--theme-info);
+
+  --color-love: var(--theme-love);
+  --color-gold: var(--theme-gold);
+  --color-rose: var(--theme-rose);
+  --color-pine: var(--theme-pine);
+  --color-foam: var(--theme-foam);
+  --color-iris: var(--theme-iris);
+
+  --color-gray-50: var(--theme-base);
+  --color-gray-100: var(--theme-base);
+  --color-gray-200: var(--theme-base-muted);
+  --color-gray-300: var(--theme-base-subtle);
+  --color-gray-400: var(--theme-text-subtle);
+  --color-gray-500: var(--theme-text-muted);
+  --color-gray-600: var(--theme-text);
+  --color-gray-700: var(--theme-text);
+  --color-gray-800: var(--theme-text);
+  --color-gray-900: var(--theme-text);
+  --color-gray-950: var(--theme-base-subtle);
+}
+
+@custom-variant dark (&:where([data-theme='moon'], [data-theme='moon'] *));

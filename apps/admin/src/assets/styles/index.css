@@ -1,0 +1,20 @@
+/* 调整 @layer 顺序，让 antd 覆盖落在合适的位置 */
+@layer theme, base, antd, components, utilities;
+
+/* Tailwind CSS */
+@import 'tailwindcss';
+
+/* 主题变量和语义 token */
+@import '@starter/theme/styles/admin.css';
+
+/* 基础样式 */
+@import './base/reset.css';
+@import './base/scrollbar.css';
+
+/* 组件样式 */
+@import './components/antd.css';
+@import './components/custom.css';
+@import './components/layout.css';
+
+/* 工具类 */
+@import './utilities/helpers.css';
