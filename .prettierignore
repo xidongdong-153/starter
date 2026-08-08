@@ -5,4 +5,11 @@ node_modules
 dist
 .next
 coverage
+.agents
+.pi
+.trellis/config.yaml
+.trellis/.template-hashes.json
+.trellis/workflow.md
+.trellis/tasks/**/task.json
+.trellis/workspace
 pnpm-lock.yaml
