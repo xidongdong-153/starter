@@ -25,3 +25,25 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 2: Align Trellis package config
+
+**Date**: 2026-08-08
+**Task**: Align Trellis package config
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+修正 .trellis/config.yaml 的 default_package，使其与 packages 配置中的 admin key 一致，消除 Trellis 会话记账时的默认包警告。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `44ea253` | (see git log) |
+
+### Status
+
+[OK] **Completed**
