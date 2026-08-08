@@ -4,7 +4,7 @@
 
 `index.js` 基于 `@antfu/eslint-config`，开启 TypeScript，关闭 formatter/Markdown 处理，再叠加 `eslint-config-prettier`。Prettier 负责格式化，ESLint 不重复处理 formatter 规则。
 
-`prettier.config.js` 当前使用：`printWidth: 120`、`singleQuote: true`、`semi: false`、`trailingComma: 'all'`、LF 和 2 空格。仓库级 `.prettierignore` 排除 Trellis 生成的 `.agents`、`.pi`、`.trellis/config.yaml`、workflow、workspace 和 task metadata；项目维护的 `.trellis/spec` 与 task Markdown 仍需单独通过 Prettier。
+`prettier.config.js` 当前使用：`printWidth: 120`、`singleQuote: true`、`semi: false`、`trailingComma: 'all'`、LF 和 2 空格。仓库级 `.prettierignore` 排除 Trellis 生成的 `.agents`、`.pi` 和整个 `.trellis` 目录；这些文件不参与仓库级 Format 检查。
 
 ## 检查命令
 

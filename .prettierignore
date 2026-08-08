@@ -7,9 +7,5 @@ dist
 coverage
 .agents
 .pi
-.trellis/config.yaml
-.trellis/.template-hashes.json
-.trellis/workflow.md
-.trellis/tasks/**/task.json
-.trellis/workspace
+.trellis
 pnpm-lock.yaml
