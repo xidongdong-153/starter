@@ -1,5 +1,5 @@
-import type { AuthorizationRole, AuthorizationUser } from '@starter/contracts'
-import type { TableProps } from 'antd'
+import { PermissionKeys, type AuthorizationRole, type AuthorizationUser, type Permission } from '@starter/contracts'
+import type { TableProps, TreeDataNode } from 'antd'
 
 import {
   useAuthorizationRolesQuery,
@@ -9,27 +9,58 @@ import {
 } from '@admin/api/authorization'
 import { useAdminSessionQuery } from '@admin/api/auth'
 import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
-import { PermissionKeys } from '@starter/contracts'
-import { Alert, App, Button, Checkbox, Form, Modal, Table, Tabs, Tag, Tooltip } from 'antd'
+
+import { Alert, App, Button, Drawer, Table, Tabs, Tag, Tooltip, Tree } from 'antd'
 import { Pencil, UserCog } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
-interface UserRoleFormValues {
-  roleKeys: string[]
+interface UserRoleDrawerState {
+  open: boolean
+  user: AuthorizationUser | null
+  checkedKeys: string[]
 }
 
-interface RolePermissionFormValues {
-  permissionKeys: AuthorizationRole['permissionKeys']
+interface RolePermissionDrawerState {
+  open: boolean
+  role: AuthorizationRole | null
+  checkedKeys: string[]
+}
+
+const drawerClassNames = {
+  body: 'bg-surface',
+  footer: 'bg-surface-muted border-border',
+  header: 'bg-surface-muted border-border text-fg',
+  wrapper: 'text-fg',
+}
+
+const drawerStyles = {
+  footer: {
+    borderTop: '1px solid var(--color-border)',
+  },
+  header: {
+    borderBottom: '1px solid var(--color-border)',
+    color: 'var(--color-fg)',
+  },
+  mask: {
+    backgroundColor: 'color-mix(in oklab, var(--color-surface-subtle) 52%, transparent)',
+  },
 }
 
 export function AuthorizationSettings() {
   const { t } = useTranslation()
   const { message } = App.useApp()
-  const [userRoleForm] = Form.useForm<UserRoleFormValues>()
-  const [rolePermissionForm] = Form.useForm<RolePermissionFormValues>()
-  const [editingUser, setEditingUser] = useState<AuthorizationUser | null>(null)
-  const [editingRole, setEditingRole] = useState<AuthorizationRole | null>(null)
+
+  const [userRoleDrawer, setUserRoleDrawer] = useState<UserRoleDrawerState>({
+    open: false,
+    user: null,
+    checkedKeys: [],
+  })
+  const [rolePermissionDrawer, setRolePermissionDrawer] = useState<RolePermissionDrawerState>({
+    open: false,
+    role: null,
+    checkedKeys: [],
+  })
 
   const sessionQuery = useAdminSessionQuery()
   const usersQuery = useAuthorizationUsersQuery()
@@ -40,45 +71,102 @@ export function AuthorizationSettings() {
   const roles = rolesQuery.data?.roles ?? []
   const permissions = rolesQuery.data?.permissions ?? []
 
-  const openUserEditor = (user: AuthorizationUser) => {
-    setEditingUser(user)
-    userRoleForm.setFieldsValue({ roleKeys: user.roleKeys })
+  const roleTreeData = useMemo<TreeDataNode[]>(
+    () =>
+      roles.map((role) => ({
+        key: role.key,
+        title: (
+          <span className="flex items-center gap-2">
+            <span className="text-fg font-medium">{role.name}</span>
+            <span className="text-fg-muted text-sm">({role.key})</span>
+          </span>
+        ),
+      })),
+    [roles],
+  )
+
+  const permissionTreeData = useMemo<TreeDataNode[]>(() => {
+    const resourceMap = new Map<
+      string,
+      { key: string; title: React.ReactNode; children: { key: string; title: React.ReactNode }[] }
+    >()
+
+    for (const permission of permissions) {
+      if (!resourceMap.has(permission.resource)) {
+        resourceMap.set(permission.resource, {
+          key: permission.resource,
+          title: <span className="text-fg font-medium">{permission.resource}</span>,
+          children: [],
+        })
+      }
+      resourceMap.get(permission.resource)!.children.push({
+        key: permission.key,
+        title: (
+          <span className="flex flex-col">
+            <span className="text-fg">{permission.action}</span>
+            {permission.description && <span className="text-fg-muted text-sm">{permission.description}</span>}
+          </span>
+        ),
+      })
+    }
+
+    return Array.from(resourceMap.values())
+  }, [permissions])
+
+  const openUserRoleDrawer = (user: AuthorizationUser) => {
+    setUserRoleDrawer({
+      open: true,
+      user,
+      checkedKeys: [...user.roleKeys],
+    })
   }
 
-  const openRoleEditor = (role: AuthorizationRole) => {
-    setEditingRole(role)
-    rolePermissionForm.setFieldsValue({ permissionKeys: role.permissionKeys })
+  const openRolePermissionDrawer = (role: AuthorizationRole) => {
+    setRolePermissionDrawer({
+      open: true,
+      role,
+      checkedKeys: [...role.permissionKeys],
+    })
   }
 
-  const handleSaveUserRoles = async (values: UserRoleFormValues) => {
-    if (!editingUser) {
+  const handleSaveUserRoles = async () => {
+    if (!userRoleDrawer.user) {
+      return
+    }
+
+    if (userRoleDrawer.checkedKeys.length === 0) {
+      message.error(t('authorization.users.roleRequired'))
       return
     }
 
     try {
       await replaceUserRolesMutation.mutateAsync({
-        userId: editingUser.id,
-        values: { roleKeys: values.roleKeys },
+        userId: userRoleDrawer.user.id,
+        values: { roleKeys: userRoleDrawer.checkedKeys },
       })
       message.success(t('authorization.users.saveSuccess'))
-      setEditingUser(null)
+      setUserRoleDrawer({ open: false, user: null, checkedKeys: [] })
     } catch (error) {
       message.error(error instanceof Error ? error.message : t('authorization.users.saveFailed'))
     }
   }
 
-  const handleSaveRolePermissions = async (values: RolePermissionFormValues) => {
-    if (!editingRole) {
+  const handleSaveRolePermissions = async () => {
+    if (!rolePermissionDrawer.role) {
       return
     }
 
     try {
+      const permissionKeys = rolePermissionDrawer.checkedKeys.filter((key) =>
+        permissions.some((p) => p.key === key),
+      ) as Permission[]
+
       await replaceRolePermissionsMutation.mutateAsync({
-        roleKey: editingRole.key,
-        values: { permissionKeys: values.permissionKeys ?? [] },
+        roleKey: rolePermissionDrawer.role.key,
+        values: { permissionKeys },
       })
       message.success(t('authorization.roles.saveSuccess'))
-      setEditingRole(null)
+      setRolePermissionDrawer({ open: false, role: null, checkedKeys: [] })
     } catch (error) {
       message.error(error instanceof Error ? error.message : t('authorization.roles.saveFailed'))
     }
@@ -101,11 +189,14 @@ export function AuthorizationSettings() {
       title: t('authorization.users.roles'),
       render: (roleKeys: string[]) => (
         <div className="flex max-w-xl flex-wrap gap-2">
-          {roleKeys.map((roleKey) => (
-            <Tag key={roleKey} className="m-0">
-              {roleKey}
-            </Tag>
-          ))}
+          {roleKeys.map((roleKey) => {
+            const role = roles.find((r) => r.key === roleKey)
+            return (
+              <Tag key={roleKey} className="m-0">
+                {role?.name ?? roleKey}
+              </Tag>
+            )
+          })}
         </div>
       ),
     },
@@ -122,10 +213,9 @@ export function AuthorizationSettings() {
                 <Button
                   icon={<UserCog className="size-4" />}
                   disabled={isCurrentUser || replaceUserRolesMutation.isPending || rolesQuery.isError}
-                  onClick={() => openUserEditor(user)}
-                >
-                  {t('authorization.users.edit')}
-                </Button>
+                  aria-label={t('authorization.users.edit')}
+                  onClick={() => openUserRoleDrawer(user)}
+                />
               </span>
             </Tooltip>
           </PermissionGuard>
@@ -165,11 +255,14 @@ export function AuthorizationSettings() {
       title: t('authorization.roles.permissions'),
       render: (permissionKeys: AuthorizationRole['permissionKeys']) => (
         <div className="flex max-w-2xl flex-wrap gap-2">
-          {permissionKeys.map((permissionKey) => (
-            <Tag key={permissionKey} className="m-0 max-w-full whitespace-normal">
-              {permissionKey}
-            </Tag>
-          ))}
+          {permissionKeys.map((permissionKey) => {
+            const permission = permissions.find((p) => p.key === permissionKey)
+            return (
+              <Tag key={permissionKey} className="m-0 max-w-full whitespace-normal">
+                {permission?.action ?? permissionKey}
+              </Tag>
+            )
+          })}
         </div>
       ),
     },
@@ -182,10 +275,9 @@ export function AuthorizationSettings() {
             <Button
               icon={<Pencil className="size-4" />}
               disabled={replaceRolePermissionsMutation.isPending}
-              onClick={() => openRoleEditor(role)}
-            >
-              {t('authorization.roles.edit')}
-            </Button>
+              aria-label={t('authorization.roles.edit')}
+              onClick={() => openRolePermissionDrawer(role)}
+            />
           ) : (
             <span className="text-fg-muted text-sm">{t('authorization.roles.readOnly')}</span>
           )}
@@ -264,62 +356,81 @@ export function AuthorizationSettings() {
       </section>
 
       <PermissionGuard permission={PermissionKeys.AUTHORIZATION_MANAGE}>
-        <Modal
-          destroyOnHidden
-          title={t('authorization.users.editTitle', { name: editingUser?.name ?? '' })}
-          open={Boolean(editingUser)}
-          okText={t('common.save')}
-          cancelText={t('common.cancel')}
-          confirmLoading={replaceUserRolesMutation.isPending}
-          onCancel={() => setEditingUser(null)}
-          onOk={() => void userRoleForm.submit()}
+        <Drawer
+          title={t('authorization.users.editTitle', { name: userRoleDrawer.user?.name ?? '' })}
+          placement="right"
+          open={userRoleDrawer.open}
+          size="default"
+          classNames={drawerClassNames}
+          styles={drawerStyles}
+          onClose={() => setUserRoleDrawer({ open: false, user: null, checkedKeys: [] })}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setUserRoleDrawer({ open: false, user: null, checkedKeys: [] })}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                type="primary"
+                loading={replaceUserRolesMutation.isPending}
+                onClick={() => void handleSaveUserRoles()}
+              >
+                {t('common.save')}
+              </Button>
+            </div>
+          }
         >
-          <Form<UserRoleFormValues> form={userRoleForm} layout="vertical" onFinish={handleSaveUserRoles}>
-            <Form.Item
-              name="roleKeys"
-              label={t('authorization.users.roles')}
-              rules={[{ required: true, message: t('authorization.users.roleRequired') }]}
-            >
-              <Checkbox.Group
-                className="grid gap-3"
-                options={roles.map((role) => ({ label: `${role.name} (${role.key})`, value: role.key }))}
-              />
-            </Form.Item>
-          </Form>
-        </Modal>
+          <div className="mb-3 text-fg-muted text-sm">{t('authorization.users.roles')}</div>
+          <Tree
+            checkable
+            defaultExpandAll
+            selectable={false}
+            treeData={roleTreeData}
+            checkedKeys={userRoleDrawer.checkedKeys}
+            onCheck={(checked) => {
+              const keys = Array.isArray(checked) ? checked : checked.checked
+              setUserRoleDrawer((prev) => ({ ...prev, checkedKeys: keys as string[] }))
+            }}
+          />
+        </Drawer>
       </PermissionGuard>
 
       <PermissionGuard permission={PermissionKeys.AUTHORIZATION_MANAGE}>
-        <Modal
-          destroyOnHidden
-          width={720}
-          title={t('authorization.roles.editTitle', { name: editingRole?.name ?? '' })}
-          open={Boolean(editingRole)}
-          okText={t('common.save')}
-          cancelText={t('common.cancel')}
-          confirmLoading={replaceRolePermissionsMutation.isPending}
-          onCancel={() => setEditingRole(null)}
-          onOk={() => void rolePermissionForm.submit()}
+        <Drawer
+          title={t('authorization.roles.editTitle', { name: rolePermissionDrawer.role?.name ?? '' })}
+          placement="right"
+          open={rolePermissionDrawer.open}
+          size="large"
+          classNames={drawerClassNames}
+          styles={drawerStyles}
+          onClose={() => setRolePermissionDrawer({ open: false, role: null, checkedKeys: [] })}
+          footer={
+            <div className="flex justify-end gap-2">
+              <Button onClick={() => setRolePermissionDrawer({ open: false, role: null, checkedKeys: [] })}>
+                {t('common.cancel')}
+              </Button>
+              <Button
+                type="primary"
+                loading={replaceRolePermissionsMutation.isPending}
+                onClick={() => void handleSaveRolePermissions()}
+              >
+                {t('common.save')}
+              </Button>
+            </div>
+          }
         >
-          <Form<RolePermissionFormValues>
-            form={rolePermissionForm}
-            layout="vertical"
-            onFinish={handleSaveRolePermissions}
-          >
-            <Form.Item name="permissionKeys" label={t('authorization.roles.permissions')}>
-              <Checkbox.Group className="grid gap-3">
-                {permissions.map((permission) => (
-                  <Checkbox key={permission.key} value={permission.key} className="min-w-0 items-start">
-                    <span className="block break-all">{permission.key}</span>
-                    {permission.description ? (
-                      <span className="text-fg-muted mt-1 block text-sm break-words">{permission.description}</span>
-                    ) : null}
-                  </Checkbox>
-                ))}
-              </Checkbox.Group>
-            </Form.Item>
-          </Form>
-        </Modal>
+          <div className="mb-3 text-fg-muted text-sm">{t('authorization.roles.permissions')}</div>
+          <Tree
+            checkable
+            defaultExpandAll
+            selectable={false}
+            treeData={permissionTreeData}
+            checkedKeys={rolePermissionDrawer.checkedKeys}
+            onCheck={(checked) => {
+              const keys = Array.isArray(checked) ? checked : checked.checked
+              setRolePermissionDrawer((prev) => ({ ...prev, checkedKeys: keys as string[] }))
+            }}
+          />
+        </Drawer>
       </PermissionGuard>
     </div>
   )
