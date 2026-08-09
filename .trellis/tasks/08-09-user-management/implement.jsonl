@@ -1,0 +1,14 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"用户目录同时修改 contracts、API、数据库查询和 Admin 页面，需要按同一 response 字段检查跨层数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"现有 authorization、profile 和 query hooks 已有相近读取与权限模式，实现前先检查复用边界。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"新增用户目录 DTO、query schema 和 API response 类型必须遵守 contracts 单入口边界。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Admin 需要直接消费新增用户目录 DTO，避免重新复制字段。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"用户目录 API 要遵守 route -> service -> repository、OpenAPI 和 smoke test 约定。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"列表 count、分页、join 和测试 SQLite 查询需要遵守 Drizzle 与 owner/关系查询规则。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"401、403、404、400 和数据库错误必须使用现有 AppError 与 response wrapper。"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"新接口沿用 requireAuth 后的 authorization:read middleware，不新增客户端授权边界。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"新增 Admin feature、路由、API adapter 和页面前先遵守目录入口与质量检查。"}
+{"file":".trellis/spec/admin/frontend/component-guidelines.md","reason":"用户表格和详情 Drawer 需要处理 loading、错误、空数据和图标按钮。"}
+{"file":".trellis/spec/admin/frontend/hook-guidelines.md","reason":"列表参数和详情状态属于 TanStack Query，需要遵守 query hook 与副作用边界。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"表格行、日期和详情 DTO 必须从 contracts 导入并保持显式类型。"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"新路由、菜单、标签栏和 403 行为必须复用现有 permission 规则。"}
+{"file":".trellis/tasks/08-09-user-management/research/user-management-options.md","reason":"记录了当前用户表、RBAC 和 Better Auth plugin 的能力边界，说明本任务不引入 plugin。"}

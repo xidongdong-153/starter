@@ -163,3 +163,45 @@ export type FileItem = {
 export type AuthConfig = {
   providers: { email: true; github: boolean; google: boolean }
 }
+
+export const userManagementQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  search: z.string().trim().max(120).optional(),
+  roleKey: z.string().trim().min(1).max(64).optional(),
+})
+
+export type UserManagementQuery = z.infer<typeof userManagementQuerySchema>
+
+export interface UserManagementUser {
+  id: string
+  name: string
+  email: string
+  image: string | null
+  emailVerified: boolean
+  createdAt: string
+  updatedAt: string
+  roleKeys: string[]
+}
+
+export interface UserManagementUserPage {
+  items: UserManagementUser[]
+  total: number
+  page: number
+  pageSize: number
+}
+
+export interface UserManagementProfile {
+  bio: string | null
+  contactEmail: string | null
+  location: string | null
+  availableForWork: boolean
+  socialLinks: string[]
+  avatarUrl: string | null
+  updatedAt: string | null
+}
+
+export interface UserManagementUserDetail extends UserManagementUser {
+  providers: string[]
+  profile: UserManagementProfile | null
+}

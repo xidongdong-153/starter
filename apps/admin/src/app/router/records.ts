@@ -7,6 +7,7 @@ import { errorRoutes } from '@admin/features/errors/routes'
 import { exampleRoutes } from '@admin/features/examples/routes'
 import { filesRoutes } from '@admin/features/files/routes'
 import { homeRoute, homeRoutes } from '@admin/features/home/routes'
+import { usersRoutes } from '@admin/features/users/routes'
 
 /** 需要登录后才能访问的页面 */
 export const appRouteRecords: AdminRouteRecord[] = [
@@ -14,6 +15,7 @@ export const appRouteRecords: AdminRouteRecord[] = [
   ...filesRoutes,
   ...accountRoutes,
   ...authorizationRoutes,
+  ...usersRoutes,
   ...exampleRoutes,
   ...errorRoutes,
 ]

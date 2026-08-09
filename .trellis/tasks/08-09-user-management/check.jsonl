@@ -1,0 +1,13 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查用户目录 response 从数据库到 Admin 的字段、分页和错误状态是否一致。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查新 users 模块是否重复现有授权、profile、query 和页面状态模式。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"验证新增 DTO、schema 和导出没有破坏 contracts 质量门禁。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查 Admin 对用户目录 response 的类型消费和可空资料处理。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 endpoint、OpenAPI、migration 影响和 smoke tests。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"复核 count distinct、分页稳定排序、LIKE 查询和临时 SQLite。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"复核 401、403、404、400 和未知数据库错误的返回边界。"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"复核 permission middleware 顺序、数据白名单和现有 RBAC 行为。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"检查 API 客户端消费契约时没有跨应用字段漂移。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"复核 Admin 页面交互、响应式布局和质量检查要求。"}
+{"file":".trellis/spec/admin/frontend/component-guidelines.md","reason":"复核 Table、Drawer、Alert、重试和空状态的实现质量。"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"复核菜单、标签栏、直达 URL 与 403 的一致权限行为。"}
+{"file":".trellis/tasks/08-09-user-management/research/user-management-options.md","reason":"检查实现没有意外接入 Better Auth Admin plugin 或引入第二套角色来源。"}

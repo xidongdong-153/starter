@@ -22,6 +22,8 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(document.paths["/api/files/{fileId}/content"]).toBeUndefined();
     expect(document.paths["/api/me/permissions"]?.get).toBeDefined();
     expect(document.paths["/api/authorization/users"]?.get).toBeDefined();
+    expect(document.paths["/api/users"]?.get).toBeDefined();
+    expect(document.paths["/api/users/{userId}"]?.get).toBeDefined();
     expect(
       document.paths["/api/authorization/users/{userId}/roles"]?.put
         ?.responses?.["403"],
@@ -29,6 +31,13 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(
       document.paths["/api/authorization/roles/{roleKey}/permissions"]?.put
         ?.responses?.["403"],
+    ).toBeDefined();
+    expect(document.paths["/api/users"]?.get?.responses?.["403"]).toBeDefined();
+    expect(
+      document.paths["/api/users/{userId}"]?.get?.responses?.["403"],
+    ).toBeDefined();
+    expect(
+      document.paths["/api/users/{userId}"]?.get?.responses?.["404"],
     ).toBeDefined();
     expect(document.components?.securitySchemes?.cookieAuth).toBeDefined();
 

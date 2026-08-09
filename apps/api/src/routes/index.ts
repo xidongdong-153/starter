@@ -7,6 +7,7 @@ import { createAuthorizationRoute } from "@api/modules/authorization/index.js";
 import { createFilesRoute } from "@api/modules/files/index.js";
 import { createProfileRoute } from "@api/modules/profile/index.js";
 import { createSystemRoute } from "@api/modules/system/index.js";
+import { createUsersRoute } from "@api/modules/users/index.js";
 
 export function createRoutes(runtime: AppRuntime) {
   return new OpenAPIHono<HonoEnv>()
@@ -14,6 +15,7 @@ export function createRoutes(runtime: AppRuntime) {
     .route("/", createAuthorizationRoute(runtime))
     .route("/", createSystemRoute())
     .route("/", createProfileRoute(runtime))
+    .route("/", createUsersRoute(runtime))
     .route("/", createFilesRoute(runtime));
 }
 
