@@ -20,9 +20,10 @@
 pnpm --filter @starter/admin check-types
 pnpm --filter @starter/admin lint
 pnpm --filter @starter/admin format:check
+pnpm --filter @starter/admin test
 ```
 
-仓库级检查使用 `pnpm check`。当前 Admin 没有独立的组件测试目录，交互变化至少要覆盖加载、失败、空数据和 mutation pending 状态。
+仓库级检查使用 `pnpm check` 和 `pnpm test`。测试用 Vitest + jsdom，文件在 `apps/admin/src/test/`，覆盖权限逻辑、导航数据和 route guard 分支，不测 Antd 内部行为和样式。交互变化至少要覆盖加载、失败、空数据和 mutation pending 状态。
 
 ## 代码入口
 
@@ -40,4 +41,4 @@ pnpm --filter @starter/admin format:check
 - `state-management.md`：React Query、Zustand、表单和局部 state 的归属。
 - `type-safety.md`：contracts DTO、表单转换、路由和 store 类型。
 - `authorization-guidelines.md`：权限 query、路由、菜单、标签栏、403 和文件动作控制。
-- `quality-guidelines.md`：检查命令和页面交互质量要求。
+- `quality-guidelines.md`：检查命令、测试环境约束和页面交互质量要求。

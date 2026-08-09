@@ -12,6 +12,7 @@
     "format": "prettier --write . --ignore-path ../../.prettierignore",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
+    "test": "vitest run",
     "clean": "rm -rf dist"
   },
   "dependencies": {
@@ -37,14 +38,19 @@
   "devDependencies": {
     "@starter/eslint-config": "workspace:*",
     "@tailwindcss/vite": "catalog:",
+    "@testing-library/dom": "catalog:",
+    "@testing-library/react": "catalog:",
+    "@testing-library/user-event": "catalog:",
     "@types/node": "catalog:",
     "@types/react": "catalog:",
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "catalog:",
     "eslint": "catalog:",
+    "jsdom": "catalog:",
     "prettier": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
-    "vite": "catalog:"
+    "vite": "catalog:",
+    "vitest": "catalog:"
   }
 }

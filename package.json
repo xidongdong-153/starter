@@ -18,7 +18,7 @@
     "format": "prettier --write .",
     "lint": "eslint --no-error-on-unmatched-pattern --max-warnings 0 . && turbo run lint",
     "format:check": "prettier --check . && turbo run format:check",
-    "test": "pnpm --filter=@starter/api test",
+    "test": "turbo run test",
     "clean": "turbo run clean"
   },
   "devDependencies": {
