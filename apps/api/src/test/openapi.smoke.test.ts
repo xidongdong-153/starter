@@ -29,6 +29,10 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
         ?.responses?.["403"],
     ).toBeDefined();
     expect(
+      document.paths["/api/authorization/users/{userId}/roles"]?.put
+        ?.responses?.["409"],
+    ).toBeDefined();
+    expect(
       document.paths["/api/authorization/roles/{roleKey}/permissions"]?.put
         ?.responses?.["403"],
     ).toBeDefined();

@@ -2,7 +2,7 @@ import type { InferSelectModel } from "drizzle-orm";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { Permission } from "@starter/contracts";
 import { PermissionKeys, RoleKeys } from "@starter/contracts";
-import { and, asc, eq, inArray, isNull } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
 import {
   permissions,
   rolePermissions,
@@ -12,6 +12,64 @@ import {
 } from "@api/infra/db/schema/index.js";
 
 const registeredPermissions = Object.values(PermissionKeys);
+
+type TxLike = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
+
+/**
+ * 授权写操作的执行上下文。
+ *
+ * `actorType` 为 `system` 时跳过平台管理员校验，`assignedBy` 写 null，
+ * 对应 bootstrap 脚本这类没有浏览器 actor 的入口。
+ * `requestId` 当前不落库，为后续审计表预留。
+ */
+export interface AuthorizationWriteContext {
+  actorType: "user" | "system";
+  actorId: string;
+  requestId: string | null;
+}
+
+function resolveAssignedBy(context: AuthorizationWriteContext): string | null {
+  return context.actorType === "user" ? context.actorId : null;
+}
+
+/** 判断用户是否关联未归档的 admin 角色。必须在写 transaction 内调用。 */
+function isActivePlatformAdmin(tx: TxLike, userId: string): boolean {
+  return Boolean(
+    tx
+      .select({ id: roles.id })
+      .from(userRoles)
+      .innerJoin(roles, eq(userRoles.roleId, roles.id))
+      .where(
+        and(
+          eq(userRoles.userId, userId),
+          eq(roles.key, RoleKeys.ADMIN),
+          isNull(roles.archivedAt),
+        ),
+      )
+      .get(),
+  );
+}
+
+/** 统计现存 user 中关联未归档 admin 角色的数量。 */
+function countActivePlatformAdmins(tx: TxLike): number {
+  const row = tx
+    .select({ value: count() })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .innerJoin(user, eq(userRoles.userId, user.id))
+    .where(and(eq(roles.key, RoleKeys.ADMIN), isNull(roles.archivedAt)))
+    .get();
+
+  return row?.value ?? 0;
+}
+
+/** 比较两个已排序的 key 集合是否相同。 */
+function sameKeys(before: string[], after: string[]): boolean {
+  return (
+    before.length === after.length &&
+    before.every((key, index) => key === after[index])
+  );
+}
 
 export type AuthorizationUserRecord = Pick<
   InferSelectModel<typeof user>,
@@ -35,7 +93,9 @@ export interface RolePermissionRecord {
 export type ReplaceUserRolesResult =
   | { kind: "ok"; user: AuthorizationUserRecord; roleKeys: string[] }
   | { kind: "user-not-found" }
-  | { kind: "invalid-role-keys"; invalidKeys: string[] };
+  | { kind: "invalid-role-keys"; invalidKeys: string[] }
+  | { kind: "actor-not-platform-admin" }
+  | { kind: "last-platform-admin" };
 
 export type ReplaceRolePermissionsResult =
   | {
@@ -44,7 +104,8 @@ export type ReplaceRolePermissionsResult =
       permissionKeys: string[];
     }
   | { kind: "role-not-found" }
-  | { kind: "invalid-permission-keys"; invalidKeys: string[] };
+  | { kind: "invalid-permission-keys"; invalidKeys: string[] }
+  | { kind: "actor-not-platform-admin" };
 
 export type BootstrapAdminResult =
   | { kind: "ok"; user: AuthorizationUserRecord }
@@ -194,7 +255,7 @@ export function createAuthorizationRepository(db: AppDatabase) {
   function replaceUserRoles(
     userId: string,
     roleKeys: string[],
-    assignedBy: string,
+    context: AuthorizationWriteContext,
   ): ReplaceUserRolesResult {
     return db.transaction((tx) => {
       const targetUser = tx
@@ -217,6 +278,36 @@ export function createAuthorizationRepository(db: AppDatabase) {
         return { kind: "invalid-role-keys", invalidKeys };
       }
 
+      // actor 校验在 transaction 内重新读库，避开并发撤权时的过期快照。
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+
+      const beforeRoleKeys = tx
+        .select({ key: roles.key })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, userId))
+        .orderBy(asc(roles.key))
+        .all()
+        .map((role) => role.key);
+      const afterRoleKeys = [...activeRoleKeys].sort();
+
+      // 幂等短路必须在 actor 校验之后，否则无权 actor 能提交相同值绕过校验。
+      if (sameKeys(beforeRoleKeys, afterRoleKeys)) {
+        return { kind: "ok", user: targetUser, roleKeys: afterRoleKeys };
+      }
+
+      const removesAdmin =
+        beforeRoleKeys.includes(RoleKeys.ADMIN) &&
+        !afterRoleKeys.includes(RoleKeys.ADMIN);
+      if (removesAdmin && countActivePlatformAdmins(tx) <= 1) {
+        return { kind: "last-platform-admin" };
+      }
+
       tx.delete(userRoles).where(eq(userRoles.userId, userId)).run();
       tx.insert(userRoles)
         .values(
@@ -224,23 +315,19 @@ export function createAuthorizationRepository(db: AppDatabase) {
             userId,
             roleId: role.id,
             assignedAt: new Date(),
-            assignedBy,
+            assignedBy: resolveAssignedBy(context),
           })),
         )
         .run();
 
-      return {
-        kind: "ok",
-        user: targetUser,
-        roleKeys: [...activeRoleKeys].sort(),
-      };
+      return { kind: "ok", user: targetUser, roleKeys: afterRoleKeys };
     });
   }
 
   function replaceRolePermissions(
     roleKey: string,
     permissionKeys: Permission[],
-    assignedBy: string,
+    context: AuthorizationWriteContext,
   ): ReplaceRolePermissionsResult {
     return db.transaction((tx) => {
       const targetRole = tx
@@ -272,6 +359,34 @@ export function createAuthorizationRepository(db: AppDatabase) {
         return { kind: "invalid-permission-keys", invalidKeys };
       }
 
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+
+      const beforePermissionKeys = tx
+        .select({ key: permissions.key })
+        .from(rolePermissions)
+        .innerJoin(
+          permissions,
+          eq(rolePermissions.permissionId, permissions.id),
+        )
+        .where(eq(rolePermissions.roleId, targetRole.id))
+        .orderBy(asc(permissions.key))
+        .all()
+        .map((permission) => permission.key);
+      const afterPermissionKeys = [...activePermissionKeys].sort();
+
+      if (sameKeys(beforePermissionKeys, afterPermissionKeys)) {
+        return {
+          kind: "ok",
+          role: targetRole,
+          permissionKeys: afterPermissionKeys,
+        };
+      }
+
       tx.delete(rolePermissions)
         .where(eq(rolePermissions.roleId, targetRole.id))
         .run();
@@ -282,7 +397,7 @@ export function createAuthorizationRepository(db: AppDatabase) {
               roleId: targetRole.id,
               permissionId: permission.id,
               assignedAt: new Date(),
-              assignedBy,
+              assignedBy: resolveAssignedBy(context),
             })),
           )
           .run();
@@ -291,12 +406,15 @@ export function createAuthorizationRepository(db: AppDatabase) {
       return {
         kind: "ok",
         role: targetRole,
-        permissionKeys: [...activePermissionKeys].sort(),
+        permissionKeys: afterPermissionKeys,
       };
     });
   }
 
-  function bootstrapAdminByEmail(email: string): BootstrapAdminResult {
+  function bootstrapAdminByEmail(
+    email: string,
+    context: AuthorizationWriteContext,
+  ): BootstrapAdminResult {
     return db.transaction((tx) => {
       const targetUser = tx
         .select({ id: user.id, name: user.name, email: user.email })
@@ -312,13 +430,26 @@ export function createAuthorizationRepository(db: AppDatabase) {
         .get();
       if (!adminRole) return { kind: "admin-role-not-found" };
 
+      const beforeRoleKeys = tx
+        .select({ key: roles.key })
+        .from(userRoles)
+        .innerJoin(roles, eq(userRoles.roleId, roles.id))
+        .where(eq(userRoles.userId, targetUser.id))
+        .orderBy(asc(roles.key))
+        .all()
+        .map((role) => role.key);
+
+      if (sameKeys(beforeRoleKeys, [RoleKeys.ADMIN])) {
+        return { kind: "ok", user: targetUser };
+      }
+
       tx.delete(userRoles).where(eq(userRoles.userId, targetUser.id)).run();
       tx.insert(userRoles)
         .values({
           userId: targetUser.id,
           roleId: adminRole.id,
           assignedAt: new Date(),
-          assignedBy: null,
+          assignedBy: resolveAssignedBy(context),
         })
         .run();
       return { kind: "ok", user: targetUser };

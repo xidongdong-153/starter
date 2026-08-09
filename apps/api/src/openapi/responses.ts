@@ -64,4 +64,5 @@ export const invalidRequestResponse = apiFailureResponse("请求参数不正确"
 export const unauthorizedResponse = apiFailureResponse("未登录");
 export const forbiddenResponse = apiFailureResponse("没有权限");
 export const notFoundResponse = apiFailureResponse("资源不存在");
+export const conflictResponse = apiFailureResponse("状态冲突");
 export const internalErrorResponse = apiFailureResponse("服务内部错误");

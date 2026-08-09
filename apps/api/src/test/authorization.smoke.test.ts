@@ -12,7 +12,13 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
-import { permissions, roles, userRoles } from "@api/infra/db/schema/index.js";
+import {
+  permissions,
+  rolePermissions,
+  roles,
+  userRoles,
+} from "@api/infra/db/schema/index.js";
+import { createAuthorizationRepository } from "@api/modules/authorization/index.js";
 import { runBootstrapAdmin } from "@api/scripts/bootstrap-admin.js";
 import {
   createTestApp,
@@ -255,11 +261,13 @@ it("管理接口使用事务替换角色，viewer 写操作拒绝且归档立即
   try {
     const admin = await register(app, "owner-admin@example.com");
     const viewer = await register(app, "owner-viewer@example.com");
-    const repository = (
-      await import("@api/modules/authorization/index.js")
-    ).createAuthorizationRepository(runtime.db);
+    const repository = createAuthorizationRepository(runtime.db);
     expect(
-      repository.bootstrapAdminByEmail("owner-admin@example.com").kind,
+      repository.bootstrapAdminByEmail("owner-admin@example.com", {
+        actorType: "system",
+        actorId: "auth:bootstrap-admin",
+        requestId: null,
+      }).kind,
     ).toBe("ok");
 
     const users = await app.request("/api/authorization/users", {
@@ -462,6 +470,326 @@ it("管理接口使用事务替换角色，viewer 写操作拒绝且归档立即
       (await readSuccess<CurrentPermissions>(archivedOperator)).data
         .permissions,
     ).not.toContain(PermissionKeys.FILE_UPLOAD);
+  } finally {
+    cleanup();
+  }
+});
+
+const systemContext = {
+  actorType: "system",
+  actorId: "auth:bootstrap-admin",
+  requestId: null,
+} as const;
+
+/** 给指定角色补一条权限关联，用于构造"持有权限但不是平台管理员"的 actor。 */
+function grantPermissionToRole(
+  db: ReturnType<typeof createTestApp>["runtime"]["db"],
+  roleKey: string,
+  permissionKey: string,
+) {
+  const role = db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(eq(roles.key, roleKey))
+    .get();
+  const permission = db
+    .select({ id: permissions.id })
+    .from(permissions)
+    .where(eq(permissions.key, permissionKey))
+    .get();
+  expect(role).toBeDefined();
+  expect(permission).toBeDefined();
+  db.insert(rolePermissions)
+    .values({
+      roleId: role!.id,
+      permissionId: permission!.id,
+      assignedAt: new Date(),
+      assignedBy: null,
+    })
+    .run();
+}
+
+function readUserRoleKeys(
+  db: ReturnType<typeof createTestApp>["runtime"]["db"],
+  userId: string,
+) {
+  return db
+    .select({ key: roles.key })
+    .from(userRoles)
+    .innerJoin(roles, eq(userRoles.roleId, roles.id))
+    .where(eq(userRoles.userId, userId))
+    .all()
+    .map((role) => role.key)
+    .sort();
+}
+
+function readRolePermissionKeys(
+  db: ReturnType<typeof createTestApp>["runtime"]["db"],
+  roleKey: string,
+) {
+  return db
+    .select({ key: permissions.key })
+    .from(rolePermissions)
+    .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+    .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+    .where(eq(roles.key, roleKey))
+    .all()
+    .map((permission) => permission.key)
+    .sort();
+}
+
+it("持有 authorization:manage 的非平台管理员不能写入授权关系", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await register(app, "boundary-admin@example.com");
+    const operator = await register(app, "boundary-operator@example.com");
+    const target = await register(app, "boundary-target@example.com");
+    const repository = createAuthorizationRepository(runtime.db);
+    expect(
+      repository.bootstrapAdminByEmail(
+        "boundary-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+
+    // 默认 seed 不给 operator 这个权限，必须显式构造才能走到 repository 的 actor 校验。
+    grantPermissionToRole(
+      runtime.db,
+      RoleKeys.OPERATOR,
+      PermissionKeys.AUTHORIZATION_MANAGE,
+    );
+    const operatorPermissions = await app.request("/api/me/permissions", {
+      headers: { cookie: operator.cookie },
+    });
+    expect(
+      (await readSuccess<CurrentPermissions>(operatorPermissions)).data
+        .permissions,
+    ).toContain(PermissionKeys.AUTHORIZATION_MANAGE);
+
+    const deniedUserRoles = await app.request(
+      `/api/authorization/users/${target.user.id}/roles`,
+      {
+        method: "PUT",
+        headers: {
+          cookie: operator.cookie,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ roleKeys: [RoleKeys.ADMIN] }),
+      },
+    );
+    expect(deniedUserRoles.status).toBe(403);
+    const deniedUserRolesBody = await readFailure(deniedUserRoles);
+    expect(deniedUserRolesBody.error.code).toBe(ApiErrorCodes.AUTH_FORBIDDEN);
+    expect(deniedUserRolesBody.error.message).toBe(
+      "只有平台管理员可以修改授权关系",
+    );
+    expect(readUserRoleKeys(runtime.db, target.user.id)).toEqual([
+      RoleKeys.OPERATOR,
+    ]);
+
+    // 请求的权限集合和 viewer 当前值不同，被拒绝后关系必须保持原样。
+    const viewerPermissionsBefore = readRolePermissionKeys(
+      runtime.db,
+      RoleKeys.VIEWER,
+    );
+    expect(viewerPermissionsBefore).not.toEqual([PermissionKeys.FILE_UPLOAD]);
+    const deniedRolePermissions = await app.request(
+      "/api/authorization/roles/viewer/permissions",
+      {
+        method: "PUT",
+        headers: {
+          cookie: operator.cookie,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ permissionKeys: [PermissionKeys.FILE_UPLOAD] }),
+      },
+    );
+    expect(deniedRolePermissions.status).toBe(403);
+    expect((await readFailure(deniedRolePermissions)).error.message).toBe(
+      "只有平台管理员可以修改授权关系",
+    );
+    expect(readRolePermissionKeys(runtime.db, RoleKeys.VIEWER)).toEqual(
+      viewerPermissionsBefore,
+    );
+
+    // 同样的两个写操作，平台管理员可以执行。
+    const allowedUserRoles = await app.request(
+      `/api/authorization/users/${target.user.id}/roles`,
+      {
+        method: "PUT",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ roleKeys: [RoleKeys.VIEWER] }),
+      },
+    );
+    expect(allowedUserRoles.status).toBe(200);
+    expect(
+      (await readSuccess<AuthorizationUser>(allowedUserRoles)).data.roleKeys,
+    ).toEqual([RoleKeys.VIEWER]);
+
+    const allowedRolePermissions = await app.request(
+      "/api/authorization/roles/viewer/permissions",
+      {
+        method: "PUT",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ permissionKeys: [PermissionKeys.FILE_UPLOAD] }),
+      },
+    );
+    expect(allowedRolePermissions.status).toBe(200);
+    expect(readRolePermissionKeys(runtime.db, RoleKeys.VIEWER)).toEqual([
+      PermissionKeys.FILE_UPLOAD,
+    ]);
+  } finally {
+    cleanup();
+  }
+});
+
+it("提交相同集合时短路，不重写授权关系", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await register(app, "idempotent-admin@example.com");
+    const target = await register(app, "idempotent-target@example.com");
+    const repository = createAuthorizationRepository(runtime.db);
+    expect(
+      repository.bootstrapAdminByEmail(
+        "idempotent-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+
+    // 用哨兵时间戳而不是比较前后时钟：assigned_at 是 timestamp_ms，
+    // 同一毫秒内的重写会产生相同的值，那样的断言证明不了短路。
+    const sentinel = new Date(1700000000000);
+    runtime.db
+      .update(userRoles)
+      .set({ assignedAt: sentinel })
+      .where(eq(userRoles.userId, target.user.id))
+      .run();
+
+    const sameRoles = await app.request(
+      `/api/authorization/users/${target.user.id}/roles`,
+      {
+        method: "PUT",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ roleKeys: [RoleKeys.OPERATOR] }),
+      },
+    );
+    expect(sameRoles.status).toBe(200);
+    expect(
+      (await readSuccess<AuthorizationUser>(sameRoles)).data.roleKeys,
+    ).toEqual([RoleKeys.OPERATOR]);
+    const targetAssignment = runtime.db
+      .select({ assignedAt: userRoles.assignedAt })
+      .from(userRoles)
+      .where(eq(userRoles.userId, target.user.id))
+      .get();
+    expect(targetAssignment?.assignedAt).toEqual(sentinel);
+
+    const viewerRole = runtime.db
+      .select({ id: roles.id })
+      .from(roles)
+      .where(eq(roles.key, RoleKeys.VIEWER))
+      .get();
+    expect(viewerRole).toBeDefined();
+    const currentViewerPermissions = runtime.db
+      .select({ key: permissions.key })
+      .from(rolePermissions)
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(eq(rolePermissions.roleId, viewerRole!.id))
+      .all()
+      .map((permission) => permission.key)
+      .sort();
+    runtime.db
+      .update(rolePermissions)
+      .set({ assignedAt: sentinel })
+      .where(eq(rolePermissions.roleId, viewerRole!.id))
+      .run();
+
+    const samePermissions = await app.request(
+      "/api/authorization/roles/viewer/permissions",
+      {
+        method: "PUT",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ permissionKeys: currentViewerPermissions }),
+      },
+    );
+    expect(samePermissions.status).toBe(200);
+    expect(
+      runtime.db
+        .select({ assignedAt: rolePermissions.assignedAt })
+        .from(rolePermissions)
+        .where(eq(rolePermissions.roleId, viewerRole!.id))
+        .all()
+        .map((row) => row.assignedAt),
+    ).toEqual(currentViewerPermissions.map(() => sentinel));
+
+    // bootstrap 对已是纯 admin 的用户重复执行同样不重写。
+    runtime.db
+      .update(userRoles)
+      .set({ assignedAt: sentinel })
+      .where(eq(userRoles.userId, admin.user.id))
+      .run();
+    expect(
+      repository.bootstrapAdminByEmail(
+        "idempotent-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+    const adminAssignment = runtime.db
+      .select({ assignedAt: userRoles.assignedAt })
+      .from(userRoles)
+      .where(eq(userRoles.userId, admin.user.id))
+      .get();
+    expect(adminAssignment?.assignedAt).toEqual(sentinel);
+  } finally {
+    cleanup();
+  }
+});
+
+it("撤销最后一个平台管理员被拒绝，关系不变", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await register(app, "last-admin@example.com");
+    const repository = createAuthorizationRepository(runtime.db);
+    expect(
+      repository.bootstrapAdminByEmail("last-admin@example.com", systemContext)
+        .kind,
+    ).toBe("ok");
+    expect(readUserRoleKeys(runtime.db, admin.user.id)).toEqual([
+      RoleKeys.ADMIN,
+    ]);
+
+    // 走 repository 而不是 HTTP：HTTP 上 actor 必须是活动 admin 且不能改自己，
+    // 撤销别人的 admin 之后 actor 自己还在，这条路径当前不可达。
+    expect(
+      repository.replaceUserRoles(
+        admin.user.id,
+        [RoleKeys.OPERATOR],
+        systemContext,
+      ),
+    ).toEqual({ kind: "last-platform-admin" });
+    expect(readUserRoleKeys(runtime.db, admin.user.id)).toEqual([
+      RoleKeys.ADMIN,
+    ]);
+
+    // 存在第二个平台管理员时，同样的撤销可以成功。
+    const second = await register(app, "second-admin@example.com");
+    expect(
+      repository.replaceUserRoles(second.user.id, [RoleKeys.ADMIN], {
+        actorType: "system",
+        actorId: "test",
+        requestId: null,
+      }).kind,
+    ).toBe("ok");
+    expect(
+      repository.replaceUserRoles(
+        admin.user.id,
+        [RoleKeys.OPERATOR],
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+    expect(readUserRoleKeys(runtime.db, admin.user.id)).toEqual([
+      RoleKeys.OPERATOR,
+    ]);
   } finally {
     cleanup();
   }

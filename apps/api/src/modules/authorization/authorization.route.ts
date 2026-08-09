@@ -7,6 +7,7 @@ import {
 } from "@starter/contracts";
 import {
   apiSuccessResponse,
+  conflictResponse,
   forbiddenResponse,
   invalidRequestResponse,
   notFoundResponse,
@@ -80,6 +81,7 @@ const replaceUserRolesRoute = createRoute({
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
+    409: conflictResponse,
   },
 });
 
@@ -174,7 +176,11 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
       c.json(
         createSuccessResponse(
           service.replaceUserRoles(
-            c.var.currentUserId,
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
             c.req.valid("param").userId,
             c.req.valid("json"),
           ),
@@ -205,7 +211,11 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
       c.json(
         createSuccessResponse(
           service.replaceRolePermissions(
-            c.var.currentUserId,
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
             c.req.valid("param").roleKey,
             c.req.valid("json"),
           ),

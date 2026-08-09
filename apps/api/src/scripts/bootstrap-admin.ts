@@ -29,6 +29,11 @@ export function runBootstrapAdmin(
     try {
       result = createAuthorizationRepository(database.db).bootstrapAdminByEmail(
         email,
+        {
+          actorType: "system",
+          actorId: "auth:bootstrap-admin",
+          requestId: null,
+        },
       );
     } catch (error) {
       if (error instanceof Error && /no such table:/i.test(error.message)) {

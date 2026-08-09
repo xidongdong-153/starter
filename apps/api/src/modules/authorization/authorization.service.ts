@@ -6,7 +6,10 @@ import type {
   ReplaceRolePermissionsInput,
   ReplaceUserRolesInput,
 } from "@starter/contracts";
-import type { AuthorizationRepository } from "./authorization.repository.js";
+import type {
+  AuthorizationRepository,
+  AuthorizationWriteContext,
+} from "./authorization.repository.js";
 import { ApiErrorCodes, RoleKeys } from "@starter/contracts";
 import { AppError } from "@api/shared/app-error.js";
 import {
@@ -43,11 +46,11 @@ export function createAuthorizationService(
   }
 
   function replaceUserRoles(
-    actorUserId: string,
+    context: AuthorizationWriteContext,
     targetUserId: string,
     input: ReplaceUserRolesInput,
   ): AuthorizationUser {
-    if (actorUserId === targetUserId) {
+    if (context.actorId === targetUserId) {
       throw new AppError(
         ApiErrorCodes.AUTH_FORBIDDEN,
         "不能修改自己的角色",
@@ -65,7 +68,7 @@ export function createAuthorizationService(
     const result = repository.replaceUserRoles(
       targetUserId,
       input.roleKeys,
-      actorUserId,
+      context,
     );
     if (result.kind === "user-not-found") {
       throw new AppError(ApiErrorCodes.COMMON_NOT_FOUND, "用户不存在", 404);
@@ -78,11 +81,25 @@ export function createAuthorizationService(
         { invalidKeys: result.invalidKeys },
       );
     }
+    if (result.kind === "actor-not-platform-admin") {
+      throw new AppError(
+        ApiErrorCodes.AUTH_FORBIDDEN,
+        "只有平台管理员可以修改授权关系",
+        403,
+      );
+    }
+    if (result.kind === "last-platform-admin") {
+      throw new AppError(
+        ApiErrorCodes.AUTH_LAST_PLATFORM_ADMIN,
+        "至少需要保留一个平台管理员",
+        409,
+      );
+    }
     return toAuthorizationUser(result.user, result.roleKeys);
   }
 
   function replaceRolePermissions(
-    actorUserId: string,
+    context: AuthorizationWriteContext,
     roleKey: string,
     input: ReplaceRolePermissionsInput,
   ): AuthorizationRole {
@@ -97,7 +114,7 @@ export function createAuthorizationService(
     const result = repository.replaceRolePermissions(
       roleKey,
       input.permissionKeys,
-      actorUserId,
+      context,
     );
     if (result.kind === "role-not-found") {
       throw new AppError(ApiErrorCodes.COMMON_NOT_FOUND, "角色不存在", 404);
@@ -108,6 +125,13 @@ export function createAuthorizationService(
         "权限不存在或已归档",
         400,
         { invalidKeys: result.invalidKeys },
+      );
+    }
+    if (result.kind === "actor-not-platform-admin") {
+      throw new AppError(
+        ApiErrorCodes.AUTH_FORBIDDEN,
+        "只有平台管理员可以修改授权关系",
+        403,
       );
     }
     return toAuthorizationRole(result.role, result.permissionKeys);
