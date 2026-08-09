@@ -1,0 +1,11 @@
+{"file":".trellis/tasks/08-09-implement-user-permissions/research/permission-design.md","reason":"核对实现是否保持探索报告确定的全局 RBAC、安全边界和同步策略。"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查 middleware 顺序、权限新鲜度、401/403 和 owner 边界。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 endpoint、OpenAPI、输入验证和 smoke test 覆盖。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 migration、外键、索引、事务和临时测试数据库。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"检查 AUTH.FORBIDDEN、500 异常和统一 failure response。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"检查权限页面 loading、失败、空数据、pending、导航和移动端行为。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"检查 Admin 没有复制 DTO、使用 any 或绕过路由类型。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查共享 schema、DTO、error code 和跨应用编译结果。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"检查 Admin/Web 消费方和 API smoke tests 的联合验证。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复查 permission key、字段、错误和 version 在各层一致。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"搜索重复 permission 常量、权限判断和 payload 类型。"}

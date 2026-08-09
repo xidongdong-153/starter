@@ -25,6 +25,7 @@ export function createTestApp(envOverrides: NodeJS.ProcessEnv = {}) {
     GITHUB_CLIENT_SECRET: "",
     GOOGLE_CLIENT_ID: "",
     GOOGLE_CLIENT_SECRET: "",
+    AUTH_BOOTSTRAP_ADMIN_EMAIL: "",
     ...envOverrides,
   });
   migrate(runtime.db, { migrationsFolder: migrationFolder });

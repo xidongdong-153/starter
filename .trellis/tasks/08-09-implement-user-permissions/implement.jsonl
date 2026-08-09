@@ -1,0 +1,14 @@
+{"file":".trellis/tasks/08-09-implement-user-permissions/research/permission-design.md","reason":"提供本次实现所需的 RBAC 研究结论、当前仓库映射和安全边界，避免注入大文件被截断。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"遵守 API 模块分层、路由注册、统一响应和测试入口。"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"落实已记录的权限 middleware、401/403、权限接口和 owner 边界。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"遵守 Drizzle SQLite schema、外键、索引、migration 和事务约定。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"保持 AppError、error code、OpenAPI 和客户端错误行为一致。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"遵守 Admin 路由、feature、API adapter 和页面目录结构。"}
+{"file":".trellis/spec/admin/frontend/component-guidelines.md","reason":"实现管理表格、表单、反馈、图标按钮和中英文页面文案。"}
+{"file":".trellis/spec/admin/frontend/hook-guidelines.md","reason":"把权限 server state 放在 TanStack Query，并保持 hook 生命周期正确。"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"约束权限 query、mutation 失效和持久化边界。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"从 contracts 复用 DTO 和 permission 类型，避免前端复制接口类型。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"保持共享 Zod schema、DTO、error code 和 package 边界。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"约束 API 与 Admin 之间的权限 DTO 和运行时数据边界。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查数据库、service、HTTP、Query、路由和组件的完整数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"确保 permission 常量、权限判断和菜单过滤只有一个定义来源。"}

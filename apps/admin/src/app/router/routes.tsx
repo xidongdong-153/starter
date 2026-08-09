@@ -1,6 +1,10 @@
 import type { QueryClient } from '@tanstack/react-query'
 
-import { resolveAdminRouteAccess, throwAdminRouteRedirect } from '@admin/app/router/auth-guard'
+import {
+  requireAdminRoutePermission,
+  resolveAdminRouteAccess,
+  throwAdminRouteRedirect,
+} from '@admin/app/router/auth-guard'
 import { appRouteRecords, authRouteRecords } from '@admin/app/router/records'
 import { ErrorBoundary } from '@admin/components/ui'
 import { NotFound } from '@admin/features/errors/pages/NotFound'
@@ -35,10 +39,16 @@ const appRoutes = appRouteRecords.map((record) =>
     component: record.component,
     getParentRoute: () => appLayoutRoute,
     path: toRoutePath(record.path),
+    async beforeLoad({ context }) {
+      if (record.permission) {
+        await requireAdminRoutePermission(context.queryClient, record.permission)
+      }
+    },
     staticData: {
       icon: record.icon,
       id: record.id,
       layout: record.layout,
+      permission: record.permission,
       tab: record.tab,
       title: record.title,
     },

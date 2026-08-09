@@ -1,10 +1,12 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
+import { RoleKeys } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { AppLogger } from "@api/infra/log/index.js";
-import { profiles } from "@api/infra/db/schema/index.js";
+import { profiles, roles, userRoles } from "@api/infra/db/schema/index.js";
 import type { AppEnv } from "@api/shared/env.js";
 import { generateId } from "@api/shared/id.js";
+import { and, eq, isNull } from "drizzle-orm";
 
 type AuthLogLevel = "debug" | "error" | "info" | "warn";
 
@@ -53,9 +55,35 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
         create: {
           after: async (newUser) => {
             const now = new Date();
-            await db
-              .insert(profiles)
-              .values({ userId: newUser.id, createdAt: now, updatedAt: now });
+            db.transaction((tx) => {
+              const defaultRole = tx
+                .select({ id: roles.id })
+                .from(roles)
+                .where(
+                  and(
+                    eq(roles.key, RoleKeys.OPERATOR),
+                    isNull(roles.archivedAt),
+                  ),
+                )
+                .get();
+              if (!defaultRole) {
+                throw new Error(
+                  "默认角色 operator 不存在，请先执行数据库 migration",
+                );
+              }
+
+              tx.insert(profiles)
+                .values({ userId: newUser.id, createdAt: now, updatedAt: now })
+                .run();
+              tx.insert(userRoles)
+                .values({
+                  userId: newUser.id,
+                  roleId: defaultRole.id,
+                  assignedAt: now,
+                  assignedBy: null,
+                })
+                .run();
+            });
           },
         },
       },

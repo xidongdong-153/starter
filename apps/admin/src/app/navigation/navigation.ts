@@ -1,9 +1,11 @@
+import type { Permission } from '@starter/contracts'
 import type { AdminRouteRecord } from '@admin/app/router/types'
 import type { MenuProps } from 'antd'
 import type { LucideProps } from 'lucide-react'
 import type { ComponentType } from 'react'
 
 import { adminRouteRecords } from '@admin/app/router/records'
+import { hasPermission } from '@admin/app/authorization/permissions'
 import { renderIcon } from '@admin/utils/pathUtils'
 import { FolderOpen, Settings, Sparkles } from 'lucide-react'
 
@@ -58,12 +60,15 @@ function toNavigationItem(record: AdminRouteRecord): NavigationItem {
   }
 }
 
-function buildNavigationItems(records: AdminRouteRecord[]): NavigationItem[] {
+function buildNavigationItems(
+  records: AdminRouteRecord[],
+  permissions: readonly Permission[] | undefined,
+): NavigationItem[] {
   const groupedItems = new Map<string, Array<{ item: NavigationItem; order: number }>>()
   const rootItems: Array<{ item: NavigationItem; order: number }> = []
 
   records.forEach((record, index) => {
-    if (record.menu === false) {
+    if (record.menu === false || (record.permission && !hasPermission(permissions, record.permission))) {
       return
     }
 
@@ -98,8 +103,6 @@ function buildNavigationItems(records: AdminRouteRecord[]): NavigationItem[] {
   return [...rootItems, ...groupItems].sort((a, b) => a.order - b.order).map(({ item }) => item)
 }
 
-export const navigationItems: NavigationItem[] = buildNavigationItems(adminRouteRecords)
-
 function toMenuItem(item: NavigationItem, t?: (key: string) => string): MenuItem {
   return {
     children: item.children?.map((child) => toMenuItem(child, t)),
@@ -109,6 +112,9 @@ function toMenuItem(item: NavigationItem, t?: (key: string) => string): MenuItem
   }
 }
 
-export function buildNavigationMenuItems(t?: (key: string) => string): MenuItem[] {
-  return navigationItems.map((item) => toMenuItem(item, t))
+export function buildNavigationMenuItems(
+  permissions: readonly Permission[] | undefined,
+  t?: (key: string) => string,
+): MenuItem[] {
+  return buildNavigationItems(adminRouteRecords, permissions).map((item) => toMenuItem(item, t))
 }

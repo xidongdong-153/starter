@@ -1,3 +1,4 @@
+import type { Permission } from '@starter/contracts'
 import type { RouteComponent } from '@tanstack/react-router'
 import type { LucideProps } from 'lucide-react'
 import type { ComponentType } from 'react'
@@ -25,6 +26,7 @@ export interface AdminRouteRecord {
   /** menu 为 false 时不进菜单 */
   menu?: false | AdminMenuMeta
   path: string
+  permission?: Permission
   /** tab 为 false 时不生成标签页 */
   tab?: false | AdminTabMeta
   title: string
@@ -34,6 +36,7 @@ export interface AppRouteMeta {
   icon?: ComponentType<LucideProps>
   id?: string
   layout?: AdminLayoutMeta
+  permission?: Permission
   tab?: false | AdminTabMeta
   title?: string
 }

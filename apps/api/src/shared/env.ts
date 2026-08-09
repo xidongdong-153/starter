@@ -20,6 +20,15 @@ const envSchema = z.object({
   GITHUB_CLIENT_SECRET: z.string().optional().default(""),
   GOOGLE_CLIENT_ID: z.string().optional().default(""),
   GOOGLE_CLIENT_SECRET: z.string().optional().default(""),
+  AUTH_BOOTSTRAP_ADMIN_EMAIL: z.preprocess(
+    (value) =>
+      typeof value === "string" && value.trim() === ""
+        ? undefined
+        : typeof value === "string"
+          ? value.trim()
+          : value,
+    z.email().optional(),
+  ),
   OPENAPI_ENABLED: z.stringbool().default(true),
 });
 

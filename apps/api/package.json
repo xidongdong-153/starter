@@ -25,6 +25,7 @@
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
     "test": "vitest run --config vitest.config.ts",
     "auth:generate": "dotenv -e .env.development -- better-auth generate --config src/modules/auth/auth.ts --output src/modules/auth/auth.generated.ts --yes",
+    "auth:bootstrap-admin": "dotenv -e .env.development -- tsx src/scripts/bootstrap-admin.ts",
     "db:generate": "dotenv -e .env.development -- drizzle-kit generate",
     "db:migrate": "dotenv -e .env.development -- drizzle-kit migrate",
     "db:check": "dotenv -e .env.development -- drizzle-kit check",

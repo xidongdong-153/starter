@@ -39,5 +39,5 @@ pnpm --filter @starter/api test
 - `database-guidelines.md`：Drizzle schema、migration、事务和测试数据库。
 - `error-handling.md`：AppError、验证错误、统一响应和资源边界。
 - `logging-guidelines.md`：Pino、request ID、日志级别和敏感字段脱敏。
-- `authorization-guidelines.md`：授权中间件、权限接口和前后端错误边界的候选契约。
+- `authorization-guidelines.md`：已实现的授权中间件、权限接口、管理员 bootstrap 和错误边界。
 - `quality-guidelines.md`：API、数据库和 smoke test 检查项。

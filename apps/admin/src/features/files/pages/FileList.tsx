@@ -1,6 +1,8 @@
 import type { FileItem } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
+import { PermissionKeys } from '@starter/contracts'
+
 import {
   downloadFileBlob,
   useDeleteFileMutation,
@@ -9,7 +11,7 @@ import {
   useUploadFileMutation,
 } from '@admin/api/files'
 import { resolveApiUrl } from '@admin/api/client'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
 import { formatDate } from '@admin/utils/dayjs'
 import { formatFileSize } from '@admin/utils/format'
 import { Alert, App, Button, Form, Input, Modal, Table, Tooltip, Upload } from 'antd'
@@ -115,19 +117,21 @@ export function FileList() {
       render: (name: string, file: FileItem) => (
         <div className="flex items-center gap-3">
           {file.mimeType.startsWith('image/') ? (
-            <button
-              type="button"
-              title={name}
-              className="border-border-subtle size-10 shrink-0 cursor-pointer overflow-hidden rounded border"
-              onClick={() => setPreviewFile(file)}
-            >
-              <img
-                src={resolveApiUrl(file.contentUrl)}
-                alt=""
-                crossOrigin="use-credentials"
-                className="block size-full object-cover"
-              />
-            </button>
+            <PermissionGuard permission={PermissionKeys.FILE_READ}>
+              <button
+                type="button"
+                title={name}
+                className="border-border-subtle size-10 shrink-0 cursor-pointer overflow-hidden rounded border"
+                onClick={() => setPreviewFile(file)}
+              >
+                <img
+                  src={resolveApiUrl(file.contentUrl)}
+                  alt=""
+                  crossOrigin="use-credentials"
+                  className="block size-full object-cover"
+                />
+              </button>
+            </PermissionGuard>
           ) : null}
           <span className="text-fg font-medium">{name}</span>
         </div>
@@ -159,41 +163,49 @@ export function FileList() {
       title: t('files.table.actions'),
       render: (_, file) => (
         <div className="flex gap-2">
-          {file.mimeType.startsWith('image/') ? (
-            <Tooltip title={t('files.preview')}>
+          <PermissionGuard permission={PermissionKeys.FILE_READ}>
+            <>
+              {file.mimeType.startsWith('image/') ? (
+                <Tooltip title={t('files.preview')}>
+                  <Button
+                    size="small"
+                    aria-label={t('files.preview')}
+                    icon={<Eye className="size-4" />}
+                    onClick={() => setPreviewFile(file)}
+                  />
+                </Tooltip>
+              ) : null}
+              <Tooltip title={t('files.download')}>
+                <Button
+                  size="small"
+                  aria-label={t('files.download')}
+                  icon={<Download className="size-4" />}
+                  onClick={() => void handleDownload(file)}
+                />
+              </Tooltip>
+            </>
+          </PermissionGuard>
+          <PermissionGuard permission={PermissionKeys.FILE_RENAME}>
+            <Tooltip title={t('files.rename')}>
               <Button
                 size="small"
-                aria-label={t('files.preview')}
-                icon={<Eye className="size-4" />}
-                onClick={() => setPreviewFile(file)}
+                aria-label={t('files.rename')}
+                icon={<Pencil className="size-4" />}
+                onClick={() => openRenameModal(file)}
               />
             </Tooltip>
-          ) : null}
-          <Tooltip title={t('files.download')}>
-            <Button
-              size="small"
-              aria-label={t('files.download')}
-              icon={<Download className="size-4" />}
-              onClick={() => void handleDownload(file)}
-            />
-          </Tooltip>
-          <Tooltip title={t('files.rename')}>
-            <Button
-              size="small"
-              aria-label={t('files.rename')}
-              icon={<Pencil className="size-4" />}
-              onClick={() => openRenameModal(file)}
-            />
-          </Tooltip>
-          <Tooltip title={t('files.delete')}>
-            <Button
-              size="small"
-              danger
-              aria-label={t('files.delete')}
-              icon={<Trash2 className="size-4" />}
-              onClick={() => confirmDelete(file)}
-            />
-          </Tooltip>
+          </PermissionGuard>
+          <PermissionGuard permission={PermissionKeys.FILE_DELETE}>
+            <Tooltip title={t('files.delete')}>
+              <Button
+                size="small"
+                danger
+                aria-label={t('files.delete')}
+                icon={<Trash2 className="size-4" />}
+                onClick={() => confirmDelete(file)}
+              />
+            </Tooltip>
+          </PermissionGuard>
         </div>
       ),
     },
@@ -209,11 +221,13 @@ export function FileList() {
           { label: t('files.summary.currentResults'), value: filteredFiles.length },
         ]}
         actions={
-          <Upload accept="*/*" beforeUpload={handleUpload} maxCount={1} showUploadList={false}>
-            <Button type="primary" icon={<UploadCloud className="size-4" />} loading={uploadMutation.isPending}>
-              {t('files.upload')}
-            </Button>
-          </Upload>
+          <PermissionGuard permission={PermissionKeys.FILE_UPLOAD}>
+            <Upload accept="*/*" beforeUpload={handleUpload} maxCount={1} showUploadList={false}>
+              <Button type="primary" icon={<UploadCloud className="size-4" />} loading={uploadMutation.isPending}>
+                {t('files.upload')}
+              </Button>
+            </Upload>
+          </PermissionGuard>
         }
       />
 
@@ -247,43 +261,47 @@ export function FileList() {
         />
       </section>
 
-      <Modal
-        title={previewFile?.name}
-        open={Boolean(previewFile)}
-        onCancel={() => setPreviewFile(null)}
-        footer={null}
-        destroyOnHidden
-      >
-        {previewFile ? (
-          <img
-            src={resolveApiUrl(previewFile.contentUrl)}
-            alt={previewFile.name}
-            crossOrigin="use-credentials"
-            className="block w-full rounded"
-          />
-        ) : null}
-      </Modal>
+      <PermissionGuard permission={PermissionKeys.FILE_READ}>
+        <Modal
+          title={previewFile?.name}
+          open={Boolean(previewFile)}
+          onCancel={() => setPreviewFile(null)}
+          footer={null}
+          destroyOnHidden
+        >
+          {previewFile ? (
+            <img
+              src={resolveApiUrl(previewFile.contentUrl)}
+              alt={previewFile.name}
+              crossOrigin="use-credentials"
+              className="block w-full rounded"
+            />
+          ) : null}
+        </Modal>
+      </PermissionGuard>
 
-      <Modal
-        title={t('files.renameTitle')}
-        open={Boolean(renamingFile)}
-        onCancel={() => setRenamingFile(null)}
-        onOk={() => void form.submit()}
-        okText={t('common.save')}
-        cancelText={t('common.cancel')}
-        confirmLoading={renameMutation.isPending}
-        destroyOnHidden
-      >
-        <Form form={form} layout="vertical" onFinish={handleRename}>
-          <Form.Item
-            name="name"
-            label={t('files.table.name')}
-            rules={[{ message: t('files.renameRequired'), required: true }]}
-          >
-            <Input placeholder={t('files.renamePlaceholder')} />
-          </Form.Item>
-        </Form>
-      </Modal>
+      <PermissionGuard permission={PermissionKeys.FILE_RENAME}>
+        <Modal
+          title={t('files.renameTitle')}
+          open={Boolean(renamingFile)}
+          onCancel={() => setRenamingFile(null)}
+          onOk={() => void form.submit()}
+          okText={t('common.save')}
+          cancelText={t('common.cancel')}
+          confirmLoading={renameMutation.isPending}
+          destroyOnHidden
+        >
+          <Form form={form} layout="vertical" onFinish={handleRename}>
+            <Form.Item
+              name="name"
+              label={t('files.table.name')}
+              rules={[{ message: t('files.renameRequired'), required: true }]}
+            >
+              <Input placeholder={t('files.renamePlaceholder')} />
+            </Form.Item>
+          </Form>
+        </Modal>
+      </PermissionGuard>
     </div>
   )
 }

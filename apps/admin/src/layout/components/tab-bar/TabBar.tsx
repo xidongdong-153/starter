@@ -1,6 +1,9 @@
 import type { Tab } from '@admin/stores'
 import type { MenuProps } from 'antd'
 
+import { useCurrentPermissionsQuery } from '@admin/api/authorization'
+import { hasPermission } from '@admin/app/authorization/permissions'
+import { appRouteRecords } from '@admin/app/router/records'
 import { useMobile } from '@admin/hooks/useMobile'
 import { useTabBarStore } from '@admin/stores'
 import { useQueryClient } from '@tanstack/react-query'
@@ -17,6 +20,9 @@ const scrollContainerStyle = {
 } as const
 
 const contextMenuTrigger: Array<'contextMenu'> = ['contextMenu']
+const routePermissions = new Map(
+  appRouteRecords.flatMap((route) => (route.permission ? [[route.id, route.permission] as const] : [])),
+)
 
 /**
  * 标签栏。支持切换、关闭、右键菜单、滚轮滚动和触摸拖拽。
@@ -36,6 +42,17 @@ export function TabBar() {
   const tabs = useTabBarStore((state) => state.tabs)
   const scrollContainerRef = useRef<HTMLDivElement>(null)
   const isMobile = useMobile()
+  const permissionsQuery = useCurrentPermissionsQuery()
+  const visibleTabs = useMemo(
+    () =>
+      tabs.filter((tab) => {
+        const permission = tab.routeId ? routePermissions.get(tab.routeId) : undefined
+        return (
+          !permission || (permissionsQuery.isSuccess && hasPermission(permissionsQuery.data.permissions, permission))
+        )
+      }),
+    [permissionsQuery.data?.permissions, permissionsQuery.isSuccess, tabs],
+  )
 
   const navigateToPath = useCallback(
     (path: null | string) => {
@@ -100,11 +117,11 @@ export function TabBar() {
 
   const getContextMenuItems = useCallback(
     (tab: Tab): MenuProps['items'] => {
-      const targetIndex = tabs.findIndex((item) => item.id === tab.id)
-      const hasClosableLeftTabs = tabs.some((item, index) => index < targetIndex && item.closable !== false)
-      const hasClosableRightTabs = tabs.some((item, index) => index > targetIndex && item.closable !== false)
-      const hasClosableOtherTabs = tabs.some((item) => item.id !== tab.id && item.closable !== false)
-      const hasClosableTabs = tabs.some((item) => item.closable !== false)
+      const targetIndex = visibleTabs.findIndex((item) => item.id === tab.id)
+      const hasClosableLeftTabs = visibleTabs.some((item, index) => index < targetIndex && item.closable !== false)
+      const hasClosableRightTabs = visibleTabs.some((item, index) => index > targetIndex && item.closable !== false)
+      const hasClosableOtherTabs = visibleTabs.some((item) => item.id !== tab.id && item.closable !== false)
+      const hasClosableTabs = visibleTabs.some((item) => item.closable !== false)
 
       return [
         {
@@ -155,12 +172,21 @@ export function TabBar() {
         },
       ]
     },
-    [handleCloseAll, handleCloseLeft, handleCloseOthers, handleCloseRight, handleCloseTab, handleRefreshTab, t, tabs],
+    [
+      handleCloseAll,
+      handleCloseLeft,
+      handleCloseOthers,
+      handleCloseRight,
+      handleCloseTab,
+      handleRefreshTab,
+      t,
+      visibleTabs,
+    ],
   )
 
   const contextMenuByTabId = useMemo(
-    () => new Map(tabs.map((tab) => [tab.id, { items: getContextMenuItems(tab) }])),
-    [getContextMenuItems, tabs],
+    () => new Map(visibleTabs.map((tab) => [tab.id, { items: getContextMenuItems(tab) }])),
+    [getContextMenuItems, visibleTabs],
   )
 
   const handleWheel = useCallback((event: WheelEvent) => {
@@ -208,7 +234,7 @@ export function TabBar() {
     })
 
     return () => cancelAnimationFrame(rafId)
-  }, [activeTabId, tabs.length])
+  }, [activeTabId, visibleTabs.length])
 
   useEffect(() => {
     const container = scrollContainerRef.current
@@ -241,7 +267,7 @@ export function TabBar() {
           className="scrollbar-hide flex flex-1 items-center gap-x-1 overflow-x-auto"
           style={scrollContainerStyle}
         >
-          {tabs.map((tab) => {
+          {visibleTabs.map((tab) => {
             const label = tab.translateLabel === false ? tab.label : t(tab.label)
             const title = tab.description ? `${label}\n${tab.description}` : label
 

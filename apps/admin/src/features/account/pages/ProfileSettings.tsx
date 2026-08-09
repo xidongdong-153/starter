@@ -1,5 +1,7 @@
 import type { AccountProfile, UpdateProfileInput } from '@starter/contracts'
 
+import { PermissionKeys } from '@starter/contracts'
+
 import { resolveApiUrl } from '@admin/api/client'
 import { useFilesQuery } from '@admin/api/files'
 import {
@@ -8,7 +10,8 @@ import {
   useSetProfileAvatarMutation,
   useUpdateProfileMutation,
 } from '@admin/api/profile'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { usePermission } from '@admin/hooks/usePermission'
 import { formatDate } from '@admin/utils/dayjs'
 import { Alert, App, Button, Form, Input, Spin, Switch, Tag } from 'antd'
 import { Eraser, KeyRound, Save, UserRound } from 'lucide-react'
@@ -94,8 +97,10 @@ export function ProfileSettings() {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const [form] = Form.useForm<ProfileFormValues>()
+  const fileListPermission = usePermission(PermissionKeys.FILE_LIST)
+  const fileReadPermission = usePermission(PermissionKeys.FILE_READ)
   const profileQuery = useProfileQuery()
-  const filesQuery = useFilesQuery()
+  const filesQuery = useFilesQuery({ enabled: fileListPermission.allowed && fileReadPermission.allowed })
   const updateProfileMutation = useUpdateProfileMutation()
   const setAvatarMutation = useSetProfileAvatarMutation()
   const clearAvatarMutation = useClearProfileAvatarMutation()
@@ -183,34 +188,49 @@ export function ProfileSettings() {
                   </div>
                 </div>
 
-                {imageFiles.length > 0 ? (
-                  <div className="grid grid-cols-3 gap-2">
-                    {imageFiles.map((file) => (
-                      <button
-                        type="button"
-                        key={file.id}
-                        title={`${t('profile.selectAvatar')}: ${file.name}`}
-                        disabled={setAvatarMutation.isPending}
-                        onClick={() => void handleSelectAvatar(file.id)}
-                        className="border-border-subtle hover:border-primary focus-visible:border-primary aspect-square cursor-pointer overflow-hidden rounded-lg border transition-colors focus-visible:outline-none"
-                      >
-                        <img
-                          src={resolveApiUrl(file.contentUrl)}
-                          alt=""
-                          crossOrigin="use-credentials"
-                          className="block size-full object-cover"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="border-border-subtle bg-surface-muted/50 rounded-lg border px-4 py-3">
-                    <p className="text-fg-muted text-sm">{t('profile.avatarEmpty')}</p>
-                    <Link to={'/files' as never} className="text-primary mt-2 inline-block text-sm">
-                      {t('profile.goFiles')}
-                    </Link>
-                  </div>
-                )}
+                <PermissionGuard permission={PermissionKeys.FILE_LIST}>
+                  <PermissionGuard permission={PermissionKeys.FILE_READ}>
+                    {filesQuery.isLoading ? (
+                      <div className="flex min-h-24 items-center justify-center">
+                        <Spin size="small" />
+                      </div>
+                    ) : filesQuery.error ? (
+                      <Alert
+                        showIcon
+                        type="error"
+                        message={t('profile.filesLoadFailed')}
+                        action={<Button onClick={() => void filesQuery.refetch()}>{t('common.retry')}</Button>}
+                      />
+                    ) : imageFiles.length > 0 ? (
+                      <div className="grid grid-cols-3 gap-2">
+                        {imageFiles.map((file) => (
+                          <button
+                            type="button"
+                            key={file.id}
+                            title={`${t('profile.selectAvatar')}: ${file.name}`}
+                            disabled={setAvatarMutation.isPending}
+                            onClick={() => void handleSelectAvatar(file.id)}
+                            className="border-border-subtle hover:border-primary focus-visible:border-primary aspect-square cursor-pointer overflow-hidden rounded-lg border transition-colors focus-visible:outline-none"
+                          >
+                            <img
+                              src={resolveApiUrl(file.contentUrl)}
+                              alt=""
+                              crossOrigin="use-credentials"
+                              className="block size-full object-cover"
+                            />
+                          </button>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="border-border-subtle bg-surface-muted/50 rounded-lg border px-4 py-3">
+                        <p className="text-fg-muted text-sm">{t('profile.avatarEmpty')}</p>
+                        <Link to={'/files' as never} className="text-primary mt-2 inline-block text-sm">
+                          {t('profile.goFiles')}
+                        </Link>
+                      </div>
+                    )}
+                  </PermissionGuard>
+                </PermissionGuard>
 
                 <Button
                   icon={<Eraser className="size-4" />}

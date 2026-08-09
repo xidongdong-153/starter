@@ -3,11 +3,13 @@ import type { HonoEnv } from "@api/shared/hono-env.js";
 import { zValidator } from "@hono/zod-validator";
 import {
   ApiErrorCodes,
+  PermissionKeys,
   renameFileSchema,
   uuidSchema,
 } from "@starter/contracts";
 import {
   apiSuccessResponse,
+  forbiddenResponse,
   invalidRequestResponse,
   notFoundResponse,
   okSchema,
@@ -16,6 +18,7 @@ import {
 import { fileItemSchema, fileListSchema } from "./files.openapi.js";
 import { createRoute, OpenAPIHono, z } from "@hono/zod-openapi";
 import { createRequireAuth } from "@api/modules/auth/index.js";
+import { createRequirePermission } from "@api/modules/authorization/index.js";
 import { AppError } from "@api/shared/app-error.js";
 import { createSuccessResponse } from "@api/shared/response.js";
 import { throwValidationError } from "@api/shared/validator.js";
@@ -37,6 +40,7 @@ const listFilesRoute = createRoute({
       "FileListResponse",
     ),
     401: unauthorizedResponse,
+    403: forbiddenResponse,
   },
 });
 
@@ -60,6 +64,7 @@ const uploadFileRoute = createRoute({
       "UploadedFileResponse",
     ),
     401: unauthorizedResponse,
+    403: forbiddenResponse,
     413: invalidRequestResponse,
   },
 });
@@ -86,6 +91,7 @@ const renameFileRoute = createRoute({
     ),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
+    403: forbiddenResponse,
     404: notFoundResponse,
   },
 });
@@ -99,78 +105,112 @@ const removeFileRoute = createRoute({
   responses: {
     200: apiSuccessResponse(okSchema, "删除文件结果", "RemoveFileResponse"),
     401: unauthorizedResponse,
+    403: forbiddenResponse,
     404: notFoundResponse,
   },
 });
 
 export function createFilesRoute(runtime: AppRuntime) {
   const requireAuth = createRequireAuth(runtime.auth);
+  const requireFileList = createRequirePermission(
+    runtime.db,
+    PermissionKeys.FILE_LIST,
+  );
+  const requireFileRead = createRequirePermission(
+    runtime.db,
+    PermissionKeys.FILE_READ,
+  );
+  const requireFileUpload = createRequirePermission(
+    runtime.db,
+    PermissionKeys.FILE_UPLOAD,
+  );
+  const requireFileRename = createRequirePermission(
+    runtime.db,
+    PermissionKeys.FILE_RENAME,
+  );
+  const requireFileDelete = createRequirePermission(
+    runtime.db,
+    PermissionKeys.FILE_DELETE,
+  );
   const service = createFilesService(
     runtime.storage,
     createFilesRepository(runtime.db),
   );
   const app = new OpenAPIHono<HonoEnv>();
 
-  app.openapi({ ...listFilesRoute, middleware: requireAuth }, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.list(c.var.currentUserId),
-        c.var.requestId,
+  app.openapi(
+    { ...listFilesRoute, middleware: [requireAuth, requireFileList] },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.list(c.var.currentUserId),
+          c.var.requestId,
+        ),
+        200,
       ),
-      200,
-    ),
   );
 
-  app.openapi({ ...uploadFileRoute, middleware: requireAuth }, async (c) => {
-    const form = c.req.valid("form");
-    const file = form.file;
-    if (!(file instanceof File)) {
-      throw new AppError(
-        ApiErrorCodes.COMMON_INVALID_REQUEST,
-        "请选择文件",
-        400,
+  app.openapi(
+    { ...uploadFileRoute, middleware: [requireAuth, requireFileUpload] },
+    async (c) => {
+      const form = c.req.valid("form");
+      const file = form.file;
+      if (!(file instanceof File)) {
+        throw new AppError(
+          ApiErrorCodes.COMMON_INVALID_REQUEST,
+          "请选择文件",
+          400,
+        );
+      }
+      return c.json(
+        createSuccessResponse(
+          await service.upload(c.var.currentUserId, file),
+          c.var.requestId,
+        ),
+        201,
       );
-    }
-    return c.json(
-      createSuccessResponse(
-        await service.upload(c.var.currentUserId, file),
-        c.var.requestId,
-      ),
-      201,
-    );
-  });
+    },
+  );
 
   app.get(
     "/api/files/:fileId/content",
     requireAuth,
+    requireFileRead,
     zValidator("param", fileParamsSchema, (result) => {
       if (!result.success) throwValidationError(result.error);
     }),
     (c) => service.open(c.req.valid("param").fileId, c.var.currentUserId),
   );
 
-  app.openapi({ ...renameFileRoute, middleware: requireAuth }, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.rename(
-          c.req.valid("param").fileId,
-          c.var.currentUserId,
-          c.req.valid("json").name,
+  app.openapi(
+    { ...renameFileRoute, middleware: [requireAuth, requireFileRename] },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.rename(
+            c.req.valid("param").fileId,
+            c.var.currentUserId,
+            c.req.valid("json").name,
+          ),
+          c.var.requestId,
         ),
-        c.var.requestId,
+        200,
       ),
-      200,
-    ),
   );
 
-  app.openapi({ ...removeFileRoute, middleware: requireAuth }, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.remove(c.req.valid("param").fileId, c.var.currentUserId),
-        c.var.requestId,
+  app.openapi(
+    { ...removeFileRoute, middleware: [requireAuth, requireFileDelete] },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.remove(
+            c.req.valid("param").fileId,
+            c.var.currentUserId,
+          ),
+          c.var.requestId,
+        ),
+        200,
       ),
-      200,
-    ),
   );
 
   return app;

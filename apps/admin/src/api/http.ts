@@ -1,5 +1,11 @@
 import { resolveApiUrl } from './client'
 
+export type ApiAccessErrorStatus = 401 | 403
+
+type ApiAccessErrorListener = (status: ApiAccessErrorStatus) => void
+
+const apiAccessErrorListeners = new Set<ApiAccessErrorListener>()
+
 interface ApiErrorBody {
   error?: { message?: unknown }
   message?: unknown
@@ -31,6 +37,22 @@ export function isForbiddenError(error: unknown): error is ApiRequestError {
   return error instanceof ApiRequestError && error.status === 403
 }
 
+export function subscribeApiAccessError(listener: ApiAccessErrorListener) {
+  apiAccessErrorListeners.add(listener)
+
+  return () => {
+    apiAccessErrorListeners.delete(listener)
+  }
+}
+
+function notifyApiAccessError(status: number) {
+  if (status !== 401 && status !== 403) {
+    return
+  }
+
+  apiAccessErrorListeners.forEach((listener) => listener(status))
+}
+
 /**
  * 调用 API 服务并读取 JSON。
  * FormData 请求不设置 Content-Type，交给浏览器处理 boundary。
@@ -53,7 +75,7 @@ export async function fetchApi(path: string, init?: RequestInit): Promise<Respon
   const isFormData = init?.body instanceof FormData
 
   try {
-    return await fetch(resolveApiUrl(path), {
+    const response = await fetch(resolveApiUrl(path), {
       ...init,
       credentials: 'include',
       headers: {
@@ -61,6 +83,9 @@ export async function fetchApi(path: string, init?: RequestInit): Promise<Respon
         ...init?.headers,
       },
     })
+
+    notifyApiAccessError(response.status)
+    return response
   } catch {
     throw new ApiRequestError(0, 'API 服务连不上，检查服务是否启动')
   }

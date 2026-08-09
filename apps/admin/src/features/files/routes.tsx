@@ -1,5 +1,6 @@
 import type { AdminRouteRecord } from '@admin/app/router/types'
 
+import { PermissionKeys } from '@starter/contracts'
 import { lazyRouteComponent } from '@tanstack/react-router'
 import { Files } from 'lucide-react'
 
@@ -16,6 +17,7 @@ export const filesRoutes: AdminRouteRecord[] = [
       order: 10,
     },
     path: '/files',
+    permission: PermissionKeys.FILE_LIST,
     title: 'menu.fileList',
   },
 ]

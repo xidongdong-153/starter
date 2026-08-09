@@ -1,4 +1,6 @@
+import { useCurrentPermissionsQuery } from '@admin/api/authorization'
 import { buildNavigationMenuItems } from '@admin/app/navigation/navigation'
+import { PermissionQueryStatus } from '@admin/components/common'
 import { useSettingStore } from '@admin/stores'
 import { Drawer } from 'antd'
 import { useMemo } from 'react'
@@ -32,7 +34,11 @@ export function MobileDrawer() {
   const { t } = useTranslation()
   const isMobileMenuOpen = useSettingStore((state) => state.isMobileMenuOpen)
   const setMobileMenuOpen = useSettingStore((state) => state.setMobileMenuOpen)
-  const menuItems = useMemo(() => buildNavigationMenuItems(t), [t])
+  const permissionsQuery = useCurrentPermissionsQuery()
+  const menuItems = useMemo(
+    () => buildNavigationMenuItems(permissionsQuery.isSuccess ? permissionsQuery.data.permissions : undefined, t),
+    [permissionsQuery.data?.permissions, permissionsQuery.isSuccess, t],
+  )
 
   const onClose = () => setMobileMenuOpen(false)
 
@@ -46,6 +52,11 @@ export function MobileDrawer() {
       classNames={drawerClassNames}
       styles={drawerStyles}
     >
+      <PermissionQueryStatus
+        isError={permissionsQuery.isError}
+        isLoading={permissionsQuery.isPending}
+        onRetry={() => void permissionsQuery.refetch()}
+      />
       <NavigationMenu mode="inline" items={menuItems} onMenuClick={onClose} />
     </Drawer>
   )

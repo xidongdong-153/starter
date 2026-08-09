@@ -52,13 +52,26 @@ pnpm --filter @starter/api db:migrate
 pnpm --filter @starter/api db:generate
 ```
 
-API 不会在启动时自动修改 schema。
+API 不会在启动时自动修改 schema。migration 会创建 `admin`、`operator`、`viewer` 三个系统角色；已有用户和新注册用户默认获得 `operator`。
+
+要显式设置管理员时，按下面顺序操作：
+
+1. 执行 migration。
+2. 注册目标账号。
+3. 在 `apps/api/.env.development` 设置 `AUTH_BOOTSTRAP_ADMIN_EMAIL`，值必须是已存在账号的邮箱。
+4. 执行 bootstrap 命令：
+
+```bash
+pnpm --filter @starter/api auth:bootstrap-admin
+```
+
+邮箱未配置、用户不存在、授权 migration 未执行时命令会返回错误并以非零状态退出。重复执行不会添加重复角色关系。API 启动和普通注册不会自动创建管理员。
 
 ## API 架构
 
 `apps/api/src/bootstrap/create-runtime.ts` 创建 SQLite、文件存储和 Better Auth。`apps/api/src/bootstrap/create-app.ts` 接收 runtime，注册中间件、错误处理、404 和一级路由。`apps/api/src/index.ts` 只初始化存储、监听端口并在进程退出时关闭 SQLite。
 
-业务代码按模块放在 `apps/api/src/modules/system`、`auth`、`profile` 和 `files`。涉及数据库的请求按 `route -> service -> repository` 执行，presenter 把数据库记录转成 `packages/contracts` 中的响应 DTO。数据库 schema 和 migration 仍在 `apps/api/src/infra/db`，本地文件实现放在 `apps/api/src/infra/storage`。
+业务代码按模块放在 `apps/api/src/modules/system`、`auth`、`profile`、`files` 和 `authorization`。涉及数据库的请求按 `route -> service -> repository` 执行，presenter 把数据库记录转成 `packages/contracts` 中的响应 DTO。数据库 schema 和 migration 仍在 `apps/api/src/infra/db`，本地文件实现放在 `apps/api/src/infra/storage`。
 
 API 自己实现的 JSON 接口返回 `{ ok, data, meta }` 或 `{ ok, error, meta }`。`/api/auth/*` 由 Better Auth 直接处理，不使用这层响应包装。文件下载和公开头像接口继续返回文件内容。
 

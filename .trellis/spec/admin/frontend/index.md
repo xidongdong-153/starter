@@ -39,4 +39,5 @@ pnpm --filter @starter/admin format:check
 - `hook-guidelines.md`：React Query hooks、UI hooks 和副作用清理。
 - `state-management.md`：React Query、Zustand、表单和局部 state 的归属。
 - `type-safety.md`：contracts DTO、表单转换、路由和 store 类型。
+- `authorization-guidelines.md`：权限 query、路由、菜单、标签栏、403 和文件动作控制。
 - `quality-guidelines.md`：检查命令和页面交互质量要求。

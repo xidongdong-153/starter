@@ -1,7 +1,8 @@
 import { apiBaseUrl } from '@admin/api/client'
 import { useProfileQuery } from '@admin/api/profile'
 import { useSystemHealthQuery } from '@admin/api/system'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { PermissionKeys } from '@starter/contracts'
 import { Link } from '@tanstack/react-router'
 import { Button, Tag } from 'antd'
 import { ArrowRight, Files, RefreshCw, UserRound } from 'lucide-react'
@@ -25,12 +26,6 @@ export function Home() {
       icon: <UserRound size={18} />,
       to: '/settings/profile' as const,
       title: t('home.entries.profile'),
-    },
-    {
-      description: t('home.entries.filesDescription'),
-      icon: <Files size={18} />,
-      to: '/files' as const,
-      title: t('home.entries.files'),
     },
   ]
 
@@ -72,6 +67,21 @@ export function Home() {
               <ArrowRight className="text-fg-muted mt-1 size-4 shrink-0" />
             </Link>
           ))}
+          <PermissionGuard permission={PermissionKeys.FILE_LIST}>
+            <Link
+              to={'/files' as never}
+              className="hover:bg-surface-muted/60 flex items-start justify-between gap-4 px-5 py-4 transition-colors"
+            >
+              <div className="min-w-0">
+                <div className="text-fg flex items-center gap-2 text-sm font-medium">
+                  <Files size={18} />
+                  {t('home.entries.files')}
+                </div>
+                <p className="text-fg-muted mt-2 text-sm leading-6">{t('home.entries.filesDescription')}</p>
+              </div>
+              <ArrowRight className="text-fg-muted mt-1 size-4 shrink-0" />
+            </Link>
+          </PermissionGuard>
         </div>
       </section>
 

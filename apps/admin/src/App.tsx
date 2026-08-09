@@ -1,3 +1,5 @@
+import { authorizationQueryKeys } from '@admin/api/authorization'
+import { subscribeApiAccessError } from '@admin/api/http'
 import { queryClient } from '@admin/app/query-client'
 import { router } from '@admin/app/router'
 import { useSettingStore } from '@admin/stores'
@@ -8,6 +10,7 @@ import { RouterProvider } from '@tanstack/react-router'
 import { App as AntdApp, ConfigProvider } from 'antd'
 import enUS from 'antd/locale/en_US'
 import zhCN from 'antd/locale/zh_CN'
+import { useEffect } from 'react'
 
 import './i18n'
 
@@ -21,6 +24,21 @@ export function App() {
   const language = useSettingStore((state) => state.language)
   const themeConfig = getAntdThemeConfig(adminTheme)
   const primaryColor = getPrimaryColorByTheme(adminTheme)
+
+  useEffect(() => {
+    return subscribeApiAccessError((status) => {
+      if (status === 401) {
+        queryClient.clear()
+        void router.navigate({ replace: true, to: '/login' as never })
+        return
+      }
+
+      void queryClient.invalidateQueries({
+        queryKey: authorizationQueryKeys.current(),
+        refetchType: 'active',
+      })
+    })
+  }, [])
 
   return (
     <ConfigProvider

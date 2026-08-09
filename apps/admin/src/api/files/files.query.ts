@@ -8,10 +8,11 @@ export const filesQueryKeys = {
   list: () => [...filesQueryKeys.all, 'list'] as const,
 }
 
-export function useFilesQuery() {
+export function useFilesQuery(options: { enabled?: boolean } = {}) {
   return useQuery({
     queryKey: filesQueryKeys.list(),
     queryFn: getFiles,
+    enabled: options.enabled,
   })
 }
 

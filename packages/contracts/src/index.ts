@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const ApiErrorCodes = {
+  AUTH_FORBIDDEN: 'AUTH.FORBIDDEN',
   AUTH_SESSION_INVALID: 'AUTH.SESSION_INVALID',
   AUTH_UNAUTHENTICATED: 'AUTH.UNAUTHENTICATED',
   COMMON_INVALID_REQUEST: 'COMMON.INVALID_REQUEST',
@@ -48,6 +49,85 @@ export function buildFailure<TDetails>(error: ApiError<TDetails>, meta: ApiMeta)
 
 export const uuidSchema = z.uuidv7()
 export const socialLinksSchema = z.array(z.url()).max(8)
+
+export const PermissionKeys = {
+  AUTHORIZATION_MANAGE: 'authorization:manage',
+  AUTHORIZATION_READ: 'authorization:read',
+  FILE_DELETE: 'file:delete',
+  FILE_LIST: 'file:list',
+  FILE_READ: 'file:read',
+  FILE_RENAME: 'file:rename',
+  FILE_UPLOAD: 'file:upload',
+} as const
+
+export const RoleKeys = {
+  ADMIN: 'admin',
+  OPERATOR: 'operator',
+  VIEWER: 'viewer',
+} as const
+
+export type Permission = (typeof PermissionKeys)[keyof typeof PermissionKeys]
+export type SystemRole = (typeof RoleKeys)[keyof typeof RoleKeys]
+
+export const permissionSchema = z.enum(PermissionKeys)
+export const roleKeySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_-]*$/)
+
+function uniqueArraySchema<T extends z.ZodType>(itemSchema: T) {
+  return z.array(itemSchema).superRefine((items, context) => {
+    if (new Set(items).size !== items.length) {
+      context.addIssue({ code: 'custom', message: '不能包含重复项' })
+    }
+  })
+}
+
+export const replaceUserRolesSchema = z.object({
+  roleKeys: uniqueArraySchema(roleKeySchema).min(1),
+})
+export const replaceRolePermissionsSchema = z.object({
+  permissionKeys: uniqueArraySchema(permissionSchema),
+})
+
+export type ReplaceUserRolesInput = z.infer<typeof replaceUserRolesSchema>
+export type ReplaceRolePermissionsInput = z.infer<typeof replaceRolePermissionsSchema>
+
+export interface CurrentPermissions {
+  roles: string[]
+  permissions: Permission[]
+  version: string
+}
+
+export interface AuthorizationUser {
+  id: string
+  name: string
+  email: string
+  roleKeys: string[]
+}
+
+export interface AuthorizationRole {
+  key: string
+  name: string
+  description: string | null
+  isSystem: boolean
+  permissionsEditable: boolean
+  permissionKeys: Permission[]
+}
+
+export interface AuthorizationPermission {
+  key: Permission
+  resource: string
+  action: string
+  description: string | null
+}
+
+export interface AuthorizationRoleCatalog {
+  roles: AuthorizationRole[]
+  permissions: AuthorizationPermission[]
+}
 
 export const updateProfileSchema = z.object({
   name: z.string().trim().min(1).max(80),

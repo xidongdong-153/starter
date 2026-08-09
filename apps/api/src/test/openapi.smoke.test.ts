@@ -9,7 +9,10 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
 
     const document = (await response.json()) as {
       openapi: string;
-      paths: Record<string, Record<string, unknown>>;
+      paths: Record<
+        string,
+        Record<string, { responses?: Record<string, unknown> }>
+      >;
       components?: { securitySchemes?: Record<string, unknown> };
     };
     expect(document.openapi).toBe("3.0.0");
@@ -17,6 +20,16 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(document.paths["/api/files"]?.post).toBeDefined();
     expect(document.paths["/api/profiles/{userId}"]?.get).toBeDefined();
     expect(document.paths["/api/files/{fileId}/content"]).toBeUndefined();
+    expect(document.paths["/api/me/permissions"]?.get).toBeDefined();
+    expect(document.paths["/api/authorization/users"]?.get).toBeDefined();
+    expect(
+      document.paths["/api/authorization/users/{userId}/roles"]?.put
+        ?.responses?.["403"],
+    ).toBeDefined();
+    expect(
+      document.paths["/api/authorization/roles/{roleKey}/permissions"]?.put
+        ?.responses?.["403"],
+    ).toBeDefined();
     expect(document.components?.securitySchemes?.cookieAuth).toBeDefined();
 
     const reference = await app.request("/reference");
