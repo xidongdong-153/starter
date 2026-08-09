@@ -7,7 +7,15 @@ const logger = createChildLogger(runtime.logger, "server");
 await runtime.storage.init();
 const app = createApp(runtime);
 const server = serve({ fetch: app.fetch, port: runtime.env.PORT }, (info) => {
-  logger.info({ port: info.port }, `API 已启动 http://localhost:${info.port}`);
+  const baseUrl = `http://localhost:${info.port}`;
+  if (runtime.env.OPENAPI_ENABLED) {
+    logger.info(
+      { port: info.port, openapi: `${baseUrl}/reference` },
+      `API 已启动 ${baseUrl}，OpenAPI 文档 ${baseUrl}/reference`,
+    );
+  } else {
+    logger.info({ port: info.port }, `API 已启动 ${baseUrl}`);
+  }
 });
 
 let closing = false;
