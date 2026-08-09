@@ -1,0 +1,9 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"核对 API route-service-repository 边界和后端质量命令"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"核对当前已实现的 RBAC、错误矩阵和安全边界"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"核对 Admin 路由、Query 和页面实现约定"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"核对前端权限查询、路由、菜单和 401/403 行为"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"核对共享 schema、DTO 和错误码边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 contracts、API、Admin 和数据库的跨层数据流"}
+{"file":".trellis/tasks/08-09-permission-role-evolution/research/current-implementation-audit.md","reason":"提供当前实现与旧方案的逐项差距和源码依据"}
+{"file":".trellis/tasks/08-09-permission-role-evolution/research/auth0-advanced-authorization.md","reason":"提供 Auth0 进阶授权能力、进入条件和官方来源"}
+{"file":".trellis/tasks/08-09-permission-role-evolution/research/better-auth-boundaries.md","reason":"提供 Better Auth 1.6.16 插件边界和角色事实来源约束"}

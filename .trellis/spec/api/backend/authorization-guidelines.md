@@ -166,3 +166,40 @@ app.openapi(
 ```
 
 middleware 决定动作资格，`service.remove` 继续依据 `currentUserId` 决定资源归属。
+
+## 8. 已批准的演进边界（尚未实现）
+
+> 本节记录任务 `permission-role-evolution` 的已批准规划。当前代码仍以第 2、3 节的已实现契约为准；后续实现必须另建任务并逐项更新本规范。
+
+### 8.1 默认产品画像
+
+- 默认脚手架是通用单租户后台，继续使用全局 User -> Role -> Permission RBAC。
+- `admin` 是平台根角色，不是 Organization role，也不是 Better Auth Admin plugin 的 `user.role`。
+- `operator` 和 `viewer` 保留为受保护的内置角色；自定义角色生命周期排在授权审计之后。
+- Organization、API Key、M2M 和 FGA 不进入默认 schema 或接口。
+
+### 8.2 授权治理基础
+
+下一项实现任务必须覆盖所有 HTTP 授权控制面写操作，而不只是 `admin` 角色变更：
+
+- repository transaction 内重新检查 actor 的活动 `admin` 关系。
+- 普通角色即使拥有 `authorization:manage`，也不能替换任何用户角色或角色 permission。
+- 现有 self-mutation 继续返回 403。
+- 撤销目标用户最后一个活动 `admin` 时返回 `AUTH.LAST_PLATFORM_ADMIN` 和 409；关系和审计事件都不提交。
+- before 与 after 相同的幂等 mutation 不重写关系，也不写审计事件。
+- 实际发生的每次 mutation 只写一条授权审计事件，关系变更和事件在同一 transaction 提交。
+- HTTP actor 使用当前用户和 request ID；bootstrap 与 Better Auth hook 使用 `actor_type=system`，`actor_id` 分别为稳定值 `auth:bootstrap-admin`、`better-auth:user.create`，缺少 request ID 时保持为空。
+- 失败和拒绝不自动视为成功审计；当前 `AppError` 4xx 也不会自动写 Pino，拒绝日志需要单独设计。
+
+授权治理基础阶段的事件 action 为：`user_roles.replaced`、`role_permissions.replaced`、`user_roles.initialized`、`platform_admin.granted`、`platform_admin.revoked`。角色生命周期阶段再增加 `role.created`、`role.updated`、`role.archived`、`role.restored`。审计 DTO 由 contracts 按 action 提供判别联合，Admin 不直接解析数据库 JSON。
+
+### 8.3 生命周期顺序
+
+先实现平台根边界、审计表、审计查询和 API/Admin 回归测试，再实现自定义角色创建、metadata 修改、permission 替换、归档、恢复和影响查询。角色 key 创建后不可修改；系统角色不能归档或删除；有活动用户分配的自定义角色不能归档。不增加物理删除或 permission 创建接口。
+
+### 8.4 条件能力
+
+- 资源范围先由业务 service 和精确 permission 组合表达，不预先增加通配符、继承或策略 DSL。
+- 多租户启用时，Better Auth Organization plugin 必须成为 organization、member 和组织角色的唯一来源；不能给当前全局 role 表增加第二套组织角色事实。
+- API Key、M2M principal 与人类用户分开；不能写入 `user_roles`。
+- FGA/OpenFGA 只有在对象关系授权成为主要需求后单独评估。

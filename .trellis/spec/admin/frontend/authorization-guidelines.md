@@ -98,3 +98,30 @@ const menuItems = buildNavigationMenuItems(
 ```
 
 同一 permission 集合还必须传给 route guard、`PermissionGuard` 和 `TabBar` 过滤，保证不同入口的体验一致。
+
+## 8. 已批准的演进边界（尚未实现）
+
+> 本节记录任务 `permission-role-evolution` 的已批准规划。当前 Admin 仍按前面各节的已实现行为运行；后续实现必须另建任务并同步更新 API、contracts 和前端规范。
+
+### 8.1 审计页面与查询
+
+下一项实现任务会增加只读 authorization audit 页面：
+
+- 通过独立的 `authorization-audit:read` permission 控制 route、菜单、标签和页面入口。
+- 使用 API 返回的结构化 before/after DTO；组件不接收数据库 JSON 字符串，也不自行 `JSON.parse`。
+- 使用现有 Query adapter、query keys、分页和筛选模式，不把审计数据写入 Zustand 或 localStorage。
+- loading、空数据、请求失败、403 和 401 分别处理；403 保留 session，401 清理 Query cache 并跳登录。
+- 长 permission key、用户 ID 和 request ID 必须在桌面和移动视口内保持可读，不得撑破表格或遮挡操作。
+
+### 8.2 权限回归测试
+
+Admin 新增 Vitest `test` script 后，根目录 `pnpm test` 必须同时运行 API 与 Admin 测试。最小回归范围包括：
+
+- admin、operator、viewer 的菜单、标签、直接 URL 和按钮差异。
+- 权限 query 的 loading、失败重试、403 刷新和 401 跳转。
+- 授权页面的加载、空数据、错误、保存 pending 和 admin 只读状态。
+- 前端 permission 隐藏不能替代 API guard；直接请求仍以服务端 403 为准。
+
+### 8.3 条件能力的前端边界
+
+Organization、机器身份和 FGA 不在默认 Admin 路由、导航记录或权限类型中预留页面。进入对应业务任务后，再根据其唯一 principal、组织上下文或外部 provider 合同增加独立 feature；不把平台 `admin` 自动显示为每个 Organization 的管理员。
