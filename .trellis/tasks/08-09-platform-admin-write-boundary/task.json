@@ -3,7 +3,7 @@
   "name": "platform-admin-write-boundary",
   "title": "平台管理员写入边界",
   "description": "把 actor 平台管理员校验放进授权写 transaction，加最后一个平台管理员保护和 AUTH.LAST_PLATFORM_ADMIN 409",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

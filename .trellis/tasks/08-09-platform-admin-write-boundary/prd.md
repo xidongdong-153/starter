@@ -92,12 +92,12 @@
 
 ## Acceptance Criteria
 
-- [ ] 持有 `authorization:manage` 的普通角色不能替换任何用户角色，也不能修改任何角色权限，返回 403。
-- [ ] 活动 `admin` 执行两个写操作正常成功。
-- [ ] 平台管理员检查在写 transaction 内进行，可通过代码位置验证。
-- [ ] 提交相同集合时不重写关系，`assignedAt` 保持不变。
-- [ ] repository 层测试证明撤销最后一个活动平台管理员返回 `last-platform-admin`，关系不变。
-- [ ] `AUTH.LAST_PLATFORM_ADMIN` 已加入 contracts，`replaceUserRolesRoute` 声明 409。
-- [ ] 系统入口（`bootstrap-admin`）跳过 actor 检查，仍能正常执行。
-- [ ] `git diff` 确认 `apps/admin` 未被修改。
-- [ ] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。
+- [x] 持有 `authorization:manage` 的普通角色不能替换任何用户角色，也不能修改任何角色权限，返回 403。
+- [x] 活动 `admin` 执行两个写操作正常成功。
+- [x] 平台管理员检查在写 transaction 内进行，可通过代码位置验证。
+- [x] 提交相同集合时不重写关系，`assignedAt` 保持不变。
+- [x] repository 层测试证明撤销最后一个活动平台管理员返回 `last-platform-admin`，关系不变。
+- [x] `AUTH.LAST_PLATFORM_ADMIN` 已加入 contracts，`replaceUserRolesRoute` 声明 409。
+- [x] 系统入口（`bootstrap-admin`）跳过 actor 检查，仍能正常执行。
+- [x] `git diff` 确认 `apps/admin` 未被修改。
+- [x] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。

@@ -103,6 +103,35 @@ file route 的 permission 与动作一一对应：列表、内容、上传、重
 
 `AUTH_BOOTSTRAP_ADMIN_EMAIL` 是可选环境变量。bootstrap 命令只处理已存在且邮箱精确匹配的用户，把该用户角色幂等替换为 `admin`；API 启动和普通注册不自动创建管理员。
 
+### 平台管理员写入边界
+
+`authorization:manage` 只决定能不能进入写路由，不决定能不能落库。`authorization.repository.ts` 的 `replaceUserRoles` 和 `replaceRolePermissions` 在写 transaction 内用 `isActivePlatformAdmin(tx, actorId)` 重查一次 actor 是否关联未归档的 `admin` 角色，查不到就返回 `actor-not-platform-admin`，service 翻成 403 `AUTH.FORBIDDEN`。检查放在 transaction 内，是因为并发撤权时 transaction 外读到的快照可能已经过期。
+
+所以 `authorization:manage` 不是可委派权限。把它加给 `operator` 或任何自定义角色，持有者仍然只能读授权数据，两个写接口一律 403；要放开写操作只能把用户加进 `admin`。
+
+repository 三个写函数（`replaceUserRoles`、`replaceRolePermissions`、`bootstrapAdminByEmail`）的最后一个参数是 `AuthorizationWriteContext`，service 把它作为第一个参数接收并透传：
+
+```ts
+interface AuthorizationWriteContext {
+  actorType: 'user' | 'system'
+  actorId: string
+  requestId: string | null
+}
+```
+
+- HTTP 路由传 `{ actorType: 'user', actorId: c.var.currentUserId, requestId: c.var.requestId }`。
+- `apps/api/src/scripts/bootstrap-admin.ts` 传 `{ actorType: 'system', actorId: 'auth:bootstrap-admin', requestId: null }`，跳过 actor 校验。
+- `assigned_by` 的写入值由 `actorType` 决定：`user` 写 `actorId`，`system` 写 `null`。
+- `requestId` 当前不落库，留给后续的审计表。
+
+transaction 内的判断顺序不能调换：目标存在性 -> key 有效性 -> actor 平台管理员 -> 读 before 集合 -> 幂等短路 -> 最后一个平台管理员 -> 写入。幂等短路必须排在 actor 校验之后，否则无权 actor 提交一份与当前相同的集合就能拿到 200。
+
+### 幂等与最后一个平台管理员
+
+`replaceUserRoles`、`replaceRolePermissions` 和 `bootstrapAdminByEmail` 都先读排序后的 before 集合，与 after 相同时直接返回成功，不执行 `delete` + `insert`。重复提交相同集合不会刷新 `assigned_at`，DTO 不暴露这个字段，改动不影响响应。
+
+`replaceUserRoles` 只在目标用户从有 `admin` 变成无 `admin` 时才统计活动平台管理员：现存 `user` 记录通过 `user_roles` 关联到未归档的 `admin` 角色。提交后数量归零时返回 `last-platform-admin`，service 翻成 409 `AUTH.LAST_PLATFORM_ADMIN`。当前 HTTP 路径走不到这条保护（actor 必须是活动 admin，又不能改自己，撤销别人的 admin 之后自己还在），只有 repository 级测试覆盖它。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | HTTP | Error code / 命令结果 | 处理 |
@@ -114,9 +143,13 @@ file route 的 permission 与动作一一对应：列表、内容、上传、重
 | 目标用户或 role 不存在 | 404 | `COMMON.NOT_FOUND` | 不更新关联表 |
 | role key 无效、归档或重复 | 400 | `COMMON.INVALID_REQUEST` | 不更新关联表 |
 | 调用者修改自己的 role | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
+| actor 不是活动平台管理员 | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
+| 撤销最后一个活动平台管理员 | 409 | `AUTH.LAST_PLATFORM_ADMIN` | 不更新关联表 |
 | 修改 `admin` permission | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
 | bootstrap 未配置邮箱 | non-zero | 明确命令错误 | 不打开或写入授权关系 |
 | bootstrap 用户不存在或 migration 缺失 | non-zero | 明确命令错误 | 不写入授权关系 |
+
+三个 403 的 message 各不相同，用来区分拒绝原因：自改角色是「不能修改自己的角色」，actor 不是平台管理员是「只有平台管理员可以修改授权关系」，改 `admin` 权限是「不能修改 admin 角色的权限」。
 
 ## 5. Good / Base / Bad Cases
 
@@ -138,7 +171,11 @@ file route 的 permission 与动作一一对应：列表、内容、上传、重
 - 用户角色替换、角色权限替换、禁止自改角色、禁止编辑 `admin`。
 - role 或 permission 归档后下一次授权失败。
 - 两个均有 file permission 的用户仍不能读取对方文件。
-- OpenAPI 包含授权 endpoint 及其 403 response。
+- 持有 `authorization:manage` 的非 admin 用户替换用户角色和角色权限都返回 403，两张关联表都不变；同样的操作由活动 admin 执行返回 200。
+- 提交与当前相同的 roleKeys 或 permissionKeys 返回 200，且 `assigned_at` 不变。断言要先把 `assigned_at` 改成哨兵时间戳再比对：这个列是 `timestamp_ms`，同一毫秒内的重写会写出相同的值，直接比对前后时钟证明不了短路。
+- `bootstrapAdminByEmail` 对已是纯 `admin` 的用户重复执行时不重写关系。
+- repository 级撤销最后一个活动平台管理员返回 `last-platform-admin`，关系不变；库里存在第二个平台管理员时同样的撤销成功。
+- OpenAPI 包含授权 endpoint 及其 403 response，`PUT /api/authorization/users/{userId}/roles` 还要包含 409 response。
 
 ## 7. Wrong vs Correct
 
@@ -190,6 +227,8 @@ middleware 决定动作资格，`service.remove` 继续依据 `currentUserId` �
 - 实际发生的每次 mutation 只写一条授权审计事件，关系变更和事件在同一 transaction 提交。
 - HTTP actor 使用当前用户和 request ID；bootstrap 与 Better Auth hook 使用 `actor_type=system`，`actor_id` 分别为稳定值 `auth:bootstrap-admin`、`better-auth:user.create`，缺少 request ID 时保持为空。
 - 失败和拒绝不自动视为成功审计；当前 `AppError` 4xx 也不会自动写 Pino，拒绝日志需要单独设计。
+
+其中 transaction 内 actor 校验、普通角色不能写、self-mutation 403、最后一个平台管理员 409、幂等不重写关系和 `AuthorizationWriteContext` 的 actor 字段已由任务 `platform-admin-write-boundary` 实现，契约见第 3、4 节。审计表、审计事件写入和 Better Auth user create hook 的 actor 接入仍未实现。
 
 授权治理基础阶段的事件 action 为：`user_roles.replaced`、`role_permissions.replaced`、`user_roles.initialized`、`platform_admin.granted`、`platform_admin.revoked`。角色生命周期阶段再增加 `role.created`、`role.updated`、`role.archived`、`role.restored`。审计 DTO 由 contracts 按 action 提供判别联合，Admin 不直接解析数据库 JSON。
 
