@@ -47,3 +47,37 @@
 ### Status
 
 [OK] **Completed**
+
+
+## Session 3: 实现全栈 RBAC
+
+**Date**: 2026-08-09
+**Task**: 实现全栈 RBAC
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+完成共享权限契约、SQLite 角色权限模型、Hono 服务端授权、Admin 权限体验和本地开发环境同步。
+
+### Main Changes
+
+- 新增三种系统角色、七项权限、四张授权表及可执行 migration。
+- 新增授权 middleware、五个管理接口、管理员 bootstrap 和完整 API smoke tests。
+- Admin 接入权限 query、路由/菜单/标签栏/按钮控制、403 页面和授权管理页。
+- 同步本地 API env，迁移开发数据库并按用户选择完成管理员 bootstrap。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fe2ede8` | (see git log) |
+
+### Testing
+
+- [OK] pnpm check-types、pnpm lint、pnpm format:check、pnpm test、pnpm build 全部通过。
+- [OK] pnpm --filter @starter/api db:check 通过，桌面和移动端浏览器验收通过。
+
+### Status
+
+[OK] **Completed**
