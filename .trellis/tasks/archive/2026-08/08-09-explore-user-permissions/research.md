@@ -6,6 +6,166 @@
 >
 > 结论先行：首版采用数据库驱动的全局 RBAC。API 每次授权请求基于当前 `currentUserId` 查询有效权限，前端通过独立的 `/api/me/permissions` 获取权限集合并用 React Query 管理；前端只控制界面和导航，API 中间件始终是安全边界。Better Auth Admin plugin 复用用户管理，角色权限关系和业务授权中间件先自建；Organization plugin 留给后续多租户版本。
 
+## 权限状态流转图
+
+### RBAC 数据关系
+
+```mermaid
+erDiagram
+    USER ||--o{ USER_ROLES : "分配角色"
+    ROLES ||--o{ USER_ROLES : "授予用户"
+    ROLES ||--o{ ROLE_PERMISSIONS : "包含权限"
+    PERMISSIONS ||--o{ ROLE_PERMISSIONS : "授予角色"
+
+    USER {
+        string id PK
+        string email UK
+    }
+    ROLES {
+        string id PK
+        string key UK
+        boolean is_system
+        datetime archived_at
+    }
+    PERMISSIONS {
+        string id PK
+        string key UK
+        string resource
+        string action
+        datetime archived_at
+    }
+    USER_ROLES {
+        string user_id PK,FK
+        string role_id PK,FK
+        datetime assigned_at
+        string assigned_by FK
+    }
+    ROLE_PERMISSIONS {
+        string role_id PK,FK
+        string permission_id PK,FK
+        datetime assigned_at
+        string assigned_by FK
+    }
+```
+
+一个用户可以拥有多个角色，有效权限是所有未归档角色中未归档权限的并集。首版不支持角色继承、通配符权限或用户直接分配 permission。
+
+### 一次 API 请求的完整授权判定
+
+```mermaid
+flowchart TD
+    A["Admin 发起 API 请求<br/>携带 Better Auth session cookie"] --> B["requireAuth"]
+    B --> C{"Better Auth getSession 结果"}
+    C -- "没有 session" --> U1["401 AUTH.UNAUTHENTICATED"]
+    C -- "session 无效" --> U2["401 AUTH.SESSION_INVALID"]
+    C -- "有效 session" --> D["写入 currentUserId"]
+    D --> E["requirePermission(resource:action)"]
+    E --> F{"查询有效角色和权限"}
+    F -- "数据库异常" --> X1["500 SYSTEM.INTERNAL_ERROR"]
+    F -- "没有所需权限" --> X2["403 AUTH.FORBIDDEN"]
+    F -- "拥有所需权限" --> G["进入 route handler 和 service"]
+    G --> H{"目标资源存在且满足 owner 条件"}
+    H -- "不存在或不可见" --> X3["404 资源不存在"]
+    H -- "满足资源条件" --> I["执行操作并提交事务"]
+    I --> S["2xx 统一成功响应"]
+
+    classDef success fill:#dff7e8,stroke:#237a47,color:#153d28
+    classDef auth fill:#fff2cc,stroke:#9a6b00,color:#4a3600
+    classDef denied fill:#fde2e2,stroke:#b42318,color:#5f1510
+    classDef failure fill:#eceff3,stroke:#59636e,color:#20262d
+    class S success
+    class U1,U2 auth
+    class X2,X3 denied
+    class X1 failure
+```
+
+这张图表达两个独立条件：RBAC 判断“这个用户能不能做这类动作”，service 的 owner 条件判断“这个用户能不能操作这个具体资源”。只通过其中一个条件都不能执行操作。
+
+### Admin 前端权限状态
+
+```mermaid
+stateDiagram-v2
+    [*] --> SessionLoading
+
+    state "加载 Better Auth session" as SessionLoading
+    state "跳转登录页" as LoginRequired
+    state "加载 /api/me/permissions" as PermissionLoading
+    state "权限加载失败，可重试" as PermissionError
+    state "权限集合已加载" as PermissionReady
+    state "路由允许，渲染页面" as RouteAllowed
+    state "路由无权，显示 403" as RouteForbidden
+    state "按钮或菜单隐藏" as ActionHidden
+    state "API 返回 403，刷新权限" as PermissionRefetch
+
+    SessionLoading --> LoginRequired : 401 或没有 session
+    SessionLoading --> PermissionLoading : session 有效
+    PermissionLoading --> PermissionError : 网络或服务异常
+    PermissionError --> PermissionLoading : 用户重试
+    PermissionLoading --> PermissionReady : 返回角色和权限集合
+    PermissionReady --> RouteAllowed : 拥有页面查看权限
+    PermissionReady --> RouteForbidden : 缺少页面查看权限
+    PermissionReady --> ActionHidden : 缺少某个操作权限
+    RouteAllowed --> PermissionRefetch : 任意业务请求返回 403
+    PermissionRefetch --> PermissionReady : 重新获取成功
+    PermissionRefetch --> LoginRequired : 重新请求返回 401
+    RouteForbidden --> PermissionLoading : 窗口聚焦或主动刷新
+    ActionHidden --> PermissionLoading : staleTime 到期或主动刷新
+```
+
+前端 `PermissionReady` 只表示 React Query 已拿到一份权限快照。即使快照尚未刷新，API 仍会按数据库最新状态判断，因此前端的短暂旧状态不会扩大实际权限。
+
+### 管理员修改权限后的同步时序
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Admin as 管理员
+    participant AdminUI as 管理后台
+    participant API as Hono API
+    participant DB as SQLite
+    participant UserUI as 被修改用户的页面
+
+    Admin->>AdminUI: 修改用户角色或角色权限
+    AdminUI->>API: 提交授权关系 mutation
+    API->>DB: 在事务中更新 user_roles 或 role_permissions
+    DB-->>API: 提交成功
+    API-->>AdminUI: 2xx，并刷新相关管理查询
+    Note over UserUI: 用户页面中的 React Query 权限快照可能仍是旧值
+
+    alt 撤销权限
+        UserUI->>API: 发起下一次受保护请求
+        API->>DB: 按 currentUserId 查询最新权限
+        DB-->>API: 不包含所需 permission
+        API-->>UserUI: 403 AUTH.FORBIDDEN
+        UserUI->>API: 重新获取 /api/me/permissions
+        API->>DB: 查询最新角色和权限集合
+        DB-->>API: 返回撤销后的集合
+        API-->>UserUI: 返回新权限快照
+        UserUI->>UserUI: 隐藏操作或切换到 403 页面
+    else 新增权限
+        Note over UserUI: staleTime、窗口聚焦或主动刷新触发重新获取
+        UserUI->>API: GET /api/me/permissions
+        API->>DB: 查询最新角色和权限集合
+        DB-->>API: 返回新增后的集合
+        API-->>UserUI: 返回新权限快照
+        UserUI->>UserUI: 显示新菜单、路由和操作
+        UserUI->>API: 发起受保护请求
+        API->>DB: 再次确认最新权限
+        DB-->>API: 包含所需 permission
+        API-->>UserUI: 2xx
+    end
+```
+
+状态同步的时间边界如下：
+
+| 状态                 | 生效时间                                       | 是否安全边界                   |
+| -------------------- | ---------------------------------------------- | ------------------------------ |
+| 数据库角色和权限关系 | 管理事务提交后立即生效                         | 是，API 查询的数据来源         |
+| API 授权结果         | 用户下一次受保护请求时使用最新状态             | 是                             |
+| React Query 权限快照 | 403、窗口聚焦、主动刷新或 staleTime 到期后更新 | 否，只控制 UI                  |
+| 菜单、路由和按钮     | 权限快照更新后的下一次 React render            | 否                             |
+| Better Auth session  | 401 或 session 过期时失效                      | 只负责身份认证，不负责业务授权 |
+
 ## 1. Auth0 RBAC 核心发现
 
 ### 1.1 权限模型
@@ -412,7 +572,7 @@ attribute check: target.departmentId in currentUserDepartments
 - [Manage RBAC Roles](https://auth0.com/docs/manage-users/access-control/configure-core-rbac/roles)
 - [Add Roles to Organization Members](https://auth0.com/docs/manage-users/organizations/configure-organizations/add-member-roles)
 - [Access Token Profiles](https://auth0.com/docs/secure/tokens/access-token-profiles)
-- [Auth0 Express RBAC Code Sample](https://developer.auth0.com/resources/code-samples/api/express/basic-role-based-access-control)
+- [Auth0 Express RBAC Code Sample](https://developer.auth0.com/resources/code-samples/api/express/basic-role-based-access-control)可以
 - [Better Auth Admin Plugin](https://www.better-auth.com/docs/plugins/admin)
 - [Better Auth Organization Plugin](https://www.better-auth.com/docs/plugins/organization)
 - [auth0-react](https://github.com/auth0/auth0-react)
