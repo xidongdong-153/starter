@@ -120,7 +120,7 @@ pnpm --filter @starter/api db:check
 - [x] 使用 `trellis-update-spec` 把 authorization 候选规范改成已实现契约，并补 Admin 权限规范。
 - [x] 再次运行任务验证和仓库质量门禁。
 - [x] 按仓库 Conventional Commits 规则提交本任务改动。
-- [ ] 归档任务并记录会话结果。
+- [x] 归档任务并记录会话结果。
 
 ## 主要风险
 
