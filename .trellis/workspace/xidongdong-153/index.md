@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 3
+- **Total Sessions**: 4
 - **Last Active**: 2026-08-09
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~83 | Active |
+| `journal-1.md` | ~120 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 4 | 2026-08-09 | 规划权限与角色进阶路线 | `734712b` | `main` |
 | 3 | 2026-08-09 | 实现全栈 RBAC | `fe2ede8` | `main` |
 | 2 | 2026-08-08 | Align Trellis package config | `44ea253` | `main` |
 | 1 | 2026-08-08 | Bootstrap Trellis Pi | `0642df5` | `main` |
