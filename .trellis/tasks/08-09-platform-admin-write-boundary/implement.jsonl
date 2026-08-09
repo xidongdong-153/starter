@@ -1,0 +1,8 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端规范总入口"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "本任务直接修改的授权规范"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "新增 409 error code 的契约要求"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "transaction 内校验与查询写法约定"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "route/service/repository 分层落点"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 包新增 error code 的规范"}
+{"file": ".trellis/tasks/archive/2026-08/08-09-permission-role-evolution/research/current-implementation-audit.md", "reason": "当前授权实现的逐项事实基线"}

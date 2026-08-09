@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/admin/frontend/index.md", "reason": "Admin 前端规范总入口"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "被测试覆盖的权限控制约定"}
+{"file": ".trellis/spec/admin/frontend/hook-guidelines.md", "reason": "usePermission 测试涉及的 hook 约定"}
+{"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "确认审计与权限数据不写入 Zustand 的边界"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "测试文件需通过同一套严格类型检查"}
