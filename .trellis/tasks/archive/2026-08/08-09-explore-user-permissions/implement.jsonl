@@ -1,0 +1,7 @@
+{"file":"Prompt.md","reason":"定义调研优先级、六章节输出格式、官方来源和两天内可实施的 RBAC 交付目标。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"约束 Hono API 的 route -> service -> repository -> presenter 链路、统一响应和认证边界。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"约束 Drizzle SQLite schema、外键、索引、migration 和事务建议。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"约束 API 错误响应、认证接口和 401/403 行为的报告对照。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"约束 Admin 的 TanStack Router、TanStack Query、认证守卫和代码组织。"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"约束 session、React Query、Zustand 和持久化状态的归属。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"要求在报告中明确数据库、API、前端之间的数据流、契约和错误边界。"}

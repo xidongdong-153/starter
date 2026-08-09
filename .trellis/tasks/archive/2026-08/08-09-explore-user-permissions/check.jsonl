@@ -1,0 +1,8 @@
+{"file":"Prompt.md","reason":"核对最终报告必须覆盖的章节、优先级、来源要求和交付清单。"}
+{"file":".trellis/tasks/08-09-explore-user-permissions/prd.md","reason":"核对任务目标、范围、验收标准和报告文件位置。"}
+{"file":".trellis/tasks/08-09-explore-user-permissions/design.md","reason":"核对报告的数据流、边界、取舍和风险。"}
+{"file":".trellis/tasks/08-09-explore-user-permissions/implement.md","reason":"核对调研、写作和质量检查步骤。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"检查 API 分层、统一 response wrapper 和认证边界。"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 Drizzle SQLite schema、索引、外键和 migration 约束。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"检查 Admin 路由、Query、认证守卫和目录约束。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查跨数据库、API 和前端的数据流与契约要求。"}
