@@ -61,13 +61,13 @@
 
 以下条件在三个子任务全部完成后统一验收，不在单个子任务内判定完成。
 
-- [ ] 普通角色即使被授予 `authorization:manage`，也不能替换任何用户角色或修改任何角色 permission。
-- [ ] 用户角色替换、角色 permission 替换、新用户默认角色初始化和 `auth:bootstrap-admin` 的每次实际变化各产生一条可查询审计事件。
-- [ ] 幂等无变化请求不重写关系，也不产生审计事件。
-- [ ] 401、403、409、500 保持可区分，各有稳定 error code。
-- [ ] 根目录 `pnpm test` 同时执行 API 与 Admin 测试，全部通过。
-- [ ] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。
-- [ ] 现有四张 RBAC 表、权限并集算法和每请求查库策略未被修改。
+- [x] 普通角色即使被授予 `authorization:manage`，也不能替换任何用户角色或修改任何角色 permission。
+- [x] 用户角色替换、角色 permission 替换、新用户默认角色初始化和 `auth:bootstrap-admin` 的每次实际变化各产生一条可查询审计事件。
+- [x] 幂等无变化请求不重写关系，也不产生审计事件。
+- [x] 401、403、409、500 保持可区分，各有稳定 error code。
+- [x] 根目录 `pnpm test` 同时执行 API 与 Admin 测试，全部通过。
+- [x] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。
+- [x] 现有四张 RBAC 表、权限并集算法和每请求查库策略未被修改。
 
 ## Out of Scope
 
@@ -83,6 +83,6 @@
 
 ## Acceptance Criteria
 
-- [ ] 三个子任务各自完成 PRD、design、implement，并独立通过检查与归档。
-- [ ] 上述 Cross-Child Acceptance Criteria 全部满足。
-- [ ] `.trellis/spec/api/backend/authorization-guidelines.md` 和 `.trellis/spec/admin/frontend/authorization-guidelines.md` 更新到与最终实现一致。
+- [x] 三个子任务各自完成 PRD、design、implement，并独立通过检查与归档。
+- [x] 上述 Cross-Child Acceptance Criteria 全部满足。
+- [x] `.trellis/spec/api/backend/authorization-guidelines.md` 和 `.trellis/spec/admin/frontend/authorization-guidelines.md` 更新到与最终实现一致。
