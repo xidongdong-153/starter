@@ -134,15 +134,15 @@ Admin 侧复用 S1 的测试基础：
 
 ## Acceptance Criteria
 
-- [ ] 四个入口的每次实际变化各产生一条审计事件，before/after 与最终数据库关系一致。
-- [ ] 用户角色替换的三种 action 判断正确。
-- [ ] 幂等无变化请求不写事件。
-- [ ] 关系写入或审计写入任一失败时 transaction 回滚，不产生部分结果。
-- [ ] system actor 的 `request_id` 为空，不是伪造值。
-- [ ] 审计事件不含密码、token、cookie、文件内容和完整用户记录。
-- [ ] 分页在相同 `created_at` 下按 `id` 稳定排序。
-- [ ] 损坏 JSON payload 返回 500，Admin 组件内没有 `JSON.parse`。
-- [ ] `authorization-audit:read` 已加入 contracts 和 migration seed，`admin` 自动获得。
-- [ ] Admin 审计页覆盖 loading、错误、空状态，桌面和移动视口无重叠。
-- [ ] migration 只追加，未修改已提交文件。
-- [ ] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。
+- [x] 四个入口的每次实际变化各产生一条审计事件，before/after 与最终数据库关系一致。
+- [x] 用户角色替换的三种 action 判断正确。
+- [x] 幂等无变化请求不写事件。
+- [x] 关系写入或审计写入任一失败时 transaction 回滚，不产生部分结果。
+- [x] system actor 的 `request_id` 为空，不是伪造值。
+- [x] 审计事件不含密码、token、cookie、文件内容和完整用户记录。
+- [x] 分页在相同 `created_at` 下按 `id` 稳定排序。
+- [x] 损坏 JSON payload 返回 500，Admin 组件内没有 `JSON.parse`。
+- [x] `authorization-audit:read` 已加入 contracts 和 migration seed，`admin` 自动获得。
+- [x] Admin 审计页覆盖 loading、错误、空状态，桌面和移动视口无重叠。
+- [x] migration 只追加，未修改已提交文件。
+- [x] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build`、`pnpm --filter @starter/api db:check` 全部通过。
