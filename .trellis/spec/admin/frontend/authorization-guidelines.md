@@ -44,6 +44,10 @@ export const currentPermissionsQueryOptions = queryOptions({
 - `PermissionGuard` 在 loading、失败或缺少权限时默认不渲染 children。需要在页面上展示失败或重试时，由 route ErrorBoundary 或 `PermissionQueryStatus` 提供明确状态。
 - `api/http.ts` 的 access-error listener：401 清空 Query cache 并跳 `/login`；403 只失效当前权限 query，不退出登录。
 - 文件页面分别使用 `file:read`、`file:upload`、`file:rename`、`file:delete` 控制图片、下载和各写动作；文件路由使用 `file:list`。
+- `/settings/authorization-audit` 使用独立的 `authorization-audit:read`，不要求同时持有 `authorization:read` 或 `authorization:manage`。
+- 审计列表通过 `authorization.api.ts` 和 `authorization.query.ts` 读取，query key 必须包含 page、pageSize 和全部筛选条件；数据不写入 Zustand 或 localStorage。
+- 审计组件只接收 contracts 的结构化 before/after 判别联合，不读取 `before_json`、`after_json`，也不调用 `JSON.parse`。
+- action、actor ID、target ID 和时间范围筛选保存在页面 state；分页或筛选变化由 TanStack Query 发起新请求。当前路由没有 search params 校验模式，刷新页面或分享 URL 不保留筛选条件。
 
 ## 4. Validation & Error Matrix
 
@@ -59,6 +63,7 @@ export const currentPermissionsQueryOptions = queryOptions({
 ## 5. Good / Base / Bad Cases
 
 - Good：`/settings/authorization` 标记 `authorization:read`，route guard 拦截直达 URL，菜单和标签栏同步隐藏。
+- Good：`/settings/authorization-audit` 只标记 `authorization-audit:read`；审计员可以查看事件，但不会因此获得授权写能力。
 - Good：viewer 保留文件读取入口，但上传、重命名和删除按钮由精确 permission 隐藏。
 - Base：角色 mutation 成功后使 users、roles 和 current permissions query 失效。
 - Bad：仅在 `NavigationMenu` 过滤条目，未在 route `beforeLoad` 检查 permission。
@@ -76,6 +81,8 @@ export const currentPermissionsQueryOptions = queryOptions({
 - `admin` 权限只读、当前用户角色按钮禁用。
 - 文件页的读取和四个写动作分别按 permission 显示。
 - 桌面和移动端的长邮箱、permission key、表格横向滚动和弹窗布局。
+- 审计 route guard 和导航只向 `authorization-audit:read` 持有者开放。
+- 审计页的 loading、错误重试、空数据、结构化 before/after 和筛选参数提交。
 
 ## 7. Wrong vs Correct
 
@@ -99,13 +106,13 @@ const menuItems = buildNavigationMenuItems(
 
 同一 permission 集合还必须传给 route guard、`PermissionGuard` 和 `TabBar` 过滤，保证不同入口的体验一致。
 
-## 8. 已批准的演进边界（尚未实现）
+## 8. 演进边界
 
-> 本节记录任务 `permission-role-evolution` 的已批准规划。当前 Admin 仍按前面各节的已实现行为运行；后续实现必须另建任务并同步更新 API、contracts 和前端规范。
+> 审计页面和权限测试基础已经实现。后续能力仍需另建任务并同步更新 API、contracts 和前端规范。
 
 ### 8.1 审计页面与查询
 
-下一项实现任务会增加只读 authorization audit 页面：
+当前只读 authorization audit 页面遵守以下约束：
 
 - 通过独立的 `authorization-audit:read` permission 控制 route、菜单、标签和页面入口。
 - 使用 API 返回的结构化 before/after DTO；组件不接收数据库 JSON 字符串，也不自行 `JSON.parse`。
@@ -115,7 +122,7 @@ const menuItems = buildNavigationMenuItems(
 
 ### 8.2 权限回归测试
 
-Admin 新增 Vitest `test` script 后，根目录 `pnpm test` 必须同时运行 API 与 Admin 测试。最小回归范围包括：
+Admin 已配置 Vitest `test` script，根目录 `pnpm test` 必须同时运行 API 与 Admin 测试。最小回归范围包括：
 
 - admin、operator、viewer 的菜单、标签、直接 URL 和按钮差异。
 - 权限 query 的 loading、失败重试、403 刷新和 401 跳转。
