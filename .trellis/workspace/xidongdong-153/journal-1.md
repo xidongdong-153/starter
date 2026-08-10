@@ -118,3 +118,41 @@
 ### Next Steps
 
 - 另建 authorization-governance-foundation 实现任务，完成平台 admin transaction 检查、授权审计和 Admin 回归测试。
+
+
+## Session 5: 完成授权审计与 RBAC 治理工作树
+
+**Date**: 2026-08-10
+**Task**: 完成授权审计与 RBAC 治理工作树
+**Package**: api
+**Branch**: `main`
+
+### Summary
+
+完成追加式授权审计、分页查询和 Admin 只读页面，并归档授权治理的三个子任务与父任务。
+
+### Main Changes
+
+- 新增无外键审计表、四个事务内事件写入点、结构化查询 DTO 和 authorization-audit:read。
+- 新增 Admin 审计筛选、分页、权限路由和桌面/移动布局；删除未使用的 @testing-library/user-event。
+- 更新 API/Admin 授权规范，记录 payload 显式投影和稳定排序 mutation 的限制。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `580910c` | (see git log) |
+| `2b5f8de` | (see git log) |
+
+### Testing
+
+- [OK] pnpm check、pnpm exec turbo run test --force、pnpm exec turbo run build --force、pnpm --filter @starter/api db:check 全部通过。
+- [OK] API 32 例、Admin 41 例通过；隔离浏览器验证 1470x871 和 390x844 视口。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 后续角色生命周期任务继续复用现有平台管理员写入边界和授权审计事件模型。
