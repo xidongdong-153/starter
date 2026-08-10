@@ -1,4 +1,5 @@
 export {
+  getAuthorizationAuditEvents,
   getAuthorizationRoles,
   getAuthorizationUsers,
   getCurrentPermissions,
@@ -8,6 +9,7 @@ export {
 export {
   authorizationQueryKeys,
   currentPermissionsQueryOptions,
+  useAuthorizationAuditEventsQuery,
   useAuthorizationRolesQuery,
   useAuthorizationUsersQuery,
   useCurrentPermissionsQuery,

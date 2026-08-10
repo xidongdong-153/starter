@@ -22,6 +22,21 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(document.paths["/api/files/{fileId}/content"]).toBeUndefined();
     expect(document.paths["/api/me/permissions"]?.get).toBeDefined();
     expect(document.paths["/api/authorization/users"]?.get).toBeDefined();
+    expect(
+      document.paths["/api/authorization/audit-events"]?.get?.responses?.[
+        "401"
+      ],
+    ).toBeDefined();
+    expect(
+      document.paths["/api/authorization/audit-events"]?.get?.responses?.[
+        "403"
+      ],
+    ).toBeDefined();
+    expect(
+      document.paths["/api/authorization/audit-events"]?.get?.responses?.[
+        "500"
+      ],
+    ).toBeDefined();
     expect(document.paths["/api/users"]?.get).toBeDefined();
     expect(document.paths["/api/users/{userId}"]?.get).toBeDefined();
     expect(

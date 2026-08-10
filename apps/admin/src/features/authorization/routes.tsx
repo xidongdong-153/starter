@@ -2,7 +2,7 @@ import type { AdminRouteRecord } from '@admin/app/router/types'
 
 import { PermissionKeys } from '@starter/contracts'
 import { lazyRouteComponent } from '@tanstack/react-router'
-import { ShieldCheck } from 'lucide-react'
+import { ScrollText, ShieldCheck } from 'lucide-react'
 
 export const authorizationRoutes: AdminRouteRecord[] = [
   {
@@ -19,5 +19,20 @@ export const authorizationRoutes: AdminRouteRecord[] = [
     path: '/settings/authorization',
     permission: PermissionKeys.AUTHORIZATION_READ,
     title: 'menu.authorizationSettings',
+  },
+  {
+    component: lazyRouteComponent(() => import('./pages/AuthorizationAudit'), 'AuthorizationAudit'),
+    icon: ScrollText,
+    id: 'settings.authorizationAudit',
+    layout: {
+      contentWidth: 'full',
+    },
+    menu: {
+      group: 'settings',
+      order: 11,
+    },
+    path: '/settings/authorization-audit',
+    permission: PermissionKeys.AUTHORIZATION_AUDIT_READ,
+    title: 'menu.authorizationAudit',
   },
 ]

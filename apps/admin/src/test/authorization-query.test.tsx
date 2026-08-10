@@ -22,6 +22,7 @@ const { getCurrentPermissions, replaceAuthorizationRolePermissions, replaceAutho
 )
 
 vi.mock('@admin/api/authorization/authorization.api', () => ({
+  getAuthorizationAuditEvents: vi.fn(),
   getCurrentPermissions,
   getAuthorizationRoles: vi.fn(),
   getAuthorizationUsers: vi.fn(),

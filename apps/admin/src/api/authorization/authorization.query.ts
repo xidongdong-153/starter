@@ -1,8 +1,9 @@
-import type { ReplaceRolePermissionsInput, ReplaceUserRolesInput } from '@starter/contracts'
+import type { AuthorizationAuditQuery, ReplaceRolePermissionsInput, ReplaceUserRolesInput } from '@starter/contracts'
 
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
+  getAuthorizationAuditEvents,
   getAuthorizationRoles,
   getAuthorizationUsers,
   getCurrentPermissions,
@@ -12,6 +13,7 @@ import {
 
 export const authorizationQueryKeys = {
   all: ['authorization'] as const,
+  auditEvents: (query: AuthorizationAuditQuery) => [...authorizationQueryKeys.all, 'audit-events', query] as const,
   current: () => [...authorizationQueryKeys.all, 'current'] as const,
   roles: () => [...authorizationQueryKeys.all, 'roles'] as const,
   users: () => [...authorizationQueryKeys.all, 'users'] as const,
@@ -39,6 +41,14 @@ export function useAuthorizationRolesQuery() {
   return useQuery({
     queryKey: authorizationQueryKeys.roles(),
     queryFn: getAuthorizationRoles,
+  })
+}
+
+/** 审计是只读数据，不需要 mutation 和失效逻辑。 */
+export function useAuthorizationAuditEventsQuery(query: AuthorizationAuditQuery) {
+  return useQuery({
+    queryKey: authorizationQueryKeys.auditEvents(query),
+    queryFn: () => getAuthorizationAuditEvents(query),
   })
 }
 

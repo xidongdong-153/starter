@@ -1,4 +1,6 @@
 import type {
+  AuthorizationAuditEventPage,
+  AuthorizationAuditQuery,
   AuthorizationRole,
   AuthorizationRoleCatalog,
   AuthorizationUser,
@@ -13,6 +15,7 @@ import type {
 import { ApiErrorCodes, RoleKeys } from "@starter/contracts";
 import { AppError } from "@api/shared/app-error.js";
 import {
+  toAuthorizationAuditEvent,
   toAuthorizationRole,
   toAuthorizationRoleCatalog,
   toAuthorizationUser,
@@ -137,8 +140,21 @@ export function createAuthorizationService(
     return toAuthorizationRole(result.role, result.permissionKeys);
   }
 
+  async function listAuditEvents(
+    query: AuthorizationAuditQuery,
+  ): Promise<AuthorizationAuditEventPage> {
+    const result = await repository.listAuditEvents(query);
+    return {
+      items: result.items.map(toAuthorizationAuditEvent),
+      total: result.total,
+      page: query.page,
+      pageSize: query.pageSize,
+    };
+  }
+
   return {
     getCurrent,
+    listAuditEvents,
     listRoles,
     listUsers,
     replaceRolePermissions,

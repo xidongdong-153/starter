@@ -52,6 +52,7 @@ export const uuidSchema = z.uuidv7()
 export const socialLinksSchema = z.array(z.url()).max(8)
 
 export const PermissionKeys = {
+  AUTHORIZATION_AUDIT_READ: 'authorization-audit:read',
   AUTHORIZATION_MANAGE: 'authorization:manage',
   AUTHORIZATION_READ: 'authorization:read',
   FILE_DELETE: 'file:delete',
@@ -205,4 +206,82 @@ export interface UserManagementProfile {
 export interface UserManagementUserDetail extends UserManagementUser {
   providers: string[]
   profile: UserManagementProfile | null
+}
+
+export const AuditActions = {
+  PLATFORM_ADMIN_GRANTED: 'platform_admin.granted',
+  PLATFORM_ADMIN_REVOKED: 'platform_admin.revoked',
+  ROLE_PERMISSIONS_REPLACED: 'role_permissions.replaced',
+  USER_ROLES_INITIALIZED: 'user_roles.initialized',
+  USER_ROLES_REPLACED: 'user_roles.replaced',
+} as const
+
+export type AuditAction = (typeof AuditActions)[keyof typeof AuditActions]
+
+export const auditActionSchema = z.enum(AuditActions)
+
+/** payload 形状为 { roleKeys } 的 action，与 role_permissions.replaced 相对。 */
+export const UserRolesAuditActions = [
+  AuditActions.PLATFORM_ADMIN_GRANTED,
+  AuditActions.PLATFORM_ADMIN_REVOKED,
+  AuditActions.USER_ROLES_INITIALIZED,
+  AuditActions.USER_ROLES_REPLACED,
+] as const
+
+export type UserRolesAuditAction = (typeof UserRolesAuditActions)[number]
+
+export const auditRoleKeysPayloadSchema = z.object({
+  roleKeys: z.array(roleKeySchema),
+})
+export const auditPermissionKeysPayloadSchema = z.object({
+  permissionKeys: z.array(permissionSchema),
+})
+
+export type AuditRoleKeysPayload = z.infer<typeof auditRoleKeysPayloadSchema>
+export type AuditPermissionKeysPayload = z.infer<typeof auditPermissionKeysPayloadSchema>
+export type AuditPayload = AuditRoleKeysPayload | AuditPermissionKeysPayload
+
+export const authorizationAuditQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  action: auditActionSchema.optional(),
+  actorId: z.string().trim().min(1).max(64).optional(),
+  targetId: z.string().trim().min(1).max(64).optional(),
+  from: z.iso.datetime().optional(),
+  to: z.iso.datetime().optional(),
+})
+
+export type AuthorizationAuditQuery = z.infer<typeof authorizationAuditQuerySchema>
+
+interface AuthorizationAuditEventBase {
+  id: string
+  actorType: 'user' | 'system'
+  actorId: string
+  targetId: string
+  reason: string | null
+  requestId: string | null
+  createdAt: string
+}
+
+export type AuthorizationAuditEvent = AuthorizationAuditEventBase &
+  (
+    | {
+        action: UserRolesAuditAction
+        targetType: 'user'
+        before: AuditRoleKeysPayload
+        after: AuditRoleKeysPayload
+      }
+    | {
+        action: typeof AuditActions.ROLE_PERMISSIONS_REPLACED
+        targetType: 'role'
+        before: AuditPermissionKeysPayload
+        after: AuditPermissionKeysPayload
+      }
+  )
+
+export interface AuthorizationAuditEventPage {
+  items: AuthorizationAuditEvent[]
+  total: number
+  page: number
+  pageSize: number
 }

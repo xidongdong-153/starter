@@ -59,3 +59,15 @@ if (!window.localStorage) {
 if (!Element.prototype.scrollIntoView) {
   Element.prototype.scrollIntoView = vi.fn()
 }
+
+/**
+ * jsdom 不实现 ResizeObserver，Antd Table 的列宽测量依赖它。
+ * 缺失时渲染直接抛 ReferenceError，任何含 Table 的页面测试都过不去。
+ */
+if (!globalThis.ResizeObserver) {
+  globalThis.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  }
+}

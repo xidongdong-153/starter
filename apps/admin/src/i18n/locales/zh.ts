@@ -65,6 +65,34 @@ export default {
     socialGoogle: 'Google 登录',
     socialFailed: '第三方登录失败',
   },
+  audit: {
+    columns: {
+      action: '事件',
+      actor: '操作者',
+      after: '变更后',
+      before: '变更前',
+      createdAt: '时间',
+      requestId: '请求 ID',
+      target: '目标',
+    },
+    description: '查看用户角色和角色权限的变更记录。只记录实际发生的变更，失败和被拒绝的操作不写入。',
+    empty: '没有审计事件',
+    emptySet: '空',
+    filters: {
+      action: '按事件筛选',
+      actorId: '操作者 ID',
+      apply: '查询',
+      clear: '清除筛选',
+      from: '开始时间',
+      targetId: '目标 ID',
+      to: '结束时间',
+    },
+    loadFailed: '审计事件加载失败',
+    summary: {
+      total: '事件总数',
+    },
+    title: '授权审计',
+  },
   authorization: {
     actions: '操作',
     description: '查看用户角色，并调整预置角色的权限。',
@@ -341,6 +369,7 @@ export default {
     brand: 'Starter Admin',
   },
   menu: {
+    authorizationAudit: '授权审计',
     authorizationSettings: '用户权限',
     envExample: '环境变量',
     userManagement: '用户管理',

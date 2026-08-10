@@ -66,6 +66,35 @@ export default {
     socialGoogle: 'Sign in with Google',
     socialFailed: 'Social sign in failed',
   },
+  audit: {
+    columns: {
+      action: 'Event',
+      actor: 'Actor',
+      after: 'After',
+      before: 'Before',
+      createdAt: 'Time',
+      requestId: 'Request ID',
+      target: 'Target',
+    },
+    description:
+      'Review changes to user roles and role permissions. Only actual changes are recorded; failed and rejected attempts are not.',
+    empty: 'No audit events',
+    emptySet: 'empty',
+    filters: {
+      action: 'Filter by event',
+      actorId: 'Actor ID',
+      apply: 'Search',
+      clear: 'Clear filters',
+      from: 'Start time',
+      targetId: 'Target ID',
+      to: 'End time',
+    },
+    loadFailed: 'Failed to load audit events',
+    summary: {
+      total: 'Total events',
+    },
+    title: 'Authorization audit',
+  },
   authorization: {
     actions: 'Actions',
     description: 'Review user roles and update permissions for the built-in roles.',
@@ -342,6 +371,7 @@ export default {
     brand: 'Starter Admin',
   },
   menu: {
+    authorizationAudit: 'Authorization audit',
     authorizationSettings: 'Authorization',
     envExample: 'Environment',
     userManagement: 'Users',

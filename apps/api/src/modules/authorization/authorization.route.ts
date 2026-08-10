@@ -9,6 +9,7 @@ import {
   apiSuccessResponse,
   conflictResponse,
   forbiddenResponse,
+  internalErrorResponse,
   invalidRequestResponse,
   notFoundResponse,
   unauthorizedResponse,
@@ -18,6 +19,8 @@ import { createSuccessResponse } from "@api/shared/response.js";
 import { createRoute, OpenAPIHono } from "@hono/zod-openapi";
 import { createRequirePermission } from "./authorization.guard.js";
 import {
+  authorizationAuditEventPageSchema,
+  authorizationAuditQuerySchema,
   authorizationRoleCatalogSchema,
   authorizationRoleParamsSchema,
   authorizationRoleSchema,
@@ -128,6 +131,27 @@ const replaceRolePermissionsRoute = createRoute({
   },
 });
 
+const listAuditEventsRoute = createRoute({
+  method: "get",
+  path: "/api/authorization/audit-events",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    query: authorizationAuditQuerySchema,
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationAuditEventPageSchema,
+      "分页授权审计事件",
+      "AuthorizationAuditEventPageResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    500: internalErrorResponse,
+  },
+});
+
 export function createAuthorizationRoute(runtime: AppRuntime) {
   const requireAuth = createRequireAuth(runtime.auth);
   const requireAuthorizationRead = createRequirePermission(
@@ -137,6 +161,10 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
   const requireAuthorizationManage = createRequirePermission(
     runtime.db,
     PermissionKeys.AUTHORIZATION_MANAGE,
+  );
+  const requireAuditRead = createRequirePermission(
+    runtime.db,
+    PermissionKeys.AUTHORIZATION_AUDIT_READ,
   );
   const service = createAuthorizationService(
     createAuthorizationRepository(runtime.db),
@@ -219,6 +247,21 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
             c.req.valid("param").roleKey,
             c.req.valid("json"),
           ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...listAuditEventsRoute,
+      middleware: [requireAuth, requireAuditRead],
+    },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.listAuditEvents(c.req.valid("query")),
           c.var.requestId,
         ),
         200,

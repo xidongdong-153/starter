@@ -1,15 +1,30 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { AppDatabase } from "@api/infra/db/client.js";
-import type { Permission } from "@starter/contracts";
-import { PermissionKeys, RoleKeys } from "@starter/contracts";
-import { and, asc, count, eq, inArray, isNull } from "drizzle-orm";
+import type { AuthorizationAuditQuery, Permission } from "@starter/contracts";
+import { AuditActions, PermissionKeys, RoleKeys } from "@starter/contracts";
 import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  inArray,
+  isNull,
+  lte,
+} from "drizzle-orm";
+import {
+  authorizationAuditEvents,
   permissions,
   rolePermissions,
   roles,
   user,
   userRoles,
 } from "@api/infra/db/schema/index.js";
+import {
+  insertAuditEvent,
+  resolveUserRolesAction,
+} from "./authorization.audit.js";
 
 const registeredPermissions = Object.values(PermissionKeys);
 
@@ -20,7 +35,7 @@ type TxLike = Parameters<Parameters<AppDatabase["transaction"]>[0]>[0];
  *
  * `actorType` 为 `system` 时跳过平台管理员校验，`assignedBy` 写 null，
  * 对应 bootstrap 脚本这类没有浏览器 actor 的入口。
- * `requestId` 当前不落库，为后续审计表预留。
+ * `requestId` 只写入审计事件，不进关系表。
  */
 export interface AuthorizationWriteContext {
   actorType: "user" | "system";
@@ -76,6 +91,9 @@ export type AuthorizationUserRecord = Pick<
   "id" | "name" | "email"
 >;
 export type AuthorizationRoleRecord = InferSelectModel<typeof roles>;
+export type AuthorizationAuditEventRecord = InferSelectModel<
+  typeof authorizationAuditEvents
+>;
 export type AuthorizationPermissionRecord = InferSelectModel<
   typeof permissions
 >;
@@ -320,6 +338,17 @@ export function createAuthorizationRepository(db: AppDatabase) {
         )
         .run();
 
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: resolveUserRolesAction(beforeRoleKeys, afterRoleKeys),
+        targetType: "user",
+        targetId: userId,
+        before: { roleKeys: beforeRoleKeys },
+        after: { roleKeys: afterRoleKeys },
+        requestId: context.requestId,
+      });
+
       return { kind: "ok", user: targetUser, roleKeys: afterRoleKeys };
     });
   }
@@ -403,6 +432,17 @@ export function createAuthorizationRepository(db: AppDatabase) {
           .run();
       }
 
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: AuditActions.ROLE_PERMISSIONS_REPLACED,
+        targetType: "role",
+        targetId: targetRole.key,
+        before: { permissionKeys: beforePermissionKeys as Permission[] },
+        after: { permissionKeys: afterPermissionKeys as Permission[] },
+        requestId: context.requestId,
+      });
+
       return {
         kind: "ok",
         role: targetRole,
@@ -452,14 +492,72 @@ export function createAuthorizationRepository(db: AppDatabase) {
           assignedBy: resolveAssignedBy(context),
         })
         .run();
+
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: resolveUserRolesAction(beforeRoleKeys, [RoleKeys.ADMIN]),
+        targetType: "user",
+        targetId: targetUser.id,
+        before: { roleKeys: beforeRoleKeys },
+        after: { roleKeys: [RoleKeys.ADMIN] },
+        requestId: context.requestId,
+      });
+
       return { kind: "ok", user: targetUser };
     });
+  }
+
+  async function listAuditEvents(query: AuthorizationAuditQuery) {
+    const conditions = [];
+    if (query.action) {
+      conditions.push(eq(authorizationAuditEvents.action, query.action));
+    }
+    if (query.actorId) {
+      conditions.push(eq(authorizationAuditEvents.actorId, query.actorId));
+    }
+    if (query.targetId) {
+      conditions.push(eq(authorizationAuditEvents.targetId, query.targetId));
+    }
+    if (query.from) {
+      conditions.push(
+        gte(authorizationAuditEvents.createdAt, new Date(query.from)),
+      );
+    }
+    if (query.to) {
+      conditions.push(
+        lte(authorizationAuditEvents.createdAt, new Date(query.to)),
+      );
+    }
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+
+    const countRow = await db
+      .select({ value: count() })
+      .from(authorizationAuditEvents)
+      .where(whereClause)
+      .get();
+
+    // (created_at, id) 复合索引直接支撑这个排序，
+    // 第二排序键避免相同时间戳跨页时重复或丢失。
+    const items = await db
+      .select()
+      .from(authorizationAuditEvents)
+      .where(whereClause)
+      .orderBy(
+        desc(authorizationAuditEvents.createdAt),
+        desc(authorizationAuditEvents.id),
+      )
+      .limit(query.pageSize)
+      .offset((query.page - 1) * query.pageSize);
+
+    return { items, total: countRow?.value ?? 0 };
   }
 
   return {
     bootstrapAdminByEmail,
     findCurrentAuthorization,
     hasPermission,
+    listAuditEvents,
     listRoleCatalog,
     listUsers,
     replaceRolePermissions,

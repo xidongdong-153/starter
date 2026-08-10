@@ -1,9 +1,10 @@
 import { betterAuth } from "better-auth";
 import { drizzleAdapter } from "better-auth/adapters/drizzle";
-import { RoleKeys } from "@starter/contracts";
+import { AuditActions, RoleKeys } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { AppLogger } from "@api/infra/log/index.js";
 import { profiles, roles, userRoles } from "@api/infra/db/schema/index.js";
+import { insertAuditEvent } from "@api/modules/authorization/authorization.audit.js";
 import type { AppEnv } from "@api/shared/env.js";
 import { generateId } from "@api/shared/id.js";
 import { and, eq, isNull } from "drizzle-orm";
@@ -83,6 +84,17 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
                   assignedBy: null,
                 })
                 .run();
+
+              insertAuditEvent(tx, {
+                actorType: "system",
+                actorId: "better-auth:user.create",
+                action: AuditActions.USER_ROLES_INITIALIZED,
+                targetType: "user",
+                targetId: newUser.id,
+                before: { roleKeys: [] },
+                after: { roleKeys: [RoleKeys.OPERATOR] },
+                requestId: null,
+              });
             });
           },
         },

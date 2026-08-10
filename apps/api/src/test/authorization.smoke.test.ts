@@ -58,6 +58,12 @@ it("授权 migration 写入系统目录并给已有用户回填 operator", () =>
     sqlite.exec(
       readFileSync(resolve(migrationsFolder, "0001_tidy_hellcat.sql"), "utf8"),
     );
+    sqlite.exec(
+      readFileSync(
+        resolve(migrationsFolder, "0002_mean_iron_fist.sql"),
+        "utf8",
+      ),
+    );
 
     expect(sqlite.prepare("SELECT key FROM roles ORDER BY key").all()).toEqual([
       { key: "admin" },
@@ -197,7 +203,7 @@ it("权限查询区分 401、403，默认 operator 和多角色权限并集可�
     expect(
       (await readSuccess<CurrentPermissions>(adminPermissions)).data
         .permissions,
-    ).toHaveLength(7);
+    ).toHaveLength(Object.values(PermissionKeys).length);
 
     const union = runtime.db
       .select({ id: roles.id })

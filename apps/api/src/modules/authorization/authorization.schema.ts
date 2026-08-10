@@ -99,6 +99,36 @@ export const rolePermissions = sqliteTable(
   ],
 );
 
+/**
+ * 授权审计事件，追加式。
+ *
+ * `actorId` 和 `targetId` 不设外键：用户或角色删除后历史必须保留，
+ * 这与 `user_roles` 的级联删除策略相反，是有意的。
+ * 不加 relations()，避免把它当成可 join 的业务表。
+ */
+export const authorizationAuditEvents = sqliteTable(
+  "authorization_audit_events",
+  {
+    id: text("id").primaryKey(),
+    actorType: text("actor_type").notNull(),
+    actorId: text("actor_id").notNull(),
+    action: text("action").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    beforeJson: text("before_json").notNull(),
+    afterJson: text("after_json").notNull(),
+    reason: text("reason"),
+    requestId: text("request_id"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("authorization_audit_created_at_idx").on(table.createdAt, table.id),
+    index("authorization_audit_actor_idx").on(table.actorId, table.createdAt),
+    index("authorization_audit_action_idx").on(table.action, table.createdAt),
+    index("authorization_audit_target_idx").on(table.targetId, table.createdAt),
+  ],
+);
+
 export const rolesRelations = relations(roles, ({ many }) => ({
   userRoles: many(userRoles),
   rolePermissions: many(rolePermissions),
