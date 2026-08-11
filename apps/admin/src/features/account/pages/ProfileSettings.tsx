@@ -1,8 +1,10 @@
+import type { SocialProvider } from '@admin/api/auth'
 import type { AccountProfile, UpdateProfileInput } from '@starter/contracts'
 
 import { PermissionKeys } from '@starter/contracts'
 
 import { resolveApiUrl } from '@admin/api/client'
+import { useAuthConfigQuery, useLinkSocialMutation } from '@admin/api/auth'
 import { useFilesQuery } from '@admin/api/files'
 import {
   useClearProfileAvatarMutation,
@@ -15,7 +17,7 @@ import { usePermission } from '@admin/hooks/usePermission'
 import { formatDate } from '@admin/utils/dayjs'
 import { Alert, App, Button, Form, Input, Spin, Switch, Tag } from 'antd'
 import { Eraser, KeyRound, Save, UserRound } from 'lucide-react'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { SiGithub, SiGoogle } from 'react-icons/si'
@@ -74,6 +76,24 @@ function getProviderLabelKey(provider: string) {
   return provider
 }
 
+function getSocialLinkErrorKey(error: string) {
+  switch (error) {
+    case 'account_already_linked_to_different_user':
+      return 'profile.accountLinkErrors.alreadyUsed'
+    case "email_doesn't_match":
+    case 'LINKING_DIFFERENT_EMAILS_NOT_ALLOWED':
+      return 'profile.accountLinkErrors.emailMismatch'
+    case 'LINKING_NOT_ALLOWED':
+    case 'email_not_found':
+    case 'user_email_not_found':
+      return 'profile.accountLinkErrors.emailUnavailable'
+    case 'access_denied':
+      return 'profile.accountLinkErrors.cancelled'
+    default:
+      return 'profile.accountLinkErrors.failed'
+  }
+}
+
 interface AvatarPreviewProps {
   avatarUrl: string | null
   displayName?: string
@@ -99,20 +119,54 @@ export function ProfileSettings() {
   const [form] = Form.useForm<ProfileFormValues>()
   const fileListPermission = usePermission(PermissionKeys.FILE_LIST)
   const fileReadPermission = usePermission(PermissionKeys.FILE_READ)
+  const authConfigQuery = useAuthConfigQuery()
   const profileQuery = useProfileQuery()
+  const linkSocialMutation = useLinkSocialMutation()
   const filesQuery = useFilesQuery({ enabled: fileListPermission.allowed && fileReadPermission.allowed })
   const updateProfileMutation = useUpdateProfileMutation()
   const setAvatarMutation = useSetProfileAvatarMutation()
   const clearAvatarMutation = useClearProfileAvatarMutation()
 
+  const [socialLinkErrorKey, setSocialLinkErrorKey] = useState<string | null>(null)
   const profile = profileQuery.data
   const imageFiles = (filesQuery.data ?? []).filter((file) => file.mimeType.startsWith('image/'))
+
+  const enabledSocialProviders: SocialProvider[] = []
+  if (authConfigQuery.data?.providers.github) enabledSocialProviders.push('github')
+  if (authConfigQuery.data?.providers.google) enabledSocialProviders.push('google')
 
   useEffect(() => {
     if (profile) {
       form.setFieldsValue(toFormValues(profile))
     }
   }, [form, profile])
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const error = params.get('error')
+    if (!error) return
+
+    setSocialLinkErrorKey(getSocialLinkErrorKey(error))
+    params.delete('error')
+    params.delete('error_description')
+    const query = params.toString()
+    window.history.replaceState(
+      null,
+      '',
+      `${window.location.pathname}${query ? `?${query}` : ''}${window.location.hash}`,
+    )
+  }, [])
+
+  const handleLinkSocial = async (provider: SocialProvider) => {
+    setSocialLinkErrorKey(null)
+
+    const callbackURL = `${window.location.origin}/settings/profile`
+    try {
+      await linkSocialMutation.mutateAsync({ callbackURL, errorCallbackURL: callbackURL, provider })
+    } catch {
+      setSocialLinkErrorKey('profile.accountLinkErrors.failed')
+    }
+  }
 
   const handleSave = async (values: ProfileFormValues) => {
     try {
@@ -160,6 +214,16 @@ export function ProfileSettings() {
         ]}
       />
 
+      {authConfigQuery.error ? (
+        <Alert
+          showIcon
+          type="error"
+          message={t('profile.accountLinkConfigFailed')}
+          description={authConfigQuery.error instanceof Error ? authConfigQuery.error.message : undefined}
+          action={<Button onClick={() => void authConfigQuery.refetch()}>{t('common.retry')}</Button>}
+        />
+      ) : null}
+
       {profileQuery.error ? (
         <Alert
           showIcon
@@ -169,6 +233,8 @@ export function ProfileSettings() {
           action={<Button onClick={() => void profileQuery.refetch()}>{t('common.retry')}</Button>}
         />
       ) : null}
+
+      {socialLinkErrorKey ? <Alert showIcon type="error" message={t(socialLinkErrorKey)} /> : null}
 
       {profile ? (
         <>
@@ -320,6 +386,38 @@ export function ProfileSettings() {
                   </Tag>
                 ))}
               </div>
+              {enabledSocialProviders.length > 0 ? (
+                <div className="border-border-subtle space-y-3 border-t px-5 py-4">
+                  <div className="text-fg text-sm font-medium">{t('profile.accountLinkTitle')}</div>
+                  {enabledSocialProviders.map((provider) => {
+                    const bound = profile.providers.includes(provider)
+                    return (
+                      <div
+                        key={provider}
+                        className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="flex items-center gap-2 text-sm">
+                          {getProviderIcon(provider)}
+                          <span>{t(getProviderLabelKey(provider))}</span>
+                        </div>
+                        {bound ? (
+                          <Tag color="success" className="m-0 w-fit">
+                            {t('profile.accountLinkBound')}
+                          </Tag>
+                        ) : (
+                          <Button
+                            icon={getProviderIcon(provider)}
+                            loading={linkSocialMutation.isPending}
+                            onClick={() => void handleLinkSocial(provider)}
+                          >
+                            {t('profile.accountLinkAction')}
+                          </Button>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              ) : null}
             </div>
           </section>
         </>

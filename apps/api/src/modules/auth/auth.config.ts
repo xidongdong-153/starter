@@ -32,6 +32,12 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
     advanced: { database: { generateId } },
     emailAndPassword: { enabled: true, minPasswordLength: 8 },
     emailVerification: { sendVerificationEmail: async () => undefined },
+    account: {
+      accountLinking: {
+        enabled: true,
+        requireLocalEmailVerified: false,
+      },
+    },
     socialProviders: {
       ...(env.GITHUB_CLIENT_ID && env.GITHUB_CLIENT_SECRET
         ? {

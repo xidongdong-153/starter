@@ -1,4 +1,5 @@
 import { expect, it } from "vitest";
+import type { AuthConfig } from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
 import {
   createTestApp,
@@ -46,6 +47,19 @@ it("测试 runtime、健康检查、注册、登录、session 和退出流程可
     }>(me);
     expect(meBody.data.user.id).toBe(user.id);
     expect(meBody.data.providers).toContain("credential");
+  } finally {
+    cleanup();
+  }
+});
+
+it("未配置 OAuth provider 时只返回 email 登录方式", async () => {
+  const { app, cleanup } = createTestApp();
+  try {
+    const response = await app.request("/api/config/auth");
+    expect(response.status).toBe(200);
+    expect((await readSuccess<AuthConfig>(response)).data).toEqual({
+      providers: { email: true, github: false, google: false },
+    });
   } finally {
     cleanup();
   }

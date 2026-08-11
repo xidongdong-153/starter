@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { getAuthConfig } from './auth-config.api'
 import { getAdminSession } from './session.api'
+import { linkSocial } from './link-social.api'
 import { signInEmail, signInSocial } from './sign-in.api'
 import { signOut } from './sign-out.api'
 import { signUpEmail } from './sign-up.api'
@@ -41,6 +42,12 @@ export function useSignInEmailMutation() {
 export function useSignInSocialMutation() {
   return useMutation({
     mutationFn: signInSocial,
+  })
+}
+
+export function useLinkSocialMutation() {
+  return useMutation({
+    mutationFn: linkSocial,
   })
 }
 

@@ -3,7 +3,7 @@ import { AuthForm } from '@web/components/auth/auth-form'
 
 export const metadata: Metadata = {
   title: '登录',
-  description: '登录 Starter 账户。',
+  description: '使用 GitHub 或 Google 登录 Starter 账户。',
 }
 
 export default function LoginPage() {

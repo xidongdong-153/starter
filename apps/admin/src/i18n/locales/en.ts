@@ -251,6 +251,17 @@ export default {
     uploadSuccess: 'File uploaded',
   },
   profile: {
+    accountLinkAction: 'Bind',
+    accountLinkBound: 'Bound',
+    accountLinkConfigFailed: 'Failed to load sign-in methods',
+    accountLinkErrors: {
+      alreadyUsed: 'This social account is already linked to another user.',
+      cancelled: 'Social account binding was cancelled.',
+      emailMismatch: 'The social account email must match the current account email.',
+      emailUnavailable: 'The social account did not provide a verified email.',
+      failed: 'Failed to bind the social account. Try again later.',
+    },
+    accountLinkTitle: 'Bind Social Accounts',
     accountsDescription: 'Sign-in methods available to the current account.',
     accountsTitle: 'Sign-in Methods',
     availableForWork: 'Available for work',
