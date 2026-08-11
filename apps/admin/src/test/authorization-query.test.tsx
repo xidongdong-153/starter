@@ -22,12 +22,18 @@ const { getCurrentPermissions, replaceAuthorizationRolePermissions, replaceAutho
 )
 
 vi.mock('@admin/api/authorization/authorization.api', () => ({
+  archiveAuthorizationRole: vi.fn(),
+  createAuthorizationRole: vi.fn(),
   getAuthorizationAuditEvents: vi.fn(),
+  getAuthorizationPermissionImpact: vi.fn(),
+  getAuthorizationRoleImpact: vi.fn(),
   getCurrentPermissions,
   getAuthorizationRoles: vi.fn(),
   getAuthorizationUsers: vi.fn(),
   replaceAuthorizationRolePermissions,
   replaceAuthorizationUserRoles,
+  restoreAuthorizationRole: vi.fn(),
+  updateAuthorizationRole: vi.fn(),
 }))
 
 describe('currentPermissionsQueryOptions', () => {
@@ -103,7 +109,7 @@ describe('授权 mutation 的 query 失效', () => {
     replaceAuthorizationRolePermissions.mockReset()
   })
 
-  it('替换用户角色成功后失效 current、users、roles 三组 query', async () => {
+  it('替换用户角色成功后失效 current、users、roles 和 impact query', async () => {
     const user: AuthorizationUser = { id: 'u1', name: '张三', email: 'a@b.c', roleKeys: ['operator'] }
     replaceAuthorizationUserRoles.mockResolvedValue(user)
 
@@ -117,20 +123,25 @@ describe('授权 mutation 的 query 失效', () => {
     await result.current.mutateAsync({ userId: 'u1', values: { roleKeys: ['operator'] } })
 
     await waitFor(() => {
-      expect(invalidateQueries).toHaveBeenCalledTimes(3)
+      expect(invalidateQueries).toHaveBeenCalledTimes(5)
     })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.current() })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.users() })
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.roles() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.rolesAll() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.roleImpacts() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.permissionImpacts() })
   })
 
-  it('替换角色权限成功后失效 current、users、roles 三组 query', async () => {
+  it('替换角色权限成功后失效 current、users、roles 和 impact query', async () => {
     const role: AuthorizationRole = {
       key: 'viewer',
       name: '只读',
       description: null,
       isSystem: true,
+      archivedAt: null,
+      metadataEditable: false,
       permissionsEditable: true,
+      lifecycleEditable: false,
       permissionKeys: [PermissionKeys.FILE_LIST],
     }
     replaceAuthorizationRolePermissions.mockResolvedValue(role)
@@ -148,11 +159,13 @@ describe('授权 mutation 的 query 失效', () => {
     })
 
     await waitFor(() => {
-      expect(invalidateQueries).toHaveBeenCalledTimes(3)
+      expect(invalidateQueries).toHaveBeenCalledTimes(5)
     })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.current() })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.users() })
-    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.roles() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.rolesAll() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.roleImpacts() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: authorizationQueryKeys.permissionImpacts() })
   })
 
   it('mutation 失败时不失效任何 query', async () => {

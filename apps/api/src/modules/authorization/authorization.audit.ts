@@ -1,6 +1,11 @@
 import type {
   AuditPermissionKeysPayload,
+  AuditRoleCreatedAfter,
+  AuditRoleCreatedBefore,
   AuditRoleKeysPayload,
+  AuditRoleLifecyclePayload,
+  AuditRoleMetadataPayload,
+  RoleLifecycleAuditAction,
   UserRolesAuditAction,
 } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
@@ -40,6 +45,24 @@ export type AuditEventInput = AuditEventInputBase &
         before: AuditPermissionKeysPayload;
         after: AuditPermissionKeysPayload;
       }
+    | {
+        action: typeof AuditActions.ROLE_CREATED;
+        targetType: "role";
+        before: AuditRoleCreatedBefore;
+        after: AuditRoleCreatedAfter;
+      }
+    | {
+        action: typeof AuditActions.ROLE_UPDATED;
+        targetType: "role";
+        before: AuditRoleMetadataPayload;
+        after: AuditRoleMetadataPayload;
+      }
+    | {
+        action: RoleLifecycleAuditAction;
+        targetType: "role";
+        before: AuditRoleLifecyclePayload;
+        after: AuditRoleLifecyclePayload;
+      }
   );
 
 /** 写 transaction 句柄，与 `authorization.repository.ts` 的 TxLike 同源。 */
@@ -62,21 +85,60 @@ export function resolveUserRolesAction(
   return AuditActions.USER_ROLES_REPLACED;
 }
 
+/**
+ * 逐 action 显式投影 payload 字段。
+ * 调用方变量可能带额外字段（结构类型），不投影会把它们写进审计 JSON。
+ */
+function projectPayloads(input: AuditEventInput): {
+  before: unknown;
+  after: unknown;
+} {
+  switch (input.action) {
+    case AuditActions.ROLE_PERMISSIONS_REPLACED:
+      return {
+        before: { permissionKeys: input.before.permissionKeys },
+        after: { permissionKeys: input.after.permissionKeys },
+      };
+    case AuditActions.ROLE_CREATED:
+      return {
+        before: { role: null },
+        after: {
+          role: {
+            name: input.after.role.name,
+            description: input.after.role.description,
+            permissionKeys: input.after.role.permissionKeys,
+            archived: false,
+          },
+        },
+      };
+    case AuditActions.ROLE_UPDATED:
+      return {
+        before: {
+          name: input.before.name,
+          description: input.before.description,
+        },
+        after: { name: input.after.name, description: input.after.description },
+      };
+    case AuditActions.ROLE_ARCHIVED:
+    case AuditActions.ROLE_RESTORED:
+      return {
+        before: { archived: input.before.archived },
+        after: { archived: input.after.archived },
+      };
+    default:
+      return {
+        before: { roleKeys: input.before.roleKeys },
+        after: { roleKeys: input.after.roleKeys },
+      };
+  }
+}
+
 /** 写一条审计事件。必须在关系写入所处的同一 transaction 内调用。 */
 export function insertAuditEvent(
   tx: AuditTxLike,
   input: AuditEventInput,
 ): void {
-  const payloads =
-    input.action === AuditActions.ROLE_PERMISSIONS_REPLACED
-      ? {
-          before: { permissionKeys: input.before.permissionKeys },
-          after: { permissionKeys: input.after.permissionKeys },
-        }
-      : {
-          before: { roleKeys: input.before.roleKeys },
-          after: { roleKeys: input.after.roleKeys },
-        };
+  const payloads = projectPayloads(input);
 
   tx.insert(authorizationAuditEvents)
     .values({

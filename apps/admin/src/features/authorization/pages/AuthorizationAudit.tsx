@@ -6,6 +6,7 @@ import { AuditActions } from '@starter/contracts'
 
 import { useAuthorizationAuditEventsQuery } from '@admin/api/authorization'
 import { AdminPageHeader } from '@admin/components/common'
+import { projectAuditPayload } from '@admin/features/authorization/audit-presentation'
 
 import { Alert, Button, DatePicker, Form, Input, Select, Table, Tag, Typography } from 'antd'
 import { RotateCcw, Search } from 'lucide-react'
@@ -23,9 +24,38 @@ const actionOptions = Object.values(AuditActions).map((action) => ({ label: acti
 
 const copyableText = 'max-w-56 break-all'
 
-/** before/after 的差异标签。按 action 取对应字段，组件内不做 JSON.parse。 */
-function payloadKeys(payload: AuthorizationAuditEvent['before' | 'after']): string[] {
-  return 'roleKeys' in payload ? payload.roleKeys : payload.permissionKeys
+/** 组件只消费 contracts 的判别联合，不读取数据库 JSON。 */
+function AuditPayloadCell({ event, side }: { event: AuthorizationAuditEvent; side: 'before' | 'after' }) {
+  const { t } = useTranslation()
+  const payload = projectAuditPayload(event, side)
+
+  switch (payload.kind) {
+    case 'empty':
+      return <span className="text-fg-muted text-sm">-</span>
+    case 'role-created':
+      return (
+        <div className="min-w-40 space-y-1 text-sm">
+          <div className="text-fg break-words">{payload.name}</div>
+          {payload.description ? <div className="text-fg-muted break-words">{payload.description}</div> : null}
+          <KeyTags keys={payload.permissionKeys} removed={[]} added={payload.permissionKeys} />
+        </div>
+      )
+    case 'role-metadata':
+      return (
+        <div className="min-w-40 space-y-1 text-sm">
+          <div className="text-fg break-words">{payload.name}</div>
+          <div className="text-fg-muted break-words">{payload.description ?? '-'}</div>
+        </div>
+      )
+    case 'role-status':
+      return (
+        <Tag className="m-0" color={payload.archived ? 'orange' : 'green'}>
+          {payload.archived ? t('audit.roleArchived') : t('audit.roleActive')}
+        </Tag>
+      )
+    case 'keys':
+      return <KeyTags keys={payload.keys} removed={payload.removed} added={payload.added} />
+  }
 }
 
 function KeyTags({ keys, removed, added }: { keys: string[]; removed: string[]; added: string[] }) {
@@ -40,8 +70,9 @@ function KeyTags({ keys, removed, added }: { keys: string[]; removed: string[]; 
       {keys.map((key) => (
         <Tag
           key={key}
-          className="m-0 max-w-full whitespace-normal"
+          className="m-0 max-w-full break-all"
           color={removed.includes(key) ? 'red' : added.includes(key) ? 'green' : undefined}
+          style={{ overflowWrap: 'anywhere', whiteSpace: 'normal' }}
         >
           {key}
         </Tag>
@@ -113,20 +144,12 @@ export function AuthorizationAudit() {
     {
       key: 'before',
       title: t('audit.columns.before'),
-      render: (_, event) => {
-        const before = payloadKeys(event.before)
-        const after = payloadKeys(event.after)
-        return <KeyTags keys={before} removed={before.filter((key) => !after.includes(key))} added={[]} />
-      },
+      render: (_, event) => <AuditPayloadCell event={event} side="before" />,
     },
     {
       key: 'after',
       title: t('audit.columns.after'),
-      render: (_, event) => {
-        const before = payloadKeys(event.before)
-        const after = payloadKeys(event.after)
-        return <KeyTags keys={after} removed={[]} added={after.filter((key) => !before.includes(key))} />
-      },
+      render: (_, event) => <AuditPayloadCell event={event} side="after" />,
     },
     {
       key: 'requestId',

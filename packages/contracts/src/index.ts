@@ -3,6 +3,8 @@ import { z } from 'zod'
 export const ApiErrorCodes = {
   AUTH_FORBIDDEN: 'AUTH.FORBIDDEN',
   AUTH_LAST_PLATFORM_ADMIN: 'AUTH.LAST_PLATFORM_ADMIN',
+  AUTH_ROLE_IN_USE: 'AUTH.ROLE_IN_USE',
+  AUTH_ROLE_KEY_CONFLICT: 'AUTH.ROLE_KEY_CONFLICT',
   AUTH_SESSION_INVALID: 'AUTH.SESSION_INVALID',
   AUTH_UNAUTHENTICATED: 'AUTH.UNAUTHENTICATED',
   COMMON_INVALID_REQUEST: 'COMMON.INVALID_REQUEST',
@@ -97,6 +99,31 @@ export const replaceRolePermissionsSchema = z.object({
 export type ReplaceUserRolesInput = z.infer<typeof replaceUserRolesSchema>
 export type ReplaceRolePermissionsInput = z.infer<typeof replaceRolePermissionsSchema>
 
+export const roleNameSchema = z.string().trim().min(1).max(80)
+export const roleDescriptionSchema = z.string().trim().max(500).nullable()
+
+export const createRoleSchema = z.object({
+  key: roleKeySchema,
+  name: roleNameSchema,
+  description: roleDescriptionSchema,
+  permissionKeys: uniqueArraySchema(permissionSchema),
+})
+
+export const updateRoleSchema = z
+  .object({
+    name: roleNameSchema.optional(),
+    description: roleDescriptionSchema.optional(),
+  })
+  .refine((value) => value.name !== undefined || value.description !== undefined, {
+    message: '至少提供一个要修改的字段',
+  })
+
+export const roleCatalogStatusSchema = z.enum(['active', 'archived']).default('active')
+
+export type CreateRoleInput = z.infer<typeof createRoleSchema>
+export type UpdateRoleInput = z.infer<typeof updateRoleSchema>
+export type RoleCatalogStatus = z.infer<typeof roleCatalogStatusSchema>
+
 export interface CurrentPermissions {
   roles: string[]
   permissions: Permission[]
@@ -115,8 +142,22 @@ export interface AuthorizationRole {
   name: string
   description: string | null
   isSystem: boolean
+  archivedAt: string | null
+  metadataEditable: boolean
   permissionsEditable: boolean
+  lifecycleEditable: boolean
   permissionKeys: Permission[]
+}
+
+export interface AuthorizationRoleImpact {
+  roleKey: string
+  assignedUserCount: number
+}
+
+export interface AuthorizationPermissionImpact {
+  permissionKey: Permission
+  roleKeys: string[]
+  affectedUserCount: number
 }
 
 export interface AuthorizationPermission {
@@ -211,7 +252,11 @@ export interface UserManagementUserDetail extends UserManagementUser {
 export const AuditActions = {
   PLATFORM_ADMIN_GRANTED: 'platform_admin.granted',
   PLATFORM_ADMIN_REVOKED: 'platform_admin.revoked',
+  ROLE_ARCHIVED: 'role.archived',
+  ROLE_CREATED: 'role.created',
   ROLE_PERMISSIONS_REPLACED: 'role_permissions.replaced',
+  ROLE_RESTORED: 'role.restored',
+  ROLE_UPDATED: 'role.updated',
   USER_ROLES_INITIALIZED: 'user_roles.initialized',
   USER_ROLES_REPLACED: 'user_roles.replaced',
 } as const
@@ -230,16 +275,49 @@ export const UserRolesAuditActions = [
 
 export type UserRolesAuditAction = (typeof UserRolesAuditActions)[number]
 
+/** payload 形状为 { archived } 的角色生命周期 action。 */
+export const RoleLifecycleAuditActions = [AuditActions.ROLE_ARCHIVED, AuditActions.ROLE_RESTORED] as const
+
+export type RoleLifecycleAuditAction = (typeof RoleLifecycleAuditActions)[number]
+
 export const auditRoleKeysPayloadSchema = z.object({
   roleKeys: z.array(roleKeySchema),
 })
 export const auditPermissionKeysPayloadSchema = z.object({
   permissionKeys: z.array(permissionSchema),
 })
+export const auditRoleCreatedBeforeSchema = z.object({
+  role: z.null(),
+})
+export const auditRoleCreatedAfterSchema = z.object({
+  role: z.object({
+    name: z.string(),
+    description: z.string().nullable(),
+    permissionKeys: z.array(permissionSchema),
+    archived: z.literal(false),
+  }),
+})
+export const auditRoleMetadataPayloadSchema = z.object({
+  name: z.string(),
+  description: z.string().nullable(),
+})
+export const auditRoleLifecyclePayloadSchema = z.object({
+  archived: z.boolean(),
+})
 
 export type AuditRoleKeysPayload = z.infer<typeof auditRoleKeysPayloadSchema>
 export type AuditPermissionKeysPayload = z.infer<typeof auditPermissionKeysPayloadSchema>
-export type AuditPayload = AuditRoleKeysPayload | AuditPermissionKeysPayload
+export type AuditRoleCreatedBefore = z.infer<typeof auditRoleCreatedBeforeSchema>
+export type AuditRoleCreatedAfter = z.infer<typeof auditRoleCreatedAfterSchema>
+export type AuditRoleMetadataPayload = z.infer<typeof auditRoleMetadataPayloadSchema>
+export type AuditRoleLifecyclePayload = z.infer<typeof auditRoleLifecyclePayloadSchema>
+export type AuditPayload =
+  | AuditRoleKeysPayload
+  | AuditPermissionKeysPayload
+  | AuditRoleCreatedBefore
+  | AuditRoleCreatedAfter
+  | AuditRoleMetadataPayload
+  | AuditRoleLifecyclePayload
 
 export const authorizationAuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -276,6 +354,24 @@ export type AuthorizationAuditEvent = AuthorizationAuditEventBase &
         targetType: 'role'
         before: AuditPermissionKeysPayload
         after: AuditPermissionKeysPayload
+      }
+    | {
+        action: typeof AuditActions.ROLE_CREATED
+        targetType: 'role'
+        before: AuditRoleCreatedBefore
+        after: AuditRoleCreatedAfter
+      }
+    | {
+        action: typeof AuditActions.ROLE_UPDATED
+        targetType: 'role'
+        before: AuditRoleMetadataPayload
+        after: AuditRoleMetadataPayload
+      }
+    | {
+        action: RoleLifecycleAuditAction
+        targetType: 'role'
+        before: AuditRoleLifecyclePayload
+        after: AuditRoleLifecyclePayload
       }
   )
 

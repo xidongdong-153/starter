@@ -37,6 +37,10 @@ export function isForbiddenError(error: unknown): error is ApiRequestError {
   return error instanceof ApiRequestError && error.status === 403
 }
 
+export function isConflictError(error: unknown): error is ApiRequestError {
+  return error instanceof ApiRequestError && error.status === 409
+}
+
 export function subscribeApiAccessError(listener: ApiAccessErrorListener) {
   apiAccessErrorListeners.add(listener)
 

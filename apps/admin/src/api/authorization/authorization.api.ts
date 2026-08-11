@@ -1,12 +1,18 @@
 import type {
   AuthorizationAuditEventPage,
   AuthorizationAuditQuery,
+  AuthorizationPermissionImpact,
   AuthorizationRole,
   AuthorizationRoleCatalog,
+  AuthorizationRoleImpact,
   AuthorizationUser,
+  CreateRoleInput,
   CurrentPermissions,
+  Permission,
   ReplaceRolePermissionsInput,
   ReplaceUserRolesInput,
+  RoleCatalogStatus,
+  UpdateRoleInput,
 } from '@starter/contracts'
 
 import { apiRequest } from '@admin/api/http'
@@ -19,8 +25,44 @@ export function getAuthorizationUsers() {
   return apiRequest<AuthorizationUser[]>('/api/authorization/users')
 }
 
-export function getAuthorizationRoles() {
-  return apiRequest<AuthorizationRoleCatalog>('/api/authorization/roles')
+export function getAuthorizationRoles(status: RoleCatalogStatus = 'active') {
+  return apiRequest<AuthorizationRoleCatalog>(`/api/authorization/roles?status=${status}`)
+}
+
+export function createAuthorizationRole(input: CreateRoleInput) {
+  return apiRequest<AuthorizationRole>('/api/authorization/roles', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}
+
+export function updateAuthorizationRole(input: { roleKey: string; values: UpdateRoleInput }) {
+  return apiRequest<AuthorizationRole>(`/api/authorization/roles/${input.roleKey}`, {
+    method: 'PATCH',
+    body: JSON.stringify(input.values),
+  })
+}
+
+export function archiveAuthorizationRole(input: { roleKey: string }) {
+  return apiRequest<AuthorizationRole>(`/api/authorization/roles/${input.roleKey}/archive`, {
+    method: 'POST',
+  })
+}
+
+export function restoreAuthorizationRole(input: { roleKey: string }) {
+  return apiRequest<AuthorizationRole>(`/api/authorization/roles/${input.roleKey}/restore`, {
+    method: 'POST',
+  })
+}
+
+export function getAuthorizationRoleImpact(roleKey: string) {
+  return apiRequest<AuthorizationRoleImpact>(`/api/authorization/roles/${roleKey}/impact`)
+}
+
+export function getAuthorizationPermissionImpact(permissionKey: Permission) {
+  return apiRequest<AuthorizationPermissionImpact>(
+    `/api/authorization/permissions/${encodeURIComponent(permissionKey)}/impact`,
+  )
 }
 
 export function getAuthorizationAuditEvents(query: AuthorizationAuditQuery) {

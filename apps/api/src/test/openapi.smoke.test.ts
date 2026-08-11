@@ -51,6 +51,51 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
       document.paths["/api/authorization/roles/{roleKey}/permissions"]?.put
         ?.responses?.["403"],
     ).toBeDefined();
+    const roleCatalog = document.paths["/api/authorization/roles"];
+    expect(roleCatalog?.get?.responses?.["400"]).toBeDefined();
+    expect(roleCatalog?.get?.responses?.["403"]).toBeDefined();
+    expect(roleCatalog?.get?.responses?.["500"]).toBeDefined();
+    expect(roleCatalog?.post?.responses?.["400"]).toBeDefined();
+    expect(roleCatalog?.post?.responses?.["403"]).toBeDefined();
+    expect(roleCatalog?.post?.responses?.["409"]).toBeDefined();
+    expect(roleCatalog?.post?.responses?.["500"]).toBeDefined();
+
+    const updateRole =
+      document.paths["/api/authorization/roles/{roleKey}"]?.patch;
+    expect(updateRole?.responses?.["400"]).toBeDefined();
+    expect(updateRole?.responses?.["403"]).toBeDefined();
+    expect(updateRole?.responses?.["404"]).toBeDefined();
+    expect(updateRole?.responses?.["500"]).toBeDefined();
+
+    const archiveRole =
+      document.paths["/api/authorization/roles/{roleKey}/archive"]?.post;
+    expect(archiveRole?.responses?.["400"]).toBeDefined();
+    expect(archiveRole?.responses?.["403"]).toBeDefined();
+    expect(archiveRole?.responses?.["404"]).toBeDefined();
+    expect(archiveRole?.responses?.["409"]).toBeDefined();
+    expect(archiveRole?.responses?.["500"]).toBeDefined();
+
+    const restoreRole =
+      document.paths["/api/authorization/roles/{roleKey}/restore"]?.post;
+    expect(restoreRole?.responses?.["400"]).toBeDefined();
+    expect(restoreRole?.responses?.["403"]).toBeDefined();
+    expect(restoreRole?.responses?.["404"]).toBeDefined();
+    expect(restoreRole?.responses?.["500"]).toBeDefined();
+
+    const roleImpact =
+      document.paths["/api/authorization/roles/{roleKey}/impact"]?.get;
+    expect(roleImpact?.responses?.["400"]).toBeDefined();
+    expect(roleImpact?.responses?.["403"]).toBeDefined();
+    expect(roleImpact?.responses?.["404"]).toBeDefined();
+    expect(roleImpact?.responses?.["500"]).toBeDefined();
+
+    const permissionImpact =
+      document.paths["/api/authorization/permissions/{permissionKey}/impact"]
+        ?.get;
+    expect(permissionImpact?.responses?.["400"]).toBeDefined();
+    expect(permissionImpact?.responses?.["403"]).toBeDefined();
+    expect(permissionImpact?.responses?.["404"]).toBeDefined();
+    expect(permissionImpact?.responses?.["500"]).toBeDefined();
     expect(document.paths["/api/users"]?.get?.responses?.["403"]).toBeDefined();
     expect(
       document.paths["/api/users/{userId}"]?.get?.responses?.["403"],

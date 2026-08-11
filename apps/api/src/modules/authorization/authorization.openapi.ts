@@ -1,11 +1,17 @@
 import { z } from "@hono/zod-openapi";
 import {
   AuditActions,
+  RoleLifecycleAuditActions,
   UserRolesAuditActions,
   auditPermissionKeysPayloadSchema,
+  auditRoleCreatedAfterSchema,
+  auditRoleCreatedBeforeSchema,
   auditRoleKeysPayloadSchema,
+  auditRoleLifecyclePayloadSchema,
+  auditRoleMetadataPayloadSchema,
   authorizationAuditQuerySchema,
   permissionSchema,
+  roleCatalogStatusSchema,
   roleKeySchema,
 } from "@starter/contracts";
 import { isoDateTimeSchema } from "@api/openapi/responses.js";
@@ -34,10 +40,28 @@ const authorizationRoleSchema = z
     name: z.string(),
     description: z.string().nullable(),
     isSystem: z.boolean(),
+    archivedAt: isoDateTimeSchema.nullable(),
+    metadataEditable: z.boolean(),
     permissionsEditable: z.boolean(),
+    lifecycleEditable: z.boolean(),
     permissionKeys: z.array(permissionSchema),
   })
   .openapi("AuthorizationRole");
+
+export const authorizationRoleImpactSchema = z
+  .object({
+    roleKey: roleKeySchema,
+    assignedUserCount: z.number().int().min(0),
+  })
+  .openapi("AuthorizationRoleImpact");
+
+export const authorizationPermissionImpactSchema = z
+  .object({
+    permissionKey: permissionSchema,
+    roleKeys: z.array(roleKeySchema),
+    affectedUserCount: z.number().int().min(0),
+  })
+  .openapi("AuthorizationPermissionImpact");
 
 export const currentPermissionsSchema = z
   .object({
@@ -66,6 +90,14 @@ export const authorizationRoleParamsSchema = z.object({
   roleKey: roleKeySchema,
 });
 
+export const authorizationPermissionParamsSchema = z.object({
+  permissionKey: permissionSchema,
+});
+
+export const authorizationRoleCatalogQuerySchema = z.object({
+  status: roleCatalogStatusSchema.optional().default("active"),
+});
+
 const authorizationAuditEventBaseSchema = z.object({
   id: z.uuidv7(),
   actorType: z.enum(["user", "system"]),
@@ -89,6 +121,24 @@ const authorizationAuditEventSchema = z
       targetType: z.literal("role"),
       before: auditPermissionKeysPayloadSchema,
       after: auditPermissionKeysPayloadSchema,
+    }),
+    authorizationAuditEventBaseSchema.extend({
+      action: z.literal(AuditActions.ROLE_CREATED),
+      targetType: z.literal("role"),
+      before: auditRoleCreatedBeforeSchema,
+      after: auditRoleCreatedAfterSchema,
+    }),
+    authorizationAuditEventBaseSchema.extend({
+      action: z.literal(AuditActions.ROLE_UPDATED),
+      targetType: z.literal("role"),
+      before: auditRoleMetadataPayloadSchema,
+      after: auditRoleMetadataPayloadSchema,
+    }),
+    authorizationAuditEventBaseSchema.extend({
+      action: z.enum(RoleLifecycleAuditActions),
+      targetType: z.literal("role"),
+      before: auditRoleLifecyclePayloadSchema,
+      after: auditRoleLifecyclePayloadSchema,
     }),
   ])
   .openapi("AuthorizationAuditEvent");

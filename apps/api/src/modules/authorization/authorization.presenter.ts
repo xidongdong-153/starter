@@ -1,8 +1,10 @@
 import type {
   AuthorizationAuditEvent,
   AuthorizationPermission,
+  AuthorizationPermissionImpact,
   AuthorizationRole,
   AuthorizationRoleCatalog,
+  AuthorizationRoleImpact,
   AuthorizationUser,
   CurrentPermissions,
   Permission,
@@ -21,11 +23,16 @@ import {
   RoleKeys,
   auditActionSchema,
   auditPermissionKeysPayloadSchema,
+  auditRoleCreatedAfterSchema,
+  auditRoleCreatedBeforeSchema,
   auditRoleKeysPayloadSchema,
+  auditRoleLifecyclePayloadSchema,
+  auditRoleMetadataPayloadSchema,
   permissionSchema,
 } from "@starter/contracts";
 import { AppError } from "@api/shared/app-error.js";
 import { createHash } from "node:crypto";
+import type { z } from "zod";
 
 function toPermissions(permissionKeys: string[]): Permission[] {
   return [...new Set(permissionKeys)]
@@ -72,13 +79,36 @@ export function toAuthorizationRole(
   role: AuthorizationRoleRecord,
   permissionKeys: string[],
 ): AuthorizationRole {
+  const archived = role.archivedAt !== null;
   return {
     key: role.key,
     name: role.name,
     description: role.description,
     isSystem: role.isSystem,
-    permissionsEditable: role.key !== RoleKeys.ADMIN,
+    archivedAt: role.archivedAt ? role.archivedAt.toISOString() : null,
+    metadataEditable: !role.isSystem && !archived,
+    permissionsEditable: role.key !== RoleKeys.ADMIN && !archived,
+    lifecycleEditable: !role.isSystem,
     permissionKeys: toPermissions(permissionKeys),
+  };
+}
+
+export function toAuthorizationRoleImpact(
+  roleKey: string,
+  assignedUserCount: number,
+): AuthorizationRoleImpact {
+  return { roleKey, assignedUserCount };
+}
+
+export function toAuthorizationPermissionImpact(
+  permissionKey: Permission,
+  roleKeys: string[],
+  affectedUserCount: number,
+): AuthorizationPermissionImpact {
+  return {
+    permissionKey,
+    roleKeys: [...new Set(roleKeys)].sort(),
+    affectedUserCount,
   };
 }
 
@@ -150,6 +180,12 @@ function parsePermissionKeysPayload(json: string) {
   return result.data;
 }
 
+function parseWithSchema<T extends z.ZodType>(schema: T, json: string) {
+  const result = schema.safeParse(parseAuditJson(json));
+  if (!result.success) throw corruptedAuditEvent();
+  return result.data as z.infer<T>;
+}
+
 function parseActorType(value: string): "user" | "system" {
   if (value !== "user" && value !== "system") throw corruptedAuditEvent();
   return value;
@@ -184,6 +220,48 @@ export function toAuthorizationAuditEvent(
       targetType,
       before: parsePermissionKeysPayload(record.beforeJson),
       after: parsePermissionKeysPayload(record.afterJson),
+    };
+  }
+
+  if (action.data === AuditActions.ROLE_CREATED) {
+    if (targetType !== "role") throw corruptedAuditEvent();
+    return {
+      ...base,
+      action: action.data,
+      targetType,
+      before: parseWithSchema(auditRoleCreatedBeforeSchema, record.beforeJson),
+      after: parseWithSchema(auditRoleCreatedAfterSchema, record.afterJson),
+    };
+  }
+
+  if (action.data === AuditActions.ROLE_UPDATED) {
+    if (targetType !== "role") throw corruptedAuditEvent();
+    return {
+      ...base,
+      action: action.data,
+      targetType,
+      before: parseWithSchema(
+        auditRoleMetadataPayloadSchema,
+        record.beforeJson,
+      ),
+      after: parseWithSchema(auditRoleMetadataPayloadSchema, record.afterJson),
+    };
+  }
+
+  if (
+    action.data === AuditActions.ROLE_ARCHIVED ||
+    action.data === AuditActions.ROLE_RESTORED
+  ) {
+    if (targetType !== "role") throw corruptedAuditEvent();
+    return {
+      ...base,
+      action: action.data,
+      targetType,
+      before: parseWithSchema(
+        auditRoleLifecyclePayloadSchema,
+        record.beforeJson,
+      ),
+      after: parseWithSchema(auditRoleLifecyclePayloadSchema, record.afterJson),
     };
   }
 

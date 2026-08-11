@@ -1,15 +1,21 @@
 import type { InferSelectModel } from "drizzle-orm";
 import type { AppDatabase } from "@api/infra/db/client.js";
-import type { AuthorizationAuditQuery, Permission } from "@starter/contracts";
+import type {
+  AuthorizationAuditQuery,
+  Permission,
+  RoleCatalogStatus,
+} from "@starter/contracts";
 import { AuditActions, PermissionKeys, RoleKeys } from "@starter/contracts";
 import {
   and,
   asc,
   count,
+  countDistinct,
   desc,
   eq,
   gte,
   inArray,
+  isNotNull,
   isNull,
   lte,
 } from "drizzle-orm";
@@ -21,6 +27,7 @@ import {
   user,
   userRoles,
 } from "@api/infra/db/schema/index.js";
+import { generateId } from "@api/shared/id.js";
 import {
   insertAuditEvent,
   resolveUserRolesAction,
@@ -130,6 +137,31 @@ export type BootstrapAdminResult =
   | { kind: "user-not-found" }
   | { kind: "admin-role-not-found" };
 
+export type CreateRoleResult =
+  | { kind: "ok"; role: AuthorizationRoleRecord; permissionKeys: string[] }
+  | { kind: "invalid-permission-keys"; invalidKeys: string[] }
+  | { kind: "actor-not-platform-admin" }
+  | { kind: "role-key-conflict" };
+
+export type UpdateRoleResult =
+  | { kind: "ok"; role: AuthorizationRoleRecord; permissionKeys: string[] }
+  | { kind: "role-not-found" }
+  | { kind: "system-role" }
+  | { kind: "actor-not-platform-admin" };
+
+export type ArchiveRoleResult =
+  | { kind: "ok"; role: AuthorizationRoleRecord; permissionKeys: string[] }
+  | { kind: "role-not-found" }
+  | { kind: "system-role" }
+  | { kind: "actor-not-platform-admin" }
+  | { kind: "role-in-use"; assignedUserCount: number };
+
+export type RestoreRoleResult =
+  | { kind: "ok"; role: AuthorizationRoleRecord; permissionKeys: string[] }
+  | { kind: "role-not-found" }
+  | { kind: "system-role" }
+  | { kind: "actor-not-platform-admin" };
+
 export function createAuthorizationRepository(db: AppDatabase) {
   async function findCurrentAuthorization(userId: string) {
     const roleRows = await db
@@ -235,11 +267,15 @@ export function createAuthorizationRepository(db: AppDatabase) {
     return { users, roleAssignments };
   }
 
-  async function listRoleCatalog() {
+  async function listRoleCatalog(status: RoleCatalogStatus = "active") {
+    const statusCondition =
+      status === "archived"
+        ? isNotNull(roles.archivedAt)
+        : isNull(roles.archivedAt);
     const activeRoles = await db
       .select()
       .from(roles)
-      .where(isNull(roles.archivedAt))
+      .where(statusCondition)
       .orderBy(asc(roles.key));
     const activePermissions = await db
       .select()
@@ -261,7 +297,7 @@ export function createAuthorizationRepository(db: AppDatabase) {
       .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
       .where(
         and(
-          isNull(roles.archivedAt),
+          statusCondition,
           isNull(permissions.archivedAt),
           inArray(permissions.key, registeredPermissions),
         ),
@@ -508,6 +544,371 @@ export function createAuthorizationRepository(db: AppDatabase) {
     });
   }
 
+  /** 读取角色当前 permission key 集合，排序后返回。 */
+  function readRolePermissionKeys(tx: TxLike, roleId: string): string[] {
+    return tx
+      .select({ key: permissions.key })
+      .from(rolePermissions)
+      .innerJoin(permissions, eq(rolePermissions.permissionId, permissions.id))
+      .where(eq(rolePermissions.roleId, roleId))
+      .orderBy(asc(permissions.key))
+      .all()
+      .map((permission) => permission.key);
+  }
+
+  /** 统计与角色关联且仍存在的用户数。归档提交前必须在写 transaction 内重查。 */
+  function countAssignedUsers(tx: TxLike, roleId: string): number {
+    const row = tx
+      .select({ value: countDistinct(user.id) })
+      .from(userRoles)
+      .innerJoin(user, eq(userRoles.userId, user.id))
+      .where(eq(userRoles.roleId, roleId))
+      .get();
+    return row?.value ?? 0;
+  }
+
+  function createRole(
+    input: {
+      key: string;
+      name: string;
+      description: string | null;
+      permissionKeys: Permission[];
+    },
+    context: AuthorizationWriteContext,
+  ): CreateRoleResult {
+    return db.transaction((tx) => {
+      const activePermissions = input.permissionKeys.length
+        ? tx
+            .select({ id: permissions.id, key: permissions.key })
+            .from(permissions)
+            .where(
+              and(
+                inArray(permissions.key, input.permissionKeys),
+                isNull(permissions.archivedAt),
+              ),
+            )
+            .all()
+        : [];
+      const activePermissionKeys = new Set(
+        activePermissions.map((permission) => permission.key),
+      );
+      const invalidKeys = input.permissionKeys.filter(
+        (key) => !activePermissionKeys.has(key),
+      );
+      if (invalidKeys.length > 0) {
+        return { kind: "invalid-permission-keys", invalidKeys };
+      }
+
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+
+      // key 冲突检查覆盖归档角色：key 是稳定身份，归档不释放。
+      const existing = tx
+        .select({ id: roles.id })
+        .from(roles)
+        .where(eq(roles.key, input.key))
+        .get();
+      if (existing) return { kind: "role-key-conflict" };
+
+      const now = new Date();
+      const role = {
+        id: generateId(),
+        key: input.key,
+        name: input.name,
+        description: input.description,
+        isSystem: false,
+        archivedAt: null,
+        createdAt: now,
+        updatedAt: now,
+      };
+      tx.insert(roles).values(role).run();
+      if (activePermissions.length > 0) {
+        tx.insert(rolePermissions)
+          .values(
+            activePermissions.map((permission) => ({
+              roleId: role.id,
+              permissionId: permission.id,
+              assignedAt: now,
+              assignedBy: resolveAssignedBy(context),
+            })),
+          )
+          .run();
+      }
+
+      const sortedPermissionKeys = [...activePermissionKeys].sort();
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: AuditActions.ROLE_CREATED,
+        targetType: "role",
+        targetId: role.key,
+        before: { role: null },
+        after: {
+          role: {
+            name: role.name,
+            description: role.description,
+            permissionKeys: sortedPermissionKeys as Permission[],
+            archived: false,
+          },
+        },
+        requestId: context.requestId,
+      });
+
+      return { kind: "ok", role, permissionKeys: sortedPermissionKeys };
+    });
+  }
+
+  function updateRoleMetadata(
+    roleKey: string,
+    input: { name?: string; description?: string | null },
+    context: AuthorizationWriteContext,
+  ): UpdateRoleResult {
+    return db.transaction((tx) => {
+      const targetRole = tx
+        .select()
+        .from(roles)
+        .where(and(eq(roles.key, roleKey), isNull(roles.archivedAt)))
+        .get();
+      if (!targetRole) return { kind: "role-not-found" };
+
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+      if (targetRole.isSystem) return { kind: "system-role" };
+
+      const permissionKeys = readRolePermissionKeys(tx, targetRole.id);
+      const before = {
+        name: targetRole.name,
+        description: targetRole.description,
+      };
+      const after = {
+        name: input.name ?? targetRole.name,
+        description:
+          input.description === undefined
+            ? targetRole.description
+            : input.description,
+      };
+      if (
+        before.name === after.name &&
+        before.description === after.description
+      ) {
+        return { kind: "ok", role: targetRole, permissionKeys };
+      }
+
+      const updatedAt = new Date();
+      tx.update(roles)
+        .set({
+          name: after.name,
+          description: after.description,
+          updatedAt,
+        })
+        .where(eq(roles.id, targetRole.id))
+        .run();
+
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: AuditActions.ROLE_UPDATED,
+        targetType: "role",
+        targetId: targetRole.key,
+        before,
+        after,
+        requestId: context.requestId,
+      });
+
+      return {
+        kind: "ok",
+        role: {
+          ...targetRole,
+          name: after.name,
+          description: after.description,
+          updatedAt,
+        },
+        permissionKeys,
+      };
+    });
+  }
+
+  function archiveRole(
+    roleKey: string,
+    context: AuthorizationWriteContext,
+  ): ArchiveRoleResult {
+    return db.transaction((tx) => {
+      const targetRole = tx
+        .select()
+        .from(roles)
+        .where(eq(roles.key, roleKey))
+        .get();
+      if (!targetRole) return { kind: "role-not-found" };
+
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+      if (targetRole.isSystem) return { kind: "system-role" };
+
+      const permissionKeys = readRolePermissionKeys(tx, targetRole.id);
+      if (targetRole.archivedAt !== null) {
+        return { kind: "ok", role: targetRole, permissionKeys };
+      }
+
+      const assignedUserCount = countAssignedUsers(tx, targetRole.id);
+      if (assignedUserCount > 0) {
+        return { kind: "role-in-use", assignedUserCount };
+      }
+
+      const archivedAt = new Date();
+      tx.update(roles)
+        .set({ archivedAt, updatedAt: archivedAt })
+        .where(eq(roles.id, targetRole.id))
+        .run();
+
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: AuditActions.ROLE_ARCHIVED,
+        targetType: "role",
+        targetId: targetRole.key,
+        before: { archived: false },
+        after: { archived: true },
+        requestId: context.requestId,
+      });
+
+      return {
+        kind: "ok",
+        role: { ...targetRole, archivedAt, updatedAt: archivedAt },
+        permissionKeys,
+      };
+    });
+  }
+
+  function restoreRole(
+    roleKey: string,
+    context: AuthorizationWriteContext,
+  ): RestoreRoleResult {
+    return db.transaction((tx) => {
+      const targetRole = tx
+        .select()
+        .from(roles)
+        .where(eq(roles.key, roleKey))
+        .get();
+      if (!targetRole) return { kind: "role-not-found" };
+
+      if (
+        context.actorType === "user" &&
+        !isActivePlatformAdmin(tx, context.actorId)
+      ) {
+        return { kind: "actor-not-platform-admin" };
+      }
+      if (targetRole.isSystem) return { kind: "system-role" };
+
+      const permissionKeys = readRolePermissionKeys(tx, targetRole.id);
+      if (targetRole.archivedAt === null) {
+        return { kind: "ok", role: targetRole, permissionKeys };
+      }
+
+      const updatedAt = new Date();
+      tx.update(roles)
+        .set({ archivedAt: null, updatedAt })
+        .where(eq(roles.id, targetRole.id))
+        .run();
+
+      insertAuditEvent(tx, {
+        actorType: context.actorType,
+        actorId: context.actorId,
+        action: AuditActions.ROLE_RESTORED,
+        targetType: "role",
+        targetId: targetRole.key,
+        before: { archived: true },
+        after: { archived: false },
+        requestId: context.requestId,
+      });
+
+      return {
+        kind: "ok",
+        role: { ...targetRole, archivedAt: null, updatedAt },
+        permissionKeys,
+      };
+    });
+  }
+
+  /** 任意状态角色的分配用户数。只用于提示，写 transaction 内仍会重查。 */
+  async function getRoleImpact(roleKey: string) {
+    const targetRole = await db
+      .select()
+      .from(roles)
+      .where(eq(roles.key, roleKey))
+      .get();
+    if (!targetRole) return null;
+
+    const row = await db
+      .select({ value: countDistinct(user.id) })
+      .from(userRoles)
+      .innerJoin(user, eq(userRoles.userId, user.id))
+      .where(eq(userRoles.roleId, targetRole.id))
+      .get();
+    return { role: targetRole, assignedUserCount: row?.value ?? 0 };
+  }
+
+  /**
+   * permission 的有效授权影响。
+   * 除 role_permissions 关系外必须合并活动 admin 角色：
+   * admin 对每个活动注册 permission 自动有效，与 findCurrentAuthorization 一致。
+   */
+  async function getPermissionImpact(permissionKey: Permission) {
+    const permissionRow = await db
+      .select({ id: permissions.id })
+      .from(permissions)
+      .where(
+        and(eq(permissions.key, permissionKey), isNull(permissions.archivedAt)),
+      )
+      .get();
+    if (!permissionRow) return null;
+
+    const grantedRoles = await db
+      .selectDistinct({ id: roles.id, key: roles.key })
+      .from(rolePermissions)
+      .innerJoin(roles, eq(rolePermissions.roleId, roles.id))
+      .where(
+        and(
+          eq(rolePermissions.permissionId, permissionRow.id),
+          isNull(roles.archivedAt),
+        ),
+      );
+    const adminRole = await db
+      .select({ id: roles.id, key: roles.key })
+      .from(roles)
+      .where(and(eq(roles.key, RoleKeys.ADMIN), isNull(roles.archivedAt)))
+      .get();
+
+    const rolesById = new Map(grantedRoles.map((role) => [role.id, role.key]));
+    if (adminRole) rolesById.set(adminRole.id, adminRole.key);
+    const roleIds = [...rolesById.keys()];
+
+    const affectedRow = roleIds.length
+      ? await db
+          .select({ value: countDistinct(user.id) })
+          .from(userRoles)
+          .innerJoin(user, eq(userRoles.userId, user.id))
+          .where(inArray(userRoles.roleId, roleIds))
+          .get()
+      : undefined;
+
+    return {
+      roleKeys: [...rolesById.values()],
+      affectedUserCount: affectedRow?.value ?? 0,
+    };
+  }
+
   async function listAuditEvents(query: AuthorizationAuditQuery) {
     const conditions = [];
     if (query.action) {
@@ -554,14 +955,20 @@ export function createAuthorizationRepository(db: AppDatabase) {
   }
 
   return {
+    archiveRole,
     bootstrapAdminByEmail,
+    createRole,
     findCurrentAuthorization,
+    getPermissionImpact,
+    getRoleImpact,
     hasPermission,
     listAuditEvents,
     listRoleCatalog,
     listUsers,
     replaceRolePermissions,
     replaceUserRoles,
+    restoreRole,
+    updateRoleMetadata,
   };
 }
 

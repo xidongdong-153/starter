@@ -1,7 +1,8 @@
-import type { AuthorizationAuditEventPage } from '@starter/contracts'
+import type { AuthorizationAuditEvent, AuthorizationAuditEventPage } from '@starter/contracts'
 
 import { requireAdminRoutePermission } from '@admin/app/router/auth-guard'
 import { authorizationQueryKeys } from '@admin/api/authorization'
+import { projectAuditPayload } from '@admin/features/authorization/audit-presentation'
 import { authorizationRoutes } from '@admin/features/authorization/routes'
 import { AuditActions, PermissionKeys, RoleKeys } from '@starter/contracts'
 import { fireEvent, waitFor } from '@testing-library/react'
@@ -27,18 +28,65 @@ function createPage(items: AuthorizationAuditEventPage['items']): AuthorizationA
   return { items, total: items.length, page: 1, pageSize: 20 }
 }
 
-const roleEvent: AuthorizationAuditEventPage['items'][number] = {
+const auditEventBase = {
   id: '019c3e00-0002-7000-8000-000000000001',
-  actorType: 'user',
+  actorType: 'user' as const,
   actorId: 'actor-user-id',
-  action: AuditActions.PLATFORM_ADMIN_REVOKED,
-  targetType: 'user',
   targetId: 'target-user-id',
-  before: { roleKeys: [RoleKeys.ADMIN] },
-  after: { roleKeys: [RoleKeys.OPERATOR] },
   reason: null,
   requestId: 'request-abc',
   createdAt: new Date('2026-08-09T10:00:00.000Z').toISOString(),
+}
+
+const roleEvent: AuthorizationAuditEvent = {
+  ...auditEventBase,
+  action: AuditActions.PLATFORM_ADMIN_REVOKED,
+  targetType: 'user',
+  before: { roleKeys: [RoleKeys.ADMIN] },
+  after: { roleKeys: [RoleKeys.OPERATOR] },
+}
+
+const roleCreatedEvent: AuthorizationAuditEvent = {
+  ...auditEventBase,
+  action: AuditActions.ROLE_CREATED,
+  targetType: 'role',
+  targetId: 'auditor',
+  before: { role: null },
+  after: {
+    role: {
+      name: '审计员',
+      description: '查看审计记录',
+      permissionKeys: [PermissionKeys.AUTHORIZATION_AUDIT_READ],
+      archived: false,
+    },
+  },
+}
+
+const roleUpdatedEvent: AuthorizationAuditEvent = {
+  ...auditEventBase,
+  action: AuditActions.ROLE_UPDATED,
+  targetType: 'role',
+  targetId: 'auditor',
+  before: { name: '审计员', description: null },
+  after: { name: '高级审计员', description: '查看审计记录' },
+}
+
+const roleArchivedEvent: AuthorizationAuditEvent = {
+  ...auditEventBase,
+  action: AuditActions.ROLE_ARCHIVED,
+  targetType: 'role',
+  targetId: 'auditor',
+  before: { archived: false },
+  after: { archived: true },
+}
+
+const roleRestoredEvent: AuthorizationAuditEvent = {
+  ...auditEventBase,
+  action: AuditActions.ROLE_RESTORED,
+  targetType: 'role',
+  targetId: 'auditor',
+  before: { archived: true },
+  after: { archived: false },
 }
 
 async function captureThrown(run: () => Promise<unknown>): Promise<unknown> {
@@ -88,6 +136,51 @@ describe('审计 query key', () => {
 
     expect(first).toEqual(['authorization', 'audit-events', { page: 1, pageSize: 20 }])
     expect(first).not.toEqual(second)
+  })
+})
+
+describe('审计 payload 展示投影', () => {
+  it('保留现有角色集合 action 的新增和移除差异', () => {
+    expect(projectAuditPayload(roleEvent, 'before')).toEqual({
+      kind: 'keys',
+      keys: [RoleKeys.ADMIN],
+      removed: [RoleKeys.ADMIN],
+      added: [],
+    })
+    expect(projectAuditPayload(roleEvent, 'after')).toEqual({
+      kind: 'keys',
+      keys: [RoleKeys.OPERATOR],
+      removed: [],
+      added: [RoleKeys.OPERATOR],
+    })
+  })
+
+  it('投影 role.created 的名称、描述和初始权限', () => {
+    expect(projectAuditPayload(roleCreatedEvent, 'before')).toEqual({ kind: 'empty' })
+    expect(projectAuditPayload(roleCreatedEvent, 'after')).toEqual({
+      kind: 'role-created',
+      name: '审计员',
+      description: '查看审计记录',
+      permissionKeys: [PermissionKeys.AUTHORIZATION_AUDIT_READ],
+    })
+  })
+
+  it('投影 role.updated 的 before 和 after metadata', () => {
+    expect(projectAuditPayload(roleUpdatedEvent, 'before')).toEqual({
+      kind: 'role-metadata',
+      name: '审计员',
+      description: null,
+    })
+    expect(projectAuditPayload(roleUpdatedEvent, 'after')).toEqual({
+      kind: 'role-metadata',
+      name: '高级审计员',
+      description: '查看审计记录',
+    })
+  })
+
+  it('投影 role.archived 和 role.restored 的状态变化', () => {
+    expect(projectAuditPayload(roleArchivedEvent, 'after')).toEqual({ kind: 'role-status', archived: true })
+    expect(projectAuditPayload(roleRestoredEvent, 'after')).toEqual({ kind: 'role-status', archived: false })
   })
 })
 

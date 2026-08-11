@@ -2,8 +2,10 @@ import type { AppRuntime } from "@api/bootstrap/create-runtime.js";
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import {
   PermissionKeys,
+  createRoleSchema,
   replaceRolePermissionsSchema,
   replaceUserRolesSchema,
+  updateRoleSchema,
 } from "@starter/contracts";
 import {
   apiSuccessResponse,
@@ -21,7 +23,11 @@ import { createRequirePermission } from "./authorization.guard.js";
 import {
   authorizationAuditEventPageSchema,
   authorizationAuditQuerySchema,
+  authorizationPermissionImpactSchema,
+  authorizationPermissionParamsSchema,
+  authorizationRoleCatalogQuerySchema,
   authorizationRoleCatalogSchema,
+  authorizationRoleImpactSchema,
   authorizationRoleParamsSchema,
   authorizationRoleSchema,
   authorizationUserParamsSchema,
@@ -93,14 +99,159 @@ const listAuthorizationRolesRoute = createRoute({
   path: "/api/authorization/roles",
   tags: ["Authorization"],
   security: [{ cookieAuth: [] }],
+  request: {
+    query: authorizationRoleCatalogQuerySchema,
+  },
   responses: {
     200: apiSuccessResponse(
       authorizationRoleCatalogSchema,
-      "活动角色和权限目录",
+      "角色和权限目录，默认返回活动角色",
       "AuthorizationRoleCatalogResponse",
     ),
+    400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const createRoleRoute = createRoute({
+  method: "post",
+  path: "/api/authorization/roles",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    body: {
+      content: { "application/json": { schema: createRoleSchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationRoleSchema,
+      "创建的自定义角色",
+      "CreateRoleResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    409: conflictResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const updateRoleRoute = createRoute({
+  method: "patch",
+  path: "/api/authorization/roles/{roleKey}",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: authorizationRoleParamsSchema,
+    body: {
+      content: { "application/json": { schema: updateRoleSchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationRoleSchema,
+      "更新后的角色",
+      "UpdateRoleResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const archiveRoleRoute = createRoute({
+  method: "post",
+  path: "/api/authorization/roles/{roleKey}/archive",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: authorizationRoleParamsSchema,
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationRoleSchema,
+      "归档后的角色",
+      "ArchiveRoleResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const restoreRoleRoute = createRoute({
+  method: "post",
+  path: "/api/authorization/roles/{roleKey}/restore",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: authorizationRoleParamsSchema,
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationRoleSchema,
+      "恢复后的角色",
+      "RestoreRoleResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const roleImpactRoute = createRoute({
+  method: "get",
+  path: "/api/authorization/roles/{roleKey}/impact",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: authorizationRoleParamsSchema,
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationRoleImpactSchema,
+      "角色当前分配用户数",
+      "AuthorizationRoleImpactResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    500: internalErrorResponse,
+  },
+});
+
+const permissionImpactRoute = createRoute({
+  method: "get",
+  path: "/api/authorization/permissions/{permissionKey}/impact",
+  tags: ["Authorization"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: authorizationPermissionParamsSchema,
+  },
+  responses: {
+    200: apiSuccessResponse(
+      authorizationPermissionImpactSchema,
+      "permission 的有效角色和受影响用户数",
+      "AuthorizationPermissionImpactResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    500: internalErrorResponse,
   },
 });
 
@@ -225,7 +376,129 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
     },
     async (c) =>
       c.json(
-        createSuccessResponse(await service.listRoles(), c.var.requestId),
+        createSuccessResponse(
+          await service.listRoles(c.req.valid("query").status),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...createRoleRoute,
+      middleware: [requireAuth, requireAuthorizationManage],
+    },
+    (c) =>
+      c.json(
+        createSuccessResponse(
+          service.createRole(
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
+            c.req.valid("json"),
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...updateRoleRoute,
+      middleware: [requireAuth, requireAuthorizationManage],
+    },
+    (c) =>
+      c.json(
+        createSuccessResponse(
+          service.updateRole(
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
+            c.req.valid("param").roleKey,
+            c.req.valid("json"),
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...archiveRoleRoute,
+      middleware: [requireAuth, requireAuthorizationManage],
+    },
+    (c) =>
+      c.json(
+        createSuccessResponse(
+          service.archiveRole(
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
+            c.req.valid("param").roleKey,
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...restoreRoleRoute,
+      middleware: [requireAuth, requireAuthorizationManage],
+    },
+    (c) =>
+      c.json(
+        createSuccessResponse(
+          service.restoreRole(
+            {
+              actorType: "user",
+              actorId: c.var.currentUserId,
+              requestId: c.var.requestId,
+            },
+            c.req.valid("param").roleKey,
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...roleImpactRoute,
+      middleware: [requireAuth, requireAuthorizationRead],
+    },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.getRoleImpact(c.req.valid("param").roleKey),
+          c.var.requestId,
+        ),
+        200,
+      ),
+  );
+
+  app.openapi(
+    {
+      ...permissionImpactRoute,
+      middleware: [requireAuth, requireAuthorizationRead],
+    },
+    async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.getPermissionImpact(c.req.valid("param").permissionKey),
+          c.var.requestId,
+        ),
         200,
       ),
   );
