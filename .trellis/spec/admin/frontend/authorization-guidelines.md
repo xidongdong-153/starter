@@ -32,6 +32,11 @@ export const currentPermissionsQueryOptions = queryOptions({
   refetchOnWindowFocus: true,
   staleTime: 30_000,
 })
+
+const activeRolesKey = authorizationQueryKeys.roles('active')
+const archivedRolesKey = authorizationQueryKeys.roles('archived')
+const roleImpactKey = authorizationQueryKeys.roleImpact(roleKey)
+const permissionImpactKey = authorizationQueryKeys.permissionImpact(permissionKey)
 ```
 
 ## 3. Contracts
@@ -49,6 +54,18 @@ export const currentPermissionsQueryOptions = queryOptions({
 - 审计组件只接收 contracts 的结构化 before/after 判别联合，不读取 `before_json`、`after_json`，也不调用 `JSON.parse`。
 - action、actor ID、target ID 和时间范围筛选保存在页面 state；分页或筛选变化由 TanStack Query 发起新请求。当前路由没有 search params 校验模式，刷新页面或分享 URL 不保留筛选条件。
 
+### 授权管理页
+
+- `/settings/authorization` 继续使用单一路由，包含用户角色、角色权限和权限影响三个 Tab。
+- 活动与归档角色目录使用不同 query key；用户角色分配、创建表单和 Permission Tab 始终读取活动角色响应中的 permission 目录，不能跟随归档状态切换到另一份缓存。
+- `AuthorizationRole` 的 `metadataEditable`、`permissionsEditable` 和 `lifecycleEditable` 决定操作是否显示。客户端不根据 `admin`、`operator`、`viewer` 再写一套判断。
+- 创建表单只允许从 permission Tree 选择注册项。名称生成 key 建议值时使用 ASCII 规则，不做中文拼音转换；`keyTouched=true` 后名称变化不能覆盖管理员已经修改的 key。
+- metadata Drawer 不包含 key 和 permission。permission Drawer 打开时查询 role impact；存在 permission 差异时，impact 查询成功且不处于后台刷新状态后才能打开确认 Modal。
+- 归档 Modal 打开时查询最新 role impact。人数大于 0、查询失败或查询仍在刷新时禁用确认；API 返回 409 时重新拉取该 impact 和 active/archived role 目录，其他失败不执行成功后的失效逻辑。
+- create、update、archive、restore、用户角色替换和角色 permission 替换成功后，使 current permissions、users、全部 role catalog、role impact 和 permission impact 失效。mutation 失败不执行这组失效。
+- permission impact Drawer 展示有效 role key 和去重用户数。任意 role key 放进 Ant Design `Tag` 时，要用内联 `whiteSpace: 'normal'` 和 `overflowWrap: 'anywhere'`；只写 `whitespace-normal` 工具类可能被 Ant 样式覆盖，导致 Drawer 出现横向滚动。
+- 没有 `authorization:manage` 时，创建、分配、metadata、permission、归档和恢复操作全部隐藏；影响查询仍可见。直接调用写 API 仍由服务端返回 403。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | 路由或 UI 行为 |
@@ -56,7 +73,11 @@ export const currentPermissionsQueryOptions = queryOptions({
 | 无 session 或 API 返回 401 | 清空 Query cache，跳 `/login` |
 | permission query 成功但缺少 route permission | 跳 `/403`，session 保留 |
 | permission query 500 或网络错误 | ErrorBoundary 或侧栏/Drawer 的重试状态；不显示受保护导航 |
-| API mutation 返回 403 | 保持登录，失效并刷新当前权限 query，显示 mutation 错误 |
+| API mutation 返回 403 | 保持登录，失效并刷新当前权限 query，显示 mutation 错误；`PermissionGuard` 随新结果隐藏写操作 |
+| 创建 key 冲突返回 409 | 保留表单输入，显示服务端错误，不关闭 Drawer |
+| 归档返回 `AUTH.ROLE_IN_USE` 和 409 | 保留 Modal，刷新角色 impact 和角色目录，按服务端人数继续禁用确认 |
+| impact 查询 loading 或后台刷新 | permission 保存和归档确认保持禁用，不能使用旧人数提交 |
+| impact 查询失败 | Drawer 或 Modal 显示错误和重试动作，不清空已有列表数据 |
 | 当前用户失去 role | 重新加载后菜单和标签栏隐藏对应记录，直接 URL 进入 `/403` |
 | 当前用户在管理页 | 用户角色编辑按钮禁用；服务端也会拒绝 self mutation |
 
@@ -65,8 +86,12 @@ export const currentPermissionsQueryOptions = queryOptions({
 - Good：`/settings/authorization` 标记 `authorization:read`，route guard 拦截直达 URL，菜单和标签栏同步隐藏。
 - Good：`/settings/authorization-audit` 只标记 `authorization-audit:read`；审计员可以查看事件，但不会因此获得授权写能力。
 - Good：viewer 保留文件读取入口，但上传、重命名和删除按钮由精确 permission 隐藏。
-- Base：角色 mutation 成功后使 users、roles 和 current permissions query 失效。
+- Good：保存角色 permission 前显示新增、移除项和最新分配人数；归档前人数不为 0 时不提供可提交的确认按钮。
+- Good：活动和归档 role catalog、role impact、permission impact 使用不同 query key，mutation 成功后按前缀统一失效。
+- Base：只持有 `authorization:read` 的用户可以查看角色和影响，但页面不渲染任何写操作。
 - Bad：仅在 `NavigationMenu` 过滤条目，未在 route `beforeLoad` 检查 permission。
+- Bad：从角色名称硬转中文拼音，或名称每次变化都覆盖管理员已经确认的 key。
+- Bad：归档只使用之前缓存的 impact 人数，不等待后台刷新完成。
 - Bad：403 后清空 session，把有效登录态误判为未登录。
 - Bad：把完整 permissions response 存进持久化 Zustand，导致换账号或撤销权限后显示旧状态。
 
@@ -77,12 +102,16 @@ export const currentPermissionsQueryOptions = queryOptions({
 - admin、operator、viewer 三种权限集合的菜单、标签栏和直接 URL。
 - `/403` 内容、返回首页和上一页动作。
 - 当前权限 query 的 loading、失败重试和 403 刷新。
-- 授权管理页的 users、roles loading、空数据、错误、Modal 保存和 pending。
-- `admin` 权限只读、当前用户角色按钮禁用。
+- 授权管理页的 users、active/archived roles 和 permission 目录 loading、空数据、错误与重试。
+- key 建议覆盖英文、拉丁组合音标、中文、非法首字符、超长结果和 `keyTouched`。
+- create、metadata、permission diff、impact、archive 和 restore 的 pending、成功与失败状态。
+- 查询 key 区分 active/archived、role impact 和 permission impact；mutation 失败不失效，成功失效完整授权范围。
+- `admin` metadata、permission 和生命周期只读；当前用户角色按钮禁用。
+- 只有 `authorization:read` 时写操作全部隐藏；权限撤销并重新加载后进入 `/403`，直接写 API 仍返回 403。
 - 文件页的读取和四个写动作分别按 permission 显示。
-- 桌面和移动端的长邮箱、permission key、表格横向滚动和弹窗布局。
+- 桌面和移动端的长邮箱、role key、permission key、表格横向滚动、Drawer 和 Modal 布局；检查页面本身不能产生横向溢出。
 - 审计 route guard 和导航只向 `authorization-audit:read` 持有者开放。
-- 审计页的 loading、错误重试、空数据、结构化 before/after 和筛选参数提交。
+- 审计页的 loading、错误重试、空数据、四个角色 action 的结构化 before/after 和筛选参数提交。
 
 ## 7. Wrong vs Correct
 
@@ -108,27 +137,25 @@ const menuItems = buildNavigationMenuItems(
 
 ## 8. 演进边界
 
-> 审计页面和权限测试基础已经实现。后续能力仍需另建任务并同步更新 API、contracts 和前端规范。
+> 审计页面、自定义角色生命周期、影响查询和权限回归测试已经实现。后续能力仍需另建任务并同步更新 API、contracts 和前端规范。
 
-### 8.1 审计页面与查询
+### 8.1 已实现的授权控制面
 
-当前只读 authorization audit 页面遵守以下约束：
+- `/settings/authorization` 管理用户角色、自定义角色 metadata、permission、归档、恢复和两类 impact，不增加第二条管理路由。
+- 用户分配只使用活动角色；归档目录用于查找和恢复，不提供 metadata 或 permission 编辑。
+- permission 只从注册目录选择，Admin 没有 permission 创建、改名或删除入口。
+- 服务端返回 editability 字段，前端只按字段渲染操作。
+- 影响查询是提示状态，写入成功与否仍以 API transaction 结果为准。
+
+### 8.2 审计页面与查询
 
 - 通过独立的 `authorization-audit:read` permission 控制 route、菜单、标签和页面入口。
 - 使用 API 返回的结构化 before/after DTO；组件不接收数据库 JSON 字符串，也不自行 `JSON.parse`。
+- `role.created` 展示名称、描述和初始 permission；`role.updated` 展示 metadata 前后值；归档和恢复展示状态变化。
 - 使用现有 Query adapter、query keys、分页和筛选模式，不把审计数据写入 Zustand 或 localStorage。
 - loading、空数据、请求失败、403 和 401 分别处理；403 保留 session，401 清理 Query cache 并跳登录。
-- 长 permission key、用户 ID 和 request ID 必须在桌面和移动视口内保持可读，不得撑破表格或遮挡操作。
-
-### 8.2 权限回归测试
-
-Admin 已配置 Vitest `test` script，根目录 `pnpm test` 必须同时运行 API 与 Admin 测试。最小回归范围包括：
-
-- admin、operator、viewer 的菜单、标签、直接 URL 和按钮差异。
-- 权限 query 的 loading、失败重试、403 刷新和 401 跳转。
-- 授权页面的加载、空数据、错误、保存 pending 和 admin 只读状态。
-- 前端 permission 隐藏不能替代 API guard；直接请求仍以服务端 403 为准。
+- 长 role key、permission key、用户 ID 和 request ID 必须在桌面和移动视口内保持可读，不得撑破页面或遮挡操作。
 
 ### 8.3 条件能力的前端边界
 
-Organization、机器身份和 FGA 不在默认 Admin 路由、导航记录或权限类型中预留页面。进入对应业务任务后，再根据其唯一 principal、组织上下文或外部 provider 合同增加独立 feature；不把平台 `admin` 自动显示为每个 Organization 的管理员。
+用户账号停用、恢复、邀请和 Session 撤销不放进角色页面。Organization、机器身份和 FGA 不在默认 Admin 路由、导航记录或权限类型中预留页面；进入对应任务后再增加独立 feature，不把平台 `admin` 显示为 Organization 管理员。

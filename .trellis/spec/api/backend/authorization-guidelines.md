@@ -97,23 +97,37 @@ file route 的 permission 与动作一一对应：列表、内容、上传、重
 | GET | `/api/me/permissions` | 已登录 |
 | GET | `/api/authorization/users` | `authorization:read` |
 | PUT | `/api/authorization/users/{userId}/roles` | `authorization:manage` |
-| GET | `/api/authorization/roles` | `authorization:read` |
+| GET | `/api/authorization/roles?status=active\|archived` | `authorization:read` |
+| POST | `/api/authorization/roles` | `authorization:manage` |
+| PATCH | `/api/authorization/roles/{roleKey}` | `authorization:manage` |
 | PUT | `/api/authorization/roles/{roleKey}/permissions` | `authorization:manage` |
+| POST | `/api/authorization/roles/{roleKey}/archive` | `authorization:manage` |
+| POST | `/api/authorization/roles/{roleKey}/restore` | `authorization:manage` |
+| GET | `/api/authorization/roles/{roleKey}/impact` | `authorization:read` |
+| GET | `/api/authorization/permissions/{permissionKey}/impact` | `authorization:read` |
 | GET | `/api/authorization/audit-events` | `authorization-audit:read` |
 
-角色替换 body 为 `{ "roleKeys": string[] }`，至少一个 key 且不能重复。角色权限替换 body 为 `{ "permissionKeys": Permission[] }`，不能包含未注册或重复 key。
+`GET /api/authorization/roles` 不传 `status` 时只返回活动角色，保持旧客户端行为。响应中的 permission 目录始终只包含 `PermissionKeys` 已注册且数据库未归档的记录。
 
-管理 service 禁止调用者修改自己的角色；禁止修改 `admin` 角色权限。角色关系和角色权限关系的替换必须各自在 repository transaction 内完成。
+角色替换 body 为 `{ "roleKeys": string[] }`，至少一个 key 且不能重复。角色权限替换 body 为 `{ "permissionKeys": Permission[] }`，不能包含未注册、已归档或重复 key。
+
+创建角色 body 为 `{ key, name, description, permissionKeys }`：`key` 使用 `roleKeySchema`，名称长度为 1 到 80，描述为 `null` 或最多 500 个字符，permission 集合可以为空。服务端不根据名称生成 key，也不接受 `isSystem`、`archivedAt` 或创建后的 key 修改。
+
+metadata 更新 body 只接受可选的 `name` 和 `description`，至少提供一个字段。`AuthorizationRole` 由服务端返回 `archivedAt`、`metadataEditable`、`permissionsEditable` 和 `lifecycleEditable`，Admin 不重复实现系统角色判断。
+
+自定义角色写入现有 `roles` 与 `role_permissions`。创建和初始 permission、metadata 更新、归档、恢复及各自审计事件都在单个 repository transaction 内提交。角色不物理删除；归档保留 permission 关系，恢复不创建用户角色关系。
+
+管理 service 禁止调用者修改自己的角色；禁止修改 `admin` 角色权限。所有 `isSystem=true` 的角色都不能修改 metadata 或生命周期，`operator` 和 `viewer` 的活动 permission 仍可通过现有接口调整。
 
 `AUTH_BOOTSTRAP_ADMIN_EMAIL` 是可选环境变量。bootstrap 命令只处理已存在且邮箱精确匹配的用户，把该用户角色幂等替换为 `admin`；API 启动和普通注册不自动创建管理员。
 
 ### 平台管理员写入边界
 
-`authorization:manage` 只决定能不能进入写路由，不决定能不能落库。`authorization.repository.ts` 的 `replaceUserRoles` 和 `replaceRolePermissions` 在写 transaction 内用 `isActivePlatformAdmin(tx, actorId)` 重查一次 actor 是否关联未归档的 `admin` 角色，查不到就返回 `actor-not-platform-admin`，service 翻成 403 `AUTH.FORBIDDEN`。检查放在 transaction 内，是因为并发撤权时 transaction 外读到的快照可能已经过期。
+`authorization:manage` 只决定能不能进入写路由，不决定能不能落库。`authorization.repository.ts` 的 `replaceUserRoles`、`replaceRolePermissions`、`createRole`、`updateRoleMetadata`、`archiveRole` 和 `restoreRole` 都在写 transaction 内用 `isActivePlatformAdmin(tx, actorId)` 重查 actor 是否关联未归档的 `admin` 角色，查不到就返回 `actor-not-platform-admin`，service 翻成 403 `AUTH.FORBIDDEN`。检查放在 transaction 内，是因为并发撤权时 transaction 外读到的快照可能已经过期。
 
-所以 `authorization:manage` 不是可委派权限。把它加给 `operator` 或任何自定义角色，持有者仍然只能读授权数据，两个写接口一律 403；要放开写操作只能把用户加进 `admin`。
+所以 `authorization:manage` 不是可委派权限。把它加给 `operator` 或任何自定义角色，持有者仍不能修改用户角色、角色 permission 或角色生命周期；要放开写操作只能把用户加进 `admin`。
 
-repository 三个写函数（`replaceUserRoles`、`replaceRolePermissions`、`bootstrapAdminByEmail`）的最后一个参数是 `AuthorizationWriteContext`，service 把它作为第一个参数接收并透传：
+上述六个 HTTP 写函数和 `bootstrapAdminByEmail` 的最后一个参数都是 `AuthorizationWriteContext`，service 把它作为第一个参数接收并透传：
 
 ```ts
 interface AuthorizationWriteContext {
@@ -128,26 +142,53 @@ interface AuthorizationWriteContext {
 - `assigned_by` 的写入值由 `actorType` 决定：`user` 写 `actorId`，`system` 写 `null`。
 - `requestId` 写入同一 transaction 内创建的审计事件，不写入关系表；system actor 固定为 `null`。
 
-transaction 内的判断顺序不能调换：目标存在性 -> key 有效性 -> actor 平台管理员 -> 读 before 集合 -> 幂等短路 -> 最后一个平台管理员 -> 写入。幂等短路必须排在 actor 校验之后，否则无权 actor 提交一份与当前相同的集合就能拿到 200。
+关系替换 transaction 的判断顺序不能调换：目标存在性 -> key 有效性 -> actor 平台管理员 -> 读 before 集合 -> 幂等短路 -> 最后一个平台管理员 -> 写入。角色 metadata、归档和恢复也必须先检查 actor，再执行幂等短路；否则无权 actor 提交当前状态会拿到 200。
+
+创建角色先在 transaction 内确认请求中的 permission 都处于活动状态，再检查 actor 和全状态 key 冲突。归档角色在 transaction 内统计 `COUNT(DISTINCT user.id)`；影响查询返回的人数只用于预览，不能替代这次提交时重查。
 
 ### 幂等与最后一个平台管理员
 
 `replaceUserRoles`、`replaceRolePermissions` 和 `bootstrapAdminByEmail` 都先读排序后的 before 集合，与 after 相同时直接返回成功，不执行 `delete` + `insert`。重复提交相同集合不会刷新 `assigned_at`，也不会写审计事件；DTO 不暴露 `assigned_at`，改动不影响响应。
 
+`updateRoleMetadata` 对相同名称和描述直接返回当前角色；重复归档已归档角色、重复恢复活动角色也直接返回。三类幂等请求都不能改 `updated_at` 或追加审计。创建角色不是幂等操作，活动或归档角色占用同一 key 时返回 409 `AUTH.ROLE_KEY_CONFLICT`。
+
 `replaceUserRoles` 只在目标用户从有 `admin` 变成无 `admin` 时才统计活动平台管理员：现存 `user` 记录通过 `user_roles` 关联到未归档的 `admin` 角色。提交后数量归零时返回 `last-platform-admin`，service 翻成 409 `AUTH.LAST_PLATFORM_ADMIN`。当前 HTTP 路径走不到这条保护（actor 必须是活动 admin，又不能改自己，撤销别人的 admin 之后自己还在），只有 repository 级测试覆盖它。
+
+### 角色状态与影响查询
+
+角色 impact 查询接受活动或归档 role key，返回 `{ roleKey, assignedUserCount }`。人数只统计仍存在的 `user` 记录，并按 user ID 去重。
+
+permission impact 查询先确认 key 属于 `PermissionKeys` 且数据库记录未归档，再返回 `{ permissionKey, roleKeys, affectedUserCount }`：
+
+- 普通活动角色从 `role_permissions` 读取。
+- 活动 `admin` 对每个活动注册 permission 自动有效，即使没有对应 `role_permissions` 行。
+- 归档角色和归档 permission 不参与结果。
+- `roleKeys` 排序去重；关联多个有效角色的同一用户只计算一次。
+
+这一语义必须与 `findCurrentAuthorization` 和 `hasPermission` 的 `admin` 特殊分支一致。只查询 `role_permissions` 会漏掉平台管理员。
 
 ### 授权审计
 
-四个写入口只在授权事实实际变化时各写一条事件，并与关系写入使用同一个 SQLite transaction：
+写入口只在授权事实实际变化时各写一条事件，并与业务写入使用同一个 SQLite transaction：
 
 | 入口 | action | actor |
 | --- | --- | --- |
 | 用户角色替换 | `platform_admin.granted`、`platform_admin.revoked` 或 `user_roles.replaced` | 当前用户与 request ID |
 | 角色权限替换 | `role_permissions.replaced` | 当前用户与 request ID |
+| 自定义角色创建 | `role.created` | 当前用户与 request ID |
+| 自定义角色 metadata 更新 | `role.updated` | 当前用户与 request ID |
+| 自定义角色归档 | `role.archived` | 当前用户与 request ID |
+| 自定义角色恢复 | `role.restored` | 当前用户与 request ID |
 | Better Auth 新用户 hook | `user_roles.initialized` | `better-auth:user.create`，request ID 为空 |
 | 管理员 bootstrap | `platform_admin.granted` 或 `user_roles.replaced` | `auth:bootstrap-admin`，request ID 为空 |
 
-用户角色事件的 before/after 都保存完整、排序后的 role key 集合。角色权限事件保存完整、排序后的 permission key 集合。事件构造器只接收这些 key 数组，不接收 user、session 或 account record。
+用户角色事件的 before/after 都保存完整、排序后的 role key 集合。角色权限事件保存完整、排序后的 permission key 集合。角色事件使用以下封闭 payload：
+
+- `role.created`：before 为 `{ role: null }`，after 为 `{ role: { name, description, permissionKeys, archived: false } }`。
+- `role.updated`：before/after 都为 `{ name, description }`。
+- `role.archived`、`role.restored`：before/after 都为 `{ archived }`。
+
+role key 只写在 `targetId`。事件构造器必须按 action 显式投影允许字段，不接收或序列化 user、session、account 或数据库 role record。角色、permission 关系或审计插入任一步失败时，transaction 必须整体回滚。
 
 构造器还必须按 action 显式创建 `{ roleKeys }` 或 `{ permissionKeys }`，不能直接 `JSON.stringify(input.before)`。TypeScript 使用结构类型：调用方先把对象存进变量时，变量可以带额外字段并继续赋给较窄的参数类型。显式投影能保证这类字段不会进入审计 JSON。
 
@@ -161,6 +202,8 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 
 `GET /api/authorization/audit-events` 支持 action、actor ID、target ID、起止时间和 `page`/`pageSize`。查询固定按 `created_at DESC, id DESC` 排序。presenter 按 action 解析并校验 `before_json`、`after_json` 和 `target_type`；JSON 无法解析或结构与 action 不匹配时返回 `SYSTEM.INTERNAL_ERROR` 和 500，不把原始字符串交给客户端。
 
+已经写入角色生命周期事件后，回滚 API 或 Admin 时仍要保留 contracts、presenter 和审计展示对这些 action 的解析。旧版本不认识 action 时，读取历史审计会返回 500；不能删除已经写入的审计行来规避兼容问题。
+
 审计表当前没有导出、归档和保留期策略。部署方需要自行监控 SQLite 文件增长。
 
 ## 4. Validation & Error Matrix
@@ -172,22 +215,30 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 | 已登录但无所需 permission | 403 | `AUTH.FORBIDDEN` | 不执行 handler |
 | 权限表查询异常 | 500 | `SYSTEM.INTERNAL_ERROR` | 不降级为 403 或允许 |
 | 审计 JSON、action、payload 或 target type 损坏 | 500 | `SYSTEM.INTERNAL_ERROR` | 不返回原始存储值 |
-| 目标用户或 role 不存在 | 404 | `COMMON.NOT_FOUND` | 不更新关联表 |
-| role key 无效、归档或重复 | 400 | `COMMON.INVALID_REQUEST` | 不更新关联表 |
+| 目标用户、role 或 permission 不存在 | 404 | `COMMON.NOT_FOUND` | 不执行写入 |
+| role key 格式错误，permission 未注册、已归档或重复 | 400 | `COMMON.INVALID_REQUEST` | 不执行写入 |
+| 活动或归档 role 已占用创建 key | 409 | `AUTH.ROLE_KEY_CONFLICT` | 不创建角色、关系或审计 |
+| 自定义 role 仍有关联用户 | 409 | `AUTH.ROLE_IN_USE`，details 为 `{ assignedUserCount }` | 不归档、不写审计 |
+| 修改归档 role 的 metadata 或 permission | 404 | `COMMON.NOT_FOUND` | 先恢复再修改 |
+| 修改系统 role 的 metadata 或生命周期 | 403 | `AUTH.FORBIDDEN` | 不更新 role |
 | 调用者修改自己的 role | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
-| actor 不是活动平台管理员 | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
+| actor 不是活动平台管理员 | 403 | `AUTH.FORBIDDEN` | 不执行任何授权写入 |
 | 撤销最后一个活动平台管理员 | 409 | `AUTH.LAST_PLATFORM_ADMIN` | 不更新关联表 |
 | 修改 `admin` permission | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
 | bootstrap 未配置邮箱 | non-zero | 明确命令错误 | 不打开或写入授权关系 |
 | bootstrap 用户不存在或 migration 缺失 | non-zero | 明确命令错误 | 不写入授权关系 |
 
-三个 403 的 message 各不相同，用来区分拒绝原因：自改角色是「不能修改自己的角色」，actor 不是平台管理员是「只有平台管理员可以修改授权关系」，改 `admin` 权限是「不能修改 admin 角色的权限」。
+403 message 要保留具体拒绝原因：自改角色是「不能修改自己的角色」，actor 不是平台管理员是「只有平台管理员可以修改授权关系」，改 `admin` 权限是「不能修改 admin 角色的权限」，系统角色 metadata、归档和恢复分别说明对应操作不允许。客户端按稳定 code 和 status 处理，不根据中文 message 分支。
 
 ## 5. Good / Base / Bad Cases
 
 - Good：route 先执行 `requireAuth`，再执行 `createRequirePermission`，业务 service 最后检查资源 owner。
 - Good：角色权限修改后，下一次请求重新查询 SQLite 并使用新关系。
+- Good：归档前先查 role impact 提示人数，提交时仍在 transaction 内重新统计并在人数大于 0 时返回 `AUTH.ROLE_IN_USE`。
+- Good：permission impact 显式合并活动 `admin`，再按 user ID 去重。
 - Base：Admin 隐藏没有 `file:delete` 的按钮，但直接调用删除接口仍由 middleware 返回 403。
+- Bad：把影响查询结果当成归档写入依据，跳过 transaction 内重查。
+- Bad：permission impact 只联结 `role_permissions`，导致 `admin` 从结果中消失。
 - Bad：把 `permissions` request body 或 session 扩展字段当成 API 授权依据。
 - Bad：把 SQLite 查询异常转换成 403，掩盖基础设施错误。
 - Bad：在 permission middleware 中删除 owner 条件，导致拥有 file permission 的用户读取他人资源。
@@ -208,6 +259,20 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 - `bootstrapAdminByEmail` 对已是纯 `admin` 的用户重复执行时不重写关系。
 - repository 级撤销最后一个活动平台管理员返回 `last-platform-admin`，关系不变；库里存在第二个平台管理员时同样的撤销成功。
 - OpenAPI 包含授权 endpoint 及其 403 response，`PUT /api/authorization/users/{userId}/roles` 还要包含 409 response。
+
+`apps/api/src/test/role-lifecycle.smoke.test.ts` 至少覆盖：
+
+- 空 permission 和带初始 permission 的角色创建；关系与 `role.created` 在同一 transaction 提交。
+- 活动或归档 key 冲突返回 `AUTH.ROLE_KEY_CONFLICT`；无效或归档 permission 不留下角色、关系或审计。
+- 持有 `authorization:manage` 的非 admin 对创建、更新、归档和恢复仍返回 403。
+- metadata 部分更新和幂等更新；系统角色、归档角色拒绝修改。
+- 多个用户关联时归档返回 `AUTH.ROLE_IN_USE` 和去重人数；移除分配后可以归档。
+- 重复归档、重复恢复和幂等 metadata 不改变 `updated_at`，不追加审计。
+- 恢复保留 permission，不创建用户角色；归档角色不能分配或修改 permission。
+- role impact 统计任意状态角色；permission impact 合并 `admin` 自动权限并对多角色用户去重。
+- 关系插入失败和审计插入失败都回滚创建 transaction。
+- 四个角色 action 的 actor、target、request ID 和 payload；损坏 payload 或 target type 返回 500。
+- OpenAPI 为新增路径声明实际可能返回的 400、401、403、404、409 和 500。
 
 `apps/api/src/test/authorization-audit.smoke.test.ts` 至少覆盖：
 
@@ -248,13 +313,13 @@ middleware 决定动作资格，`service.remove` 继续依据 `currentUserId` �
 
 ## 8. 后续演进边界
 
-> 平台管理员写入边界和授权审计已经实现。下面只记录尚未进入当前 schema 或接口的后续能力。
+> 平台管理员写入边界、追加式审计、自定义角色生命周期和影响查询已经实现。下面只记录仍未进入当前 schema 或接口的能力。
 
 ### 8.1 默认产品画像
 
 - 默认脚手架是通用单租户后台，继续使用全局 User -> Role -> Permission RBAC。
 - `admin` 是平台根角色，不是 Organization role，也不是 Better Auth Admin plugin 的 `user.role`。
-- `operator` 和 `viewer` 保留为受保护的内置角色；自定义角色生命周期排在授权审计之后。
+- `operator` 和 `viewer` 是受保护的内置角色；自定义角色使用同一 `roles` 表并支持 metadata、permission、归档和恢复。
 - Organization、API Key、M2M 和 FGA 不进入默认 schema 或接口。
 
 ### 8.2 已实现的授权治理基础
@@ -262,21 +327,23 @@ middleware 决定动作资格，`service.remove` 继续依据 `currentUserId` �
 当前所有 HTTP 授权控制面写操作都遵守以下约束：
 
 - repository transaction 内重新检查 actor 的活动 `admin` 关系。
-- 普通角色即使拥有 `authorization:manage`，也不能替换任何用户角色或角色 permission。
-- 现有 self-mutation 继续返回 403。
-- 撤销目标用户最后一个活动 `admin` 时返回 `AUTH.LAST_PLATFORM_ADMIN` 和 409；关系和审计事件都不提交。
-- before 与 after 相同的幂等 mutation 不重写关系，也不写审计事件。
-- 实际发生的每次 mutation 只写一条授权审计事件，关系变更和事件在同一 transaction 提交。
-- HTTP actor 使用当前用户和 request ID；bootstrap 与 Better Auth hook 使用 `actor_type=system`，`actor_id` 分别为稳定值 `auth:bootstrap-admin`、`better-auth:user.create`，缺少 request ID 时保持为空。
+- 普通角色即使拥有 `authorization:manage`，也不能修改用户角色、角色 permission 或角色生命周期。
+- self-mutation 返回 403；撤销最后一个活动 `admin` 返回 `AUTH.LAST_PLATFORM_ADMIN` 和 409。
+- 自定义角色 key 创建后不可修改；系统角色不能改 metadata 或生命周期。
+- 有现存用户分配的自定义角色返回 `AUTH.ROLE_IN_USE` 和去重人数，不能归档。
+- before 与 after 相同的幂等 mutation 不更新时间、不重写关系，也不写审计事件。
+- 实际发生的每次 mutation 只写一条授权审计事件，业务数据和事件在同一 transaction 提交。
+- HTTP actor 使用当前用户和 request ID；bootstrap 与 Better Auth hook 使用稳定的 system actor。
 - 失败和拒绝不自动视为成功审计；当前 `AppError` 4xx 也不会自动写 Pino，拒绝日志需要单独设计。
 
-transaction 内 actor 校验、最后一个平台管理员保护和幂等短路由任务 `platform-admin-write-boundary` 实现；追加式审计表、四个写入口和审计查询由任务 `authorization-audit-trail` 实现。当前事件 action 为 `user_roles.replaced`、`role_permissions.replaced`、`user_roles.initialized`、`platform_admin.granted`、`platform_admin.revoked`。
+审计 DTO 由 contracts 按 action 提供判别联合，Admin 不直接解析数据库 JSON。permission impact 与运行时授权都必须保留 `admin` 自动获得全部活动注册 permission 的分支。
 
-角色生命周期阶段再增加 `role.created`、`role.updated`、`role.archived`、`role.restored`。审计 DTO 继续由 contracts 按 action 提供判别联合，Admin 不直接解析数据库 JSON。
+### 8.3 数据与回滚边界
 
-### 8.3 生命周期顺序
-
-平台根边界、审计表、审计查询和 API/Admin 回归测试已经完成。下一阶段实现自定义角色创建、metadata 修改、permission 替换、归档、恢复和影响查询。角色 key 创建后不可修改；系统角色不能归档或删除；有活动用户分配的自定义角色不能归档。不增加物理删除或 permission 创建接口。
+- 角色不提供物理删除；停用使用归档，恢复保留原有 permission。
+- permission 仍通过 contracts、API guard、migration、默认角色和测试一起发布，不提供运行时 CRUD。
+- 本阶段没有数据库 schema 变化。回滚 UI 或 endpoint 时，保留对已经写入的角色审计 action 的解析与展示。
+- 用户账号停用、恢复、邀请和 Session 撤销不属于角色生命周期，进入独立任务。
 
 ### 8.4 条件能力
 
