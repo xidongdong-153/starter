@@ -62,10 +62,21 @@ function getProviderIcon(provider: string) {
   }
 
   if (provider === 'google') {
-    return <SiGoogle className="size-4" />
+    return <SiGoogle className="size-4 text-[#4285f4]" />
   }
 
   return <KeyRound className="size-4" />
+}
+
+function getProviderTagClasses(provider: string): string {
+  switch (provider) {
+    case 'github':
+      return 'bg-[#0d1117] text-white'
+    case 'google':
+      return 'bg-white text-[#757575] border border-[#dadce0]'
+    default:
+      return 'bg-surface-muted text-fg-muted border border-border-subtle'
+  }
 }
 
 function getProviderLabelKey(provider: string) {
@@ -381,9 +392,13 @@ export function ProfileSettings() {
               </div>
               <div className="flex flex-wrap items-center gap-2 px-5 py-4">
                 {profile.providers.map((provider) => (
-                  <Tag key={provider} icon={getProviderIcon(provider)} className="m-0 inline-flex items-center gap-1.5">
+                  <span
+                    key={provider}
+                    className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-sm font-medium ${getProviderTagClasses(provider)}`}
+                  >
+                    {getProviderIcon(provider)}
                     {t(getProviderLabelKey(provider))}
-                  </Tag>
+                  </span>
                 ))}
               </div>
               {enabledSocialProviders.length > 0 ? (

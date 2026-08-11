@@ -258,6 +258,8 @@ export default {
       failed: '第三方账号绑定失败，请稍后再试。',
     },
     accountLinkTitle: '绑定第三方账号',
+    accountsDescription: '当前账号可用的登录方式。',
+    accountsTitle: '登录方式',
     availableForWork: '可接受工作机会',
     avatarDescription: '从已上传的图片里选一张作为头像。',
     avatarEmpty: '还没有图片，先到文件管理上传。',
