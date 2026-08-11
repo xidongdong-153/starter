@@ -1,0 +1,8 @@
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查平台管理员边界、幂等、归档过滤、admin 特殊权限和审计一致性"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"检查 400/403/404/409/500、error code 和 details"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 API smoke test、OpenAPI 和数据库失败分支"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"检查前端隐藏不替代 API、query 失效和 401/403 行为"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"检查 Admin Vitest、加载错误空状态和移动端交互"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查 contracts 类型、构建和跨包使用方"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 audit action、DTO 和影响数据在各层保持一致"}
+{"file":".trellis/tasks/08-10-access-management-next-step/research/role-lifecycle-source.md","reason":"检查实现没有越过已批准的角色和 permission 边界"}
