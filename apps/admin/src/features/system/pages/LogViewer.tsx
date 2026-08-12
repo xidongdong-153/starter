@@ -247,7 +247,9 @@ export function LogViewer() {
 
       <section className="min-w-0">
         <Table<SystemLogEntry>
-          rowKey={(entry) => String(entry.time ?? 0) + String(entry.requestId ?? '') + String(entry.msg ?? '')}
+          rowKey={(entry, index) =>
+            `${String(entry.time ?? 0)}-${String(entry.requestId ?? '')}-${String(entry.msg ?? '')}-${index ?? 0}`
+          }
           columns={columns}
           dataSource={items}
           loading={logsQuery.isLoading}
