@@ -250,7 +250,7 @@ export function LogViewer() {
         </Form.Item>
       </Form>
 
-      <section className="min-w-0">
+      <section className="mt-6 min-w-0">
         <Table<SystemLogEntry>
           rowKey={(entry, index) =>
             `${String(entry.time ?? 0)}-${String(entry.requestId ?? '')}-${String(entry.msg ?? '')}-${index ?? 0}`
@@ -259,7 +259,7 @@ export function LogViewer() {
           dataSource={items}
           loading={logsQuery.isLoading}
           locale={{ emptyText: t('systemLogs.empty') }}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: 'calc(100vh - 490px)' }}
           pagination={{
             current: page,
             pageSize,
