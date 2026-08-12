@@ -193,3 +193,5 @@
 ### Next Steps
 
 - 日志查询为整读+按行解析，日志量大时可换流式读取。
+- [OK] 浏览器验证（ego-browser）：db:migrate 应用 0004 后权限落库；admin 日志页列表/关键字/级别/requestId 筛选、链路 Drawer、加载更多分页全部正常；真实触发三类业务事件（上传成功/413 失败/用户状态变更）均落盘并可在页面查看。
+- [OK] 发现并修复 rowKey 冲突：同一毫秒多条 sql 日志行（无 requestId，msg 相同）生成相同 rowKey，Ant Table 渲染错乱（50 条渲染 59 行）。修复：rowKey 追加 index。提交 48a569e。
