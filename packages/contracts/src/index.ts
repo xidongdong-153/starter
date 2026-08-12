@@ -3,6 +3,7 @@ import { z } from 'zod'
 export const ApiErrorCodes = {
   AUTH_FORBIDDEN: 'AUTH.FORBIDDEN',
   AUTH_LAST_PLATFORM_ADMIN: 'AUTH.LAST_PLATFORM_ADMIN',
+  AUTH_ROLE_CONFLICT: 'AUTH.ROLE_CONFLICT',
   AUTH_ROLE_IN_USE: 'AUTH.ROLE_IN_USE',
   AUTH_ROLE_KEY_CONFLICT: 'AUTH.ROLE_KEY_CONFLICT',
   AUTH_SESSION_INVALID: 'AUTH.SESSION_INVALID',
@@ -69,6 +70,13 @@ export const RoleKeys = {
   OPERATOR: 'operator',
   VIEWER: 'viewer',
 } as const
+
+/**
+ * 互斥角色组（NIST RBAC 静态职责分离，INCITS 359）。
+ * 组内角色两两互斥：一个用户至多持有组内一个角色。
+ * 单元素组表示独占角色：持有该角色时不能持有任何其他角色。
+ */
+export const ExclusiveRoleGroups: readonly (readonly string[])[] = [[RoleKeys.ADMIN]] as const
 
 export type Permission = (typeof PermissionKeys)[keyof typeof PermissionKeys]
 export type SystemRole = (typeof RoleKeys)[keyof typeof RoleKeys]

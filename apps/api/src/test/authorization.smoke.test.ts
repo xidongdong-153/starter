@@ -800,3 +800,94 @@ it("撤销最后一个平台管理员被拒绝，关系不变", async () => {
     cleanup();
   }
 });
+
+it("互斥角色（SSD）：admin 独占，违反互斥组的角色分配被拒绝且关系不变", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await register(app, "admin@example.com");
+    const target = await register(app, "target@example.com");
+    const bootstrapEnv = {
+      APP_ENV: "test",
+      BETTER_AUTH_SECRET: runtime.env.BETTER_AUTH_SECRET,
+      DATABASE_PATH: runtime.env.DATABASE_PATH,
+      FILES_DIR: runtime.env.FILES_DIR,
+      AUTH_BOOTSTRAP_ADMIN_EMAIL: "admin@example.com",
+    };
+    expect(runBootstrapAdmin(bootstrapEnv, { error() {}, log() {} })).toBe(0);
+
+    const putRoles = (roleKeys: string[]) =>
+      app.request(`/api/authorization/users/${target.user.id}/roles`, {
+        method: "PUT",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ roleKeys }),
+      });
+
+    // 分配 [admin, operator] 违反 admin 独占：403，角色保持默认 operator 不变。
+    const conflict = await putRoles([RoleKeys.ADMIN, RoleKeys.OPERATOR]);
+    expect(conflict.status).toBe(403);
+    const conflictBody = await readFailure(conflict);
+    expect(conflictBody.error.code).toBe(ApiErrorCodes.AUTH_ROLE_CONFLICT);
+    expect(conflictBody.error.message).toBe(
+      "角色分配违反职责分离约束：admin 与 operator 不能同时分配",
+    );
+    expect(readUserRoleKeys(runtime.db, target.user.id)).toEqual([
+      RoleKeys.OPERATOR,
+    ]);
+
+    // 单独分配 [admin] 成功。
+    const adminOnly = await putRoles([RoleKeys.ADMIN]);
+    expect(adminOnly.status).toBe(200);
+    expect(
+      (await readSuccess<AuthorizationUser>(adminOnly)).data.roleKeys,
+    ).toEqual([RoleKeys.ADMIN]);
+
+    // 幂等提交 [admin] 放行，不报互斥错误。
+    const idempotent = await putRoles([RoleKeys.ADMIN]);
+    expect(idempotent.status).toBe(200);
+
+    // 非互斥组合 [operator, viewer] 成功。
+    const nonConflicting = await putRoles([RoleKeys.OPERATOR, RoleKeys.VIEWER]);
+    expect(nonConflicting.status).toBe(200);
+    expect(readUserRoleKeys(runtime.db, target.user.id)).toEqual([
+      RoleKeys.OPERATOR,
+      RoleKeys.VIEWER,
+    ]);
+
+    // 存量违规（绕过校验直接写入 admin）不被扫描或自动修改；
+    // 幂等提交相同集合（before == after）时放行，只有实际变更的写入才被拦截。
+    const adminRole = runtime.db
+      .select()
+      .from(roles)
+      .where(eq(roles.key, RoleKeys.ADMIN))
+      .get();
+    expect(adminRole).toBeDefined();
+    runtime.db
+      .insert(userRoles)
+      .values({
+        userId: target.user.id,
+        roleId: adminRole!.id,
+        assignedAt: new Date(),
+        assignedBy: null,
+      })
+      .run();
+    expect(readUserRoleKeys(runtime.db, target.user.id)).toEqual([
+      RoleKeys.ADMIN,
+      RoleKeys.OPERATOR,
+      RoleKeys.VIEWER,
+    ]);
+
+    const staleSubmit = await putRoles([
+      RoleKeys.ADMIN,
+      RoleKeys.OPERATOR,
+      RoleKeys.VIEWER,
+    ]);
+    expect(staleSubmit.status).toBe(200);
+    expect(readUserRoleKeys(runtime.db, target.user.id)).toEqual([
+      RoleKeys.ADMIN,
+      RoleKeys.OPERATOR,
+      RoleKeys.VIEWER,
+    ]);
+  } finally {
+    cleanup();
+  }
+});

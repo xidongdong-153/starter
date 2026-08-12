@@ -219,6 +219,14 @@ export function createAuthorizationService(
         403,
       );
     }
+    if (result.kind === "exclusive-role-group-conflict") {
+      throw new AppError(
+        ApiErrorCodes.AUTH_ROLE_CONFLICT,
+        `角色分配违反职责分离约束：${result.conflictingKeys.join(" 与 ")} 不能同时分配`,
+        403,
+        { group: result.group, conflictingKeys: result.conflictingKeys },
+      );
+    }
     if (result.kind === "last-platform-admin") {
       throw new AppError(
         ApiErrorCodes.AUTH_LAST_PLATFORM_ADMIN,

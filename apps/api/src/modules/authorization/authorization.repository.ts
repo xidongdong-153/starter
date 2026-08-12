@@ -5,7 +5,12 @@ import type {
   Permission,
   RoleCatalogStatus,
 } from "@starter/contracts";
-import { AuditActions, PermissionKeys, RoleKeys } from "@starter/contracts";
+import {
+  AuditActions,
+  ExclusiveRoleGroups,
+  PermissionKeys,
+  RoleKeys,
+} from "@starter/contracts";
 import {
   and,
   asc,
@@ -120,6 +125,11 @@ export type ReplaceUserRolesResult =
   | { kind: "user-not-found" }
   | { kind: "invalid-role-keys"; invalidKeys: string[] }
   | { kind: "actor-not-platform-admin" }
+  | {
+      kind: "exclusive-role-group-conflict";
+      group: readonly string[];
+      conflictingKeys: string[];
+    }
   | { kind: "last-platform-admin" };
 
 export type ReplaceRolePermissionsResult =
@@ -306,6 +316,38 @@ export function createAuthorizationRepository(db: AppDatabase) {
     return { activeRoles, activePermissions, permissionAssignments };
   }
 
+  /**
+   * NIST RBAC 静态职责分离（SSD）互斥校验。
+   * 组内角色两两互斥：目标角色集中至多出现组内一个角色；
+   * 单元素组为独占角色：目标角色集中包含该角色时，目标角色集大小必须为 1。
+   * 返回 null 表示通过，否则返回命中的互斥组和冲突角色 key。
+   */
+  function checkExclusiveRoleGroups(
+    roleKeys: readonly string[],
+  ): { group: readonly string[]; conflictingKeys: string[] } | null {
+    const roleKeySet = new Set(roleKeys);
+    for (const group of ExclusiveRoleGroups) {
+      const conflictingKeys = group.filter((key) => roleKeySet.has(key)).sort();
+      if (group.length === 1) {
+        // 独占角色：持有该角色时不能持有任何其他角色。
+        // 冲突列表包含独占角色本身和当前持有的其他角色，便于错误文案展示。
+        if (conflictingKeys.length > 0 && roleKeys.length > 1) {
+          return {
+            group,
+            conflictingKeys: [
+              ...conflictingKeys,
+              ...roleKeys.filter((key) => key !== group[0]).sort(),
+            ],
+          };
+        }
+      } else if (conflictingKeys.length > 1) {
+        // 两两互斥：至多持有组内一个角色
+        return { group, conflictingKeys };
+      }
+    }
+    return null;
+  }
+
   function replaceUserRoles(
     userId: string,
     roleKeys: string[],
@@ -353,6 +395,17 @@ export function createAuthorizationRepository(db: AppDatabase) {
       // 幂等短路必须在 actor 校验之后，否则无权 actor 能提交相同值绕过校验。
       if (sameKeys(beforeRoleKeys, afterRoleKeys)) {
         return { kind: "ok", user: targetUser, roleKeys: afterRoleKeys };
+      }
+
+      // SSD 互斥校验（NIST RBAC Constrained 层）：违反互斥组时拒绝写入。
+      // 放在幂等短路之后，存量违规在无变化时不拦截；放在 last-admin 检查之前，优先拒绝互斥组合。
+      const conflict = checkExclusiveRoleGroups(afterRoleKeys);
+      if (conflict) {
+        return {
+          kind: "exclusive-role-group-conflict",
+          group: conflict.group,
+          conflictingKeys: conflict.conflictingKeys,
+        };
       }
 
       const removesAdmin =
