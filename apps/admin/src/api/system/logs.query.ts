@@ -1,10 +1,10 @@
 import type { SystemLogsQuery } from '@starter/contracts'
 
-import { useInfiniteQuery, useQuery } from '@tanstack/react-query'
+import { useQuery } from '@tanstack/react-query'
 
 import { getSystemLogs } from './logs.api'
 
-export const LOGS_PAGE_SIZE = 50
+export const LOGS_DEFAULT_PAGE_SIZE = 20
 
 export const systemLogsQueryKeys = {
   all: ['system', 'logs'] as const,
@@ -12,16 +12,10 @@ export const systemLogsQueryKeys = {
   requestId: (requestId: string) => [...systemLogsQueryKeys.all, 'requestId', requestId] as const,
 }
 
-export function useSystemLogsQuery(filters: Omit<SystemLogsQuery, 'limit' | 'before'>) {
-  return useInfiniteQuery({
-    queryKey: systemLogsQueryKeys.page({ ...filters, limit: LOGS_PAGE_SIZE }),
-    queryFn: ({ pageParam }) => getSystemLogs({ ...filters, before: pageParam, limit: LOGS_PAGE_SIZE }),
-    initialPageParam: undefined as number | undefined,
-    getNextPageParam: (lastPage) => {
-      if (lastPage.items.length < LOGS_PAGE_SIZE) return undefined
-      const time = typeof lastPage.items.at(-1)?.time === 'number' ? lastPage.items.at(-1)?.time : undefined
-      return time as number | undefined
-    },
+export function useSystemLogsQuery(filters: SystemLogsQuery) {
+  return useQuery({
+    queryKey: systemLogsQueryKeys.page(filters),
+    queryFn: () => getSystemLogs(filters),
   })
 }
 

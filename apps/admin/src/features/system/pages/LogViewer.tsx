@@ -1,7 +1,7 @@
 import type { SystemLogEntry, SystemLogLevel } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
-import { useSystemLogsByRequestIdQuery, useSystemLogsQuery } from '@admin/api/system'
+import { LOGS_DEFAULT_PAGE_SIZE, useSystemLogsByRequestIdQuery, useSystemLogsQuery } from '@admin/api/system'
 import { AdminPageHeader } from '@admin/components/common'
 
 import { Alert, Button, Drawer, Form, Input, Select, Table, Tag, Typography } from 'antd'
@@ -97,8 +97,10 @@ export function LogViewer() {
   const { t } = useTranslation()
   const [filterForm] = Form.useForm<LogFilterValues>()
   const [filters, setFilters] = useState<Omit<LogFilterValues, 'level'> & { level?: SystemLogLevel }>({})
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(LOGS_DEFAULT_PAGE_SIZE)
   const [chainRequestId, setChainRequestId] = useState<string | null>(null)
-  const logsQuery = useSystemLogsQuery(filters)
+  const logsQuery = useSystemLogsQuery({ ...filters, page, pageSize })
 
   const applyFilters = (values: LogFilterValues) => {
     setFilters({
@@ -106,14 +108,17 @@ export function LogViewer() {
       level: values.level,
       query: values.query?.trim() || undefined,
     })
+    setPage(1)
   }
 
   const clearFilters = () => {
     filterForm.resetFields()
     setFilters({})
+    setPage(1)
   }
 
-  const items = logsQuery.data?.pages.flatMap((page) => page.items) ?? []
+  const items = logsQuery.data?.items ?? []
+  const total = logsQuery.data?.total ?? 0
 
   const columns: TableProps<SystemLogEntry>['columns'] = [
     {
@@ -201,7 +206,7 @@ export function LogViewer() {
       <AdminPageHeader
         title={t('systemLogs.title')}
         description={t('systemLogs.description')}
-        summaryItems={[{ label: t('systemLogs.summary.loaded'), value: items.length }]}
+        summaryItems={[{ label: t('systemLogs.summary.total'), value: total }]}
       />
 
       {logsQuery.error ? (
@@ -255,7 +260,17 @@ export function LogViewer() {
           loading={logsQuery.isLoading}
           locale={{ emptyText: t('systemLogs.empty') }}
           scroll={{ x: 'max-content' }}
-          pagination={false}
+          pagination={{
+            current: page,
+            pageSize,
+            total,
+            showSizeChanger: true,
+            pageSizeOptions: [10, 20, 50, 100],
+            onChange: (nextPage, nextPageSize) => {
+              setPage(nextPage)
+              setPageSize(nextPageSize)
+            },
+          }}
           expandable={{
             expandedRowRender: (entry) => (
               <pre className="text-fg-muted max-h-80 overflow-auto rounded bg-black/10 p-3 text-xs">
@@ -264,14 +279,6 @@ export function LogViewer() {
             ),
           }}
         />
-        <div className="mt-4 flex justify-center">
-          <Button
-            onClick={() => void logsQuery.fetchNextPage()}
-            disabled={!logsQuery.hasNextPage || logsQuery.isFetchingNextPage}
-          >
-            {logsQuery.isFetchingNextPage ? t('systemLogs.loading') : t('systemLogs.loadMore')}
-          </Button>
-        </div>
       </section>
 
       {chainRequestId ? (

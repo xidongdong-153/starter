@@ -120,10 +120,8 @@ export default {
     },
     link: '链路',
     loadFailed: '日志加载失败',
-    loading: '加载中…',
-    loadMore: '加载更多',
     summary: {
-      loaded: '已加载',
+      total: '日志总数',
     },
     title: '系统日志',
   },

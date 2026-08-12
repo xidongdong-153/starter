@@ -123,10 +123,8 @@ export default {
     },
     link: 'Chain',
     loadFailed: 'Failed to load logs',
-    loading: 'Loading…',
-    loadMore: 'Load more',
     summary: {
-      loaded: 'Loaded',
+      total: 'Total logs',
     },
     title: 'System Logs',
   },

@@ -86,7 +86,7 @@ export function createSystemRoute(runtime: AppRuntime) {
       async (c) =>
         c.json(
           createSuccessResponse(
-            { items: service.queryLogs(c.req.valid("query")) },
+            service.queryLogs(c.req.valid("query")),
             c.var.requestId,
           ),
           200,

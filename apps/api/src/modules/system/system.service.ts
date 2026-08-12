@@ -18,19 +18,26 @@ export interface SystemLogsQuery {
   requestId?: string;
   level?: SystemLogLevel;
   query?: string;
-  limit: number;
-  before?: number;
+  page?: number;
+  pageSize?: number;
+  limit?: number;
 }
 
 export type SystemLogEntry = Record<string, unknown>;
 
+export interface SystemLogsResult {
+  items: SystemLogEntry[];
+  total: number;
+}
+
 export function createSystemService(logsDir: string | undefined) {
   /**
    * 只读查询 pino-roll 日志文件。文件按天命名，从新到旧读取；
-   * 单行 JSON 解析失败直接跳过，收集满 limit 即停止。
-   * 传 requestId 时按时间正序返回（链路时间线），否则按时间倒序（最新在前）。
+   * 单行 JSON 解析失败直接跳过，收集全部匹配行。
+   * 传 requestId 时按时间正序返回（链路时间线，取前 limit 条），
+   * 否则按时间倒序（最新在前）按 page/pageSize 切片返回。
    */
-  function queryLogs(params: SystemLogsQuery): SystemLogEntry[] {
+  function queryLogs(params: SystemLogsQuery): SystemLogsResult {
     if (!logsDir) {
       throw new AppError(
         ApiErrorCodes.COMMON_INVALID_REQUEST,
@@ -59,23 +66,29 @@ export function createSystemService(logsDir: string | undefined) {
         if (!matches(entry, params)) continue;
 
         items.push(entry);
-        if (items.length >= params.limit) break;
       }
-      if (items.length >= params.limit) break;
     }
 
-    if (params.requestId) items.reverse();
-    return items;
+    if (params.requestId) {
+      items.reverse();
+      return {
+        items: items.slice(0, params.limit ?? 100),
+        total: items.length,
+      };
+    }
+
+    const page = params.page ?? 1;
+    const pageSize = params.pageSize ?? 20;
+    return {
+      items: items.slice((page - 1) * pageSize, page * pageSize),
+      total: items.length,
+    };
   }
 
   return { queryLogs };
 }
 
 function matches(entry: SystemLogEntry, params: SystemLogsQuery): boolean {
-  if (params.before !== undefined) {
-    const time = entry.time;
-    if (typeof time !== "number" || time >= params.before) return false;
-  }
   if (params.level) {
     const level = resolveLevel(entry.level);
     if (level !== params.level) return false;

@@ -7,8 +7,9 @@ export function getSystemLogs(query: SystemLogsQuery) {
   if (query.requestId) search.set('requestId', query.requestId)
   if (query.level) search.set('level', query.level)
   if (query.query) search.set('query', query.query)
-  search.set('limit', String(query.limit))
-  if (query.before !== undefined) search.set('before', String(query.before))
+  if (query.page !== undefined) search.set('page', String(query.page))
+  if (query.pageSize !== undefined) search.set('pageSize', String(query.pageSize))
+  if (query.limit !== undefined) search.set('limit', String(query.limit))
 
   const queryString = search.toString()
   return apiRequest<SystemLogsResponse>(`/api/system/logs${queryString ? `?${queryString}` : ''}`)

@@ -42,7 +42,8 @@ Drizzle SQL 只在非 production 环境输出 debug，`createDrizzleLogger` 只�
 
 `GET /api/system/logs`（system 模块，需 `SYSTEM_LOGS_READ` 权限，admin 角色自动放行）：
 
-- query：`requestId`（链路精确过滤，结果按 time 正序）、`level`（info/warn/error）、`query`（行 JSON 子串匹配）、`limit`（默认 100 最大 500）、`before`（time 游标，倒序分页）。
-- 只读 `LOGS_DIR` 下 `app*` 文件（pino-roll 按天+序号命名，如 `app.2026-08-12.1.log`），按文件名倒序、文件内行倒序读取；JSON 解析失败的行跳过；收集满 limit 即停止。
+- query：`requestId`（链路精确过滤，结果按 time 正序）、`level`（info/warn/error）、`query`（行 JSON 子串匹配）、`page`（默认 1）、`pageSize`（默认 20 最大 100）、`limit`（默认 100 最大 500，仅 requestId 链路模式生效）。
+- 响应 `{ items, total }`：`total` 为全部匹配行数。普通模式按倒序（最新在前）以 page/pageSize 切片；requestId 模式按正序取前 limit 条，total 为截断前匹配数。
+- 只读 `LOGS_DIR` 下 `app*` 文件（pino-roll 按天+序号命名，如 `app.2026-08-12.1.log`），按文件名倒序、文件内行倒序读取；JSON 解析失败的行跳过；收集全部匹配行后再切片。
 - `LOGS_DIR` 未配置时返回 400 `COMMON.INVALID_REQUEST`；接口只读，不影响日志写入。
 - 实现位于 `modules/system/system.service.ts`（`createSystemService(logsDir)`），跨层类型在 contracts：`SystemLogsQuery`、`SystemLogEntry`、`SystemLogsResponse`。

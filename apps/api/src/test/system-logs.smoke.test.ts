@@ -137,18 +137,20 @@ it("日志接口权限：未认证 401，非 admin 403，admin 可查且按时�
       headers: { cookie: admin.cookie },
     });
     expect(ok.status).toBe(200);
-    const data = (await readSuccess<{ items: LogEntry[] }>(ok)).data;
+    const data = (await readSuccess<{ items: LogEntry[]; total: number }>(ok))
+      .data;
     // 倒序（最新在前）、损坏行跳过、跨文件（旧文件 500 排最后）
     expect(timesOf(data.items)).toEqual([
       6000, 5000, 4000, 3000, 2000, 1000, 500,
     ]);
+    expect(data.total).toBe(7);
   } finally {
     cleanup();
     rmSync(logsDir, { recursive: true, force: true });
   }
 });
 
-it("日志接口过滤：level、query、limit、before 分页", async () => {
+it("日志接口过滤：level、query 过滤且返回 total", async () => {
   const logsDir = createLogsDir();
   const { app, cleanup, runtime } = createTestApp({ LOGS_DIR: logsDir });
   try {
@@ -162,25 +164,61 @@ it("日志接口过滤：level、query、limit、before 分页", async () => {
         headers: { cookie: admin.cookie },
       });
 
-    const levelError = await readSuccess<{ items: LogEntry[] }>(
+    const levelError = await readSuccess<{ items: LogEntry[]; total: number }>(
       await get("?level=error"),
     );
     expect(timesOf(levelError.data.items)).toEqual([6000, 2000]);
+    expect(levelError.data.total).toBe(2);
 
-    const queryUpload = await readSuccess<{ items: LogEntry[] }>(
+    const queryUpload = await readSuccess<{ items: LogEntry[]; total: number }>(
       await get("?query=files.upload"),
     );
     expect(timesOf(queryUpload.data.items)).toEqual([4000]);
+    expect(queryUpload.data.total).toBe(1);
+  } finally {
+    cleanup();
+    rmSync(logsDir, { recursive: true, force: true });
+  }
+});
 
-    const limited = await readSuccess<{ items: LogEntry[] }>(
-      await get("?limit=2"),
+it("日志接口分页：page/pageSize 切片且 total 为全部匹配数", async () => {
+  const logsDir = createLogsDir();
+  const { app, cleanup, runtime } = createTestApp({ LOGS_DIR: logsDir });
+  try {
+    const admin = await bootstrapAdmin(
+      app,
+      runtime,
+      "logs-paged-admin@example.com",
     );
-    expect(timesOf(limited.data.items)).toEqual([6000, 5000]);
+    const get = (search: string) =>
+      app.request(`/api/system/logs${search}`, {
+        headers: { cookie: admin.cookie },
+      });
 
-    const paged = await readSuccess<{ items: LogEntry[] }>(
-      await get("?before=3000"),
+    const page2 = await readSuccess<{ items: LogEntry[]; total: number }>(
+      await get("?page=2&pageSize=3"),
     );
-    expect(timesOf(paged.data.items)).toEqual([2000, 1000, 500]);
+    expect(timesOf(page2.data.items)).toEqual([3000, 2000, 1000]);
+    expect(page2.data.total).toBe(7);
+
+    const page3 = await readSuccess<{ items: LogEntry[]; total: number }>(
+      await get("?page=3&pageSize=3"),
+    );
+    expect(timesOf(page3.data.items)).toEqual([500]);
+    expect(page3.data.total).toBe(7);
+
+    const pageOutOfRange = await readSuccess<{
+      items: LogEntry[];
+      total: number;
+    }>(await get("?page=99&pageSize=3"));
+    expect(pageOutOfRange.data.items).toEqual([]);
+    expect(pageOutOfRange.data.total).toBe(7);
+
+    const defaultPage = await readSuccess<{ items: LogEntry[]; total: number }>(
+      await get(""),
+    );
+    expect(defaultPage.data.items.length).toBe(7);
+    expect(defaultPage.data.total).toBe(7);
   } finally {
     cleanup();
     rmSync(logsDir, { recursive: true, force: true });
@@ -200,9 +238,20 @@ it("日志接口 requestId 链路：精确过滤并按时间正序", async () =>
       headers: { cookie: admin.cookie },
     });
     expect(response.status).toBe(200);
-    const data = (await readSuccess<{ items: LogEntry[] }>(response)).data;
+    const data = (
+      await readSuccess<{ items: LogEntry[]; total: number }>(response)
+    ).data;
     expect(timesOf(data.items)).toEqual([1000, 2000]);
+    expect(data.total).toBe(2);
     expect(data.items.every((item) => item.requestId === "req-1")).toBe(true);
+
+    const truncated = await readSuccess<{ items: LogEntry[]; total: number }>(
+      await app.request("/api/system/logs?requestId=req-1&limit=1", {
+        headers: { cookie: admin.cookie },
+      }),
+    );
+    expect(timesOf(truncated.data.items)).toEqual([1000]);
+    expect(truncated.data.total).toBe(2);
   } finally {
     cleanup();
     rmSync(logsDir, { recursive: true, force: true });

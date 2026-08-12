@@ -226,12 +226,14 @@ export interface SystemLogsQuery {
   requestId?: string
   level?: SystemLogLevel
   query?: string
-  limit: number
-  before?: number
+  page?: number
+  pageSize?: number
+  limit?: number
 }
 
 export interface SystemLogsResponse {
   items: SystemLogEntry[]
+  total: number
 }
 
 export const userStatusSchema = z.enum(['active', 'suspended'])
