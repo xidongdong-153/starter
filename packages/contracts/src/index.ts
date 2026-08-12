@@ -64,6 +64,7 @@ export const PermissionKeys = {
   FILE_READ: 'file:read',
   FILE_RENAME: 'file:rename',
   FILE_UPLOAD: 'file:upload',
+  SYSTEM_LOGS_READ: 'system:logs:read',
 } as const
 
 export const RoleKeys = {
@@ -214,6 +215,23 @@ export type FileItem = {
 }
 export type AuthConfig = {
   providers: { email: true; github: boolean; google: boolean }
+}
+
+export type SystemLogLevel = 'info' | 'warn' | 'error'
+
+/** Pino 日志行解析后的完整对象，字段不固定 */
+export type SystemLogEntry = Record<string, unknown>
+
+export interface SystemLogsQuery {
+  requestId?: string
+  level?: SystemLogLevel
+  query?: string
+  limit: number
+  before?: number
+}
+
+export interface SystemLogsResponse {
+  items: SystemLogEntry[]
 }
 
 export const userStatusSchema = z.enum(['active', 'suspended'])

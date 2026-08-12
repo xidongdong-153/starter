@@ -113,7 +113,7 @@ export function createUsersService(repository: UsersRepository) {
     targetUserId: string,
     status: UserStatus,
     requestId: string | null,
-  ): Promise<{ id: string; status: UserStatus }> {
+  ): Promise<{ from: UserStatus; id: string; status: UserStatus }> {
     const result = repository.updateUserStatus(
       actorId,
       targetUserId,
@@ -130,7 +130,7 @@ export function createUsersService(repository: UsersRepository) {
           400,
         );
       default:
-        return { id: result.id, status: result.status };
+        return { from: result.from, id: result.id, status: result.status };
     }
   }
 

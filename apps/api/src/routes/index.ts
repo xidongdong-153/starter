@@ -13,7 +13,7 @@ export function createRoutes(runtime: AppRuntime) {
   return new OpenAPIHono<HonoEnv>()
     .route("/", createAuthRoute(runtime))
     .route("/", createAuthorizationRoute(runtime))
-    .route("/", createSystemRoute())
+    .route("/", createSystemRoute(runtime))
     .route("/", createProfileRoute(runtime))
     .route("/", createUsersRoute(runtime))
     .route("/", createFilesRoute(runtime));

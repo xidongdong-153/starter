@@ -145,6 +145,16 @@ export function createUsersRoute(runtime: AppRuntime) {
         status,
         c.var.requestId,
       );
+      c.var.logger.info(
+        {
+          actorId: c.var.currentUserId,
+          event: "users.status.changed",
+          from: data.from,
+          targetUserId: userId,
+          to: data.status,
+        },
+        "用户状态变更",
+      );
       return c.json(createSuccessResponse(data, c.var.requestId), 200);
     },
   );

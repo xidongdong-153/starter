@@ -46,7 +46,7 @@ interface UserDetailRow {
 }
 
 export type UpdateUserStatusResult =
-  | { kind: "ok"; id: string; status: UserStatus }
+  | { kind: "ok"; id: string; status: UserStatus; from: UserStatus }
   | { kind: "user-not-found" }
   | { kind: "self-suspend" };
 
@@ -76,7 +76,12 @@ export function createUsersRepository(db: AppDatabase) {
 
       // 幂等短路必须在防呆之后，否则管理员对自己重复提交 suspended 会绕过防呆。
       if (targetUser.status === status) {
-        return { kind: "ok", id: targetUserId, status };
+        return {
+          kind: "ok",
+          id: targetUserId,
+          status,
+          from: targetUser.status as UserStatus,
+        };
       }
 
       tx.update(user)
@@ -99,7 +104,12 @@ export function createUsersRepository(db: AppDatabase) {
         requestId,
       });
 
-      return { kind: "ok", id: targetUserId, status };
+      return {
+        kind: "ok",
+        id: targetUserId,
+        status,
+        from: targetUser.status as UserStatus,
+      };
     });
   }
 

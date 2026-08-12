@@ -162,13 +162,38 @@ export function createFilesRoute(runtime: AppRuntime) {
           400,
         );
       }
-      return c.json(
-        createSuccessResponse(
-          await service.upload(c.var.currentUserId, file),
-          c.var.requestId,
-        ),
-        201,
-      );
+      const ownerId = c.var.currentUserId;
+      const failedBase = {
+        event: "files.upload.failed",
+        name: file.name,
+        ownerId,
+        size: file.size,
+      };
+      try {
+        const item = await service.upload(ownerId, file);
+        c.var.logger.info(
+          {
+            event: "files.upload.succeeded",
+            fileId: item.id,
+            mimeType: item.mimeType,
+            name: item.name,
+            ownerId,
+            size: item.size,
+          },
+          "文件上传成功",
+        );
+        return c.json(createSuccessResponse(item, c.var.requestId), 201);
+      } catch (error) {
+        if (error instanceof AppError) {
+          c.var.logger.warn(
+            { ...failedBase, code: error.code, message: error.message },
+            "文件上传失败",
+          );
+        } else {
+          c.var.logger.error({ err: error, ...failedBase }, "文件上传失败");
+        }
+        throw error;
+      }
     },
   );
 

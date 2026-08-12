@@ -64,6 +64,12 @@ it("授权 migration 写入系统目录并给已有用户回填 operator", () =>
         "utf8",
       ),
     );
+    sqlite.exec(
+      readFileSync(
+        resolve(migrationsFolder, "0004_system_logs_read.sql"),
+        "utf8",
+      ),
+    );
 
     expect(sqlite.prepare("SELECT key FROM roles ORDER BY key").all()).toEqual([
       { key: "admin" },

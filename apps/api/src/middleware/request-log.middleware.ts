@@ -19,6 +19,7 @@ export function registerRequestLog(app: Hono<HonoEnv>): void {
         method: c.req.method,
         path: new URL(c.req.url).pathname,
         status,
+        userId: c.var.currentUserId ?? undefined,
       };
 
       if (status >= 500) {

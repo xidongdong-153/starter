@@ -84,6 +84,7 @@ it("禁用用户后：登录被拒绝、已有会话立即失效、启用后恢�
     );
     expect(disableResponse.status).toBe(200);
     expect((await readSuccess(disableResponse)).data).toEqual({
+      from: "active",
       id: target.user.id,
       status: "suspended",
     });
