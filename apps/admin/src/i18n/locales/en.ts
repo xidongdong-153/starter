@@ -97,6 +97,39 @@ export default {
     },
     title: 'Authorization audit',
   },
+  systemLogs: {
+    columns: {
+      actions: 'Actions',
+      duration: 'Duration',
+      event: 'Event',
+      level: 'Level',
+      message: 'Message',
+      requestId: 'Request ID',
+      time: 'Time',
+      userId: 'User ID',
+    },
+    description:
+      'Browse structured API logs. Filter by request ID, level or keyword; click Chain to expand the full log trail of one request.',
+    drawer: {
+      title: 'Request Chain',
+    },
+    empty: 'No logs',
+    filters: {
+      apply: 'Search',
+      clear: 'Clear',
+      level: 'Level',
+      query: 'Keyword',
+      requestId: 'Request ID',
+    },
+    link: 'Chain',
+    loadFailed: 'Failed to load logs',
+    loading: 'Loading…',
+    loadMore: 'Load more',
+    summary: {
+      loaded: 'Loaded',
+    },
+    title: 'System Logs',
+  },
   authorization: {
     actions: 'Actions',
     description: 'Manage user roles, custom role lifecycle, and permission impact.',
@@ -445,6 +478,7 @@ export default {
     notFoundExample: '404 Example',
     profileSettings: 'Profile',
     settings: 'Settings',
+    systemLogs: 'Logs',
     uiShowcase: 'Components And Theme',
   },
   setting: {

@@ -95,6 +95,38 @@ export default {
     },
     title: '授权审计',
   },
+  systemLogs: {
+    columns: {
+      actions: '操作',
+      duration: '耗时',
+      event: '事件',
+      level: '级别',
+      message: '消息',
+      requestId: '请求 ID',
+      time: '时间',
+      userId: '用户 ID',
+    },
+    description: '查看 API 结构化日志，可按请求 ID、级别和关键字筛选，点击「链路」展开同一次请求的完整日志。',
+    drawer: {
+      title: '请求链路',
+    },
+    empty: '没有日志',
+    filters: {
+      apply: '查询',
+      clear: '清除筛选',
+      level: '级别',
+      query: '关键字',
+      requestId: '请求 ID',
+    },
+    link: '链路',
+    loadFailed: '日志加载失败',
+    loading: '加载中…',
+    loadMore: '加载更多',
+    summary: {
+      loaded: '已加载',
+    },
+    title: '系统日志',
+  },
   authorization: {
     actions: '操作',
     description: '管理用户角色、自定义角色生命周期和权限影响。',
@@ -441,6 +473,7 @@ export default {
     notFoundExample: '404 示例',
     profileSettings: '个人资料',
     settings: '系统设置',
+    systemLogs: '日志查看',
     uiShowcase: '组件与主题',
   },
   setting: {
