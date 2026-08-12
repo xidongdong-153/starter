@@ -142,9 +142,34 @@ interface AuthorizationWriteContext {
 - `assigned_by` 的写入值由 `actorType` 决定：`user` 写 `actorId`，`system` 写 `null`。
 - `requestId` 写入同一 transaction 内创建的审计事件，不写入关系表；system actor 固定为 `null`。
 
-关系替换 transaction 的判断顺序不能调换：目标存在性 -> key 有效性 -> actor 平台管理员 -> 读 before 集合 -> 幂等短路 -> 最后一个平台管理员 -> 写入。角色 metadata、归档和恢复也必须先检查 actor，再执行幂等短路；否则无权 actor 提交当前状态会拿到 200。
+关系替换 transaction 的判断顺序不能调换：目标存在性 -> key 有效性 -> actor 平台管理员 -> 读 before 集合 -> 幂等短路 -> SSD 互斥校验 -> 最后一个平台管理员 -> 写入。角色 metadata、归档和恢复也必须先检查 actor，再执行幂等短路；否则无权 actor 提交当前状态会拿到 200。
 
 创建角色先在 transaction 内确认请求中的 permission 都处于活动状态，再检查 actor 和全状态 key 冲突。归档角色在 transaction 内统计 `COUNT(DISTINCT user.id)`；影响查询返回的人数只用于预览，不能替代这次提交时重查。
+
+### 静态职责分离（SSD）互斥角色
+
+NIST RBAC (INCITS 359) Constrained 层已落地 SSD：互斥角色组定义在 `packages/contracts` 的 `ExclusiveRoleGroups` 常量，无数据库表、无管理接口：
+
+```ts
+export const ExclusiveRoleGroups: readonly (readonly string[])[] = [
+  [RoleKeys.ADMIN], // 单元素组 = 独占角色
+] as const
+```
+
+语义规则：
+
+- 组内角色数 >= 2：两两互斥，目标角色集中至多出现组内一个角色。
+- 组内角色数 == 1：独占角色，目标角色集中包含该角色时，目标角色集大小必须为 1。
+- 组内 key 指向不存在或已归档角色时忽略（互斥组只按 key 匹配目标集合）。
+
+校验在 `replaceUserRoles` transaction 内、幂等短路之后、最后一个平台管理员检查之前执行。命中时返回 `exclusive-role-group-conflict`（携带 `group` 和 `conflictingKeys`），service 翻成 403 `AUTH.ROLE_CONFLICT`，details 为 `{ group, conflictingKeys }`。
+
+设计边界：
+
+- 互斥组是代码常量，变更需要发版；这是有意的，安全治理配置变更应可审计，且未来要可配置时再加表和接口的迁移成本低。
+- 只拦截实际变更的写入。幂等提交（before == after）放行，存量违规不扫描、不自动修改；用户角色只能经 `replaceUserRoles` 整体替换，下一次实际修改时自然被拦截。
+- 单元素独占组命中时，`conflictingKeys` 包含独占角色本身和当前持有的其他角色（如 `admin` 与 `operator`），错误文案可完整表达冲突。
+- `bootstrapAdminByEmail` 走独立写入路径，目标集合固定为 `[admin]`，天然满足独占约束。
 
 ### 幂等与最后一个平台管理员
 
@@ -224,6 +249,7 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 | 调用者修改自己的 role | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
 | actor 不是活动平台管理员 | 403 | `AUTH.FORBIDDEN` | 不执行任何授权写入 |
 | 撤销最后一个活动平台管理员 | 409 | `AUTH.LAST_PLATFORM_ADMIN` | 不更新关联表 |
+| 目标角色集违反互斥角色组 | 403 | `AUTH.ROLE_CONFLICT`，details 为 `{ group, conflictingKeys }` | 不更新关联表 |
 | 修改 `admin` permission | 403 | `AUTH.FORBIDDEN` | 不更新关联表 |
 | bootstrap 未配置邮箱 | non-zero | 明确命令错误 | 不打开或写入授权关系 |
 | bootstrap 用户不存在或 migration 缺失 | non-zero | 明确命令错误 | 不写入授权关系 |
@@ -258,6 +284,7 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 - 提交与当前相同的 roleKeys 或 permissionKeys 返回 200，且 `assigned_at` 不变。断言要先把 `assigned_at` 改成哨兵时间戳再比对：这个列是 `timestamp_ms`，同一毫秒内的重写会写出相同的值，直接比对前后时钟证明不了短路。
 - `bootstrapAdminByEmail` 对已是纯 `admin` 的用户重复执行时不重写关系。
 - repository 级撤销最后一个活动平台管理员返回 `last-platform-admin`，关系不变；库里存在第二个平台管理员时同样的撤销成功。
+- 分配 `[admin, operator]` 返回 403 `AUTH.ROLE_CONFLICT` 且角色不变；单独分配 `[admin]` 和非互斥组合 `[operator, viewer]` 返回 200；幂等提交不报互斥错误；绕过校验写入的存量违规在幂等提交时不被扫描或自动修改。
 - OpenAPI 包含授权 endpoint 及其 403 response，`PUT /api/authorization/users/{userId}/roles` 还要包含 409 response。
 
 `apps/api/src/test/role-lifecycle.smoke.test.ts` 至少覆盖：
@@ -333,6 +360,7 @@ middleware 决定动作资格，`service.remove` 继续依据 `currentUserId` �
 - 有现存用户分配的自定义角色返回 `AUTH.ROLE_IN_USE` 和去重人数，不能归档。
 - before 与 after 相同的幂等 mutation 不更新时间、不重写关系，也不写审计事件。
 - 实际发生的每次 mutation 只写一条授权审计事件，业务数据和事件在同一 transaction 提交。
+- `replaceUserRoles` 在事务内执行 SSD 互斥校验（`ExclusiveRoleGroups`），违反时返回 403 `AUTH.ROLE_CONFLICT`；互斥组是代码常量，变更需发版。
 - HTTP actor 使用当前用户和 request ID；bootstrap 与 Better Auth hook 使用稳定的 system actor。
 - 失败和拒绝不自动视为成功审计；当前 `AppError` 4xx 也不会自动写 Pino，拒绝日志需要单独设计。
 
