@@ -50,6 +50,7 @@ const permissionImpactKey = authorizationQueryKeys.permissionImpact(permissionKe
 - `api/http.ts` 的 access-error listener：401 清空 Query cache 并跳 `/login`；403 只失效当前权限 query，不退出登录。
 - 文件页面分别使用 `file:read`、`file:upload`、`file:rename`、`file:delete` 控制图片、下载和各写动作；文件路由使用 `file:list`。
 - `/settings/authorization-audit` 使用独立的 `authorization-audit:read`，不要求同时持有 `authorization:read` 或 `authorization:manage`。
+- `/settings/logs`（日志查看页）使用独立的 `system:logs:read`，与授权类权限互不依赖；菜单放 settings 组。
 - 审计列表通过 `authorization.api.ts` 和 `authorization.query.ts` 读取，query key 必须包含 page、pageSize 和全部筛选条件；数据不写入 Zustand 或 localStorage。
 - 审计组件只接收 contracts 的结构化 before/after 判别联合，不读取 `before_json`、`after_json`，也不调用 `JSON.parse`。
 - action、actor ID、target ID 和时间范围筛选保存在页面 state；分页或筛选变化由 TanStack Query 发起新请求。当前路由没有 search params 校验模式，刷新页面或分享 URL 不保留筛选条件。

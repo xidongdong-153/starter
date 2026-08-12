@@ -73,6 +73,7 @@ AUTH_BOOTSTRAP_ADMIN_EMAIL=admin@example.com \
 - `authorization-audit:read`
 - `authorization:read`、`authorization:manage`
 - `file:list`、`file:read`、`file:upload`、`file:rename`、`file:delete`
+- `system:logs:read`
 
 系统 role 为 `admin`、`operator`、`viewer`：
 
@@ -106,6 +107,7 @@ file route 的 permission 与动作一一对应：列表、内容、上传、重
 | GET | `/api/authorization/roles/{roleKey}/impact` | `authorization:read` |
 | GET | `/api/authorization/permissions/{permissionKey}/impact` | `authorization:read` |
 | GET | `/api/authorization/audit-events` | `authorization-audit:read` |
+| GET | `/api/system/logs` | `system:logs:read` |
 
 `GET /api/authorization/roles` 不传 `status` 时只返回活动角色，保持旧客户端行为。响应中的 permission 目录始终只包含 `PermissionKeys` 已注册且数据库未归档的记录。
 

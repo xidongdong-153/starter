@@ -156,3 +156,40 @@
 ### Next Steps
 
 - 后续角色生命周期任务继续复用现有平台管理员写入边界和授权审计事件模型。
+
+## Session 9: Log observability
+
+**Date**: 2026-08-12
+**Task**: 08-12-log-observability
+**Branch**: `main`
+
+### Summary
+
+对照课程《25-logging-observability》补齐日志能力：请求日志带 userId、业务事件结构化日志、admin 内置日志查看页（列表/筛选/分页/requestId 链路展开）。
+
+### Main Changes
+
+- 请求日志 payload 增加 userId；users.status.changed 与 files.upload.succeeded/failed 三个业务事件埋点（repository 返回结构加 from）。
+- 新增 GET /api/system/logs（system:logs:read 权限 + migration 0004），读 pino-roll 文件按 requestId/level/query/limit/before 过滤。
+- admin 新增 /settings/logs 日志查看页（TanStack Query infinite 分页 + 链路 Drawer），菜单挂 settings 组。
+- 更新 API 日志/授权规范与 Admin 授权规范；新增 API smoke（4 例）与 Admin UI 测试（5 例）。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| (see git log) | |
+
+### Testing
+
+- [OK] pnpm check（类型/lint/format）通过；API 118 例、Admin 67 例通过；db:check 通过。
+- [OK] 真实链路验证：createLogger 写盘 → createSystemService 读取，倒序/链路/分页/级别过滤正确。
+- [OK] pino-roll 实际文件名带序号后缀（app.YYYY-MM-DD.1.log），service 按 app* 前缀匹配。
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 日志查询为整读+按行解析，日志量大时可换流式读取。
