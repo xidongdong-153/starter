@@ -311,6 +311,15 @@ beforeJson: JSON.stringify({ roleKeys: input.before.roleKeys })
 - 无效 JSON、与 action 不匹配的 payload 或 target type 返回 500；响应不含密码、token、cookie 或原始 JSON 字符串。
 - 直接给审计构造器传带额外字段的 payload，断言落库 JSON 只含 `roleKeys` 或 `permissionKeys`。
 
+`apps/api/src/test/permission-matrix.smoke.test.ts` 至少覆盖：
+
+- 表驱动矩阵：「角色集合 × 资源 × 动作 → 期望状态码」，全部用例由同一驱动函数执行，单用例失败可定位。
+- BFLA：有 file 权限但非 owner 的用户读取、重命名、删除他人文件返回 404 `COMMON.NOT_FOUND`；admin 有全部权限但不是文件 owner 时同样 404。
+- BOLA：两个都有 file 权限的用户不能互相读取、重命名、删除对方文件，也不能把对方文件设为头像（`PUT /api/profile/avatar` 返回 404）。
+- 被拒写操作不改变资源：删除被拒后文件仍存在、重命名被拒后文件名不变、头像被拒后 `avatarUrl` 仍为 null、控制面写被拒后关系快照不变。
+- 控制面：持有 `authorization:manage` 的非 admin 写操作 403、读操作 200；匿名请求 401。
+- admin 特权语义：删除 admin 角色全部 `role_permissions` 行后 `GET /api/me/permissions` 仍返回全部注册 permission，控制面读写仍 200。
+
 ## 7. Wrong vs Correct
 
 ### Wrong
