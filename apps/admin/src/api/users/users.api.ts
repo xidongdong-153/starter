@@ -1,4 +1,9 @@
-import type { UserManagementQuery, UserManagementUserDetail, UserManagementUserPage } from '@starter/contracts'
+import type {
+  UserManagementQuery,
+  UserManagementUserDetail,
+  UserManagementUserPage,
+  UserStatus,
+} from '@starter/contracts'
 
 import { apiRequest } from '@admin/api/http'
 
@@ -17,4 +22,11 @@ export function listUsers(query: UserManagementQuery) {
 
 export function getUserDetail(userId: string) {
   return apiRequest<UserManagementUserDetail>(`/api/users/${userId}`)
+}
+
+export function updateUserStatus(userId: string, status: UserStatus) {
+  return apiRequest<{ id: string; status: UserStatus }>(`/api/users/${userId}/status`, {
+    method: 'PATCH',
+    body: JSON.stringify({ status }),
+  })
 }

@@ -1,2 +1,2 @@
-export { getUserDetail, listUsers } from './users.api'
-export { usersQueryKeys, useUserDetailQuery, useUsersListQuery } from './users.query'
+export { getUserDetail, listUsers, updateUserStatus } from './users.api'
+export { usersQueryKeys, useUpdateUserStatusMutation, useUserDetailQuery, useUsersListQuery } from './users.query'

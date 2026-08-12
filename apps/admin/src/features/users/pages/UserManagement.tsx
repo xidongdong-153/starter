@@ -1,14 +1,14 @@
-import type { UserManagementQuery, UserManagementUser, UserManagementUserDetail } from '@starter/contracts'
+import type { UserManagementQuery, UserManagementUser, UserManagementUserDetail, UserStatus } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
 import { useAuthorizationRolesQuery } from '@admin/api/authorization'
-import { useUsersListQuery, useUserDetailQuery } from '@admin/api/users'
+import { useUpdateUserStatusMutation, useUsersListQuery, useUserDetailQuery } from '@admin/api/users'
 import { AdminPageHeader } from '@admin/components/common'
 
-import { Alert, Button, Drawer, Input, Select, Space, Table, Tag, Tooltip } from 'antd'
+import { Alert, Button, Drawer, Input, message, Popconfirm, Select, Space, Table, Tag, Tooltip } from 'antd'
 import dayjs from 'dayjs'
 import { Eye, RotateCcw, Search } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 export function UserManagement() {
@@ -32,8 +32,21 @@ export function UserManagement() {
   const rolesQuery = useAuthorizationRolesQuery()
   const listQuery = useUsersListQuery(query)
   const detailQuery = useUserDetailQuery(selectedUserId)
+  const updateStatusMutation = useUpdateUserStatusMutation()
 
   const roles = rolesQuery.data?.roles ?? []
+
+  const handleUpdateStatus = useCallback(
+    async (userId: string, status: UserStatus) => {
+      try {
+        await updateStatusMutation.mutateAsync({ userId, status })
+        message.success(status === 'suspended' ? t('users.disableSuccess') : t('users.enableSuccess'))
+      } catch (error) {
+        message.error(error instanceof Error ? error.message : t('users.statusUpdateFailed'))
+      }
+    },
+    [t, updateStatusMutation],
+  )
 
   const handleSearch = (value: string) => {
     setSearch(value.trim())
@@ -113,6 +126,16 @@ export function UserManagement() {
         ),
       },
       {
+        dataIndex: 'status',
+        key: 'status',
+        title: t('users.table.status'),
+        render: (status: UserStatus) => (
+          <Tag color={status === 'suspended' ? 'error' : 'success'} className="m-0">
+            {status === 'suspended' ? t('users.statusSuspended') : t('users.statusActive')}
+          </Tag>
+        ),
+      },
+      {
         dataIndex: 'createdAt',
         key: 'createdAt',
         title: t('users.table.createdAt'),
@@ -124,17 +147,35 @@ export function UserManagement() {
         key: 'actions',
         title: t('users.table.actions'),
         render: (_, user) => (
-          <Tooltip title={t('users.viewDetail')}>
-            <Button
-              icon={<Eye className="size-4" />}
-              aria-label={t('users.viewDetail')}
-              onClick={() => handleOpenDetail(user.id)}
-            />
-          </Tooltip>
+          <Space size={4}>
+            <Tooltip title={t('users.viewDetail')}>
+              <Button
+                icon={<Eye className="size-4" />}
+                aria-label={t('users.viewDetail')}
+                onClick={() => handleOpenDetail(user.id)}
+              />
+            </Tooltip>
+            {user.status === 'suspended' ? (
+              <Button size="small" onClick={() => void handleUpdateStatus(user.id, 'active')}>
+                {t('users.enable')}
+              </Button>
+            ) : (
+              <Popconfirm
+                title={t('users.disableConfirm')}
+                okText={t('users.disable')}
+                cancelText={t('common.cancel')}
+                onConfirm={() => void handleUpdateStatus(user.id, 'suspended')}
+              >
+                <Button size="small" danger>
+                  {t('users.disable')}
+                </Button>
+              </Popconfirm>
+            )}
+          </Space>
         ),
       },
     ],
-    [roles, t],
+    [roles, t, handleUpdateStatus],
   )
 
   return (
@@ -250,6 +291,12 @@ function UserDetail({ data }: UserDetailProps) {
             <span className="text-fg-muted">{t('users.emailVerified')}</span>
             <Tag color={data.emailVerified ? 'success' : 'default'} className="m-0">
               {data.emailVerified ? t('users.emailVerifiedYes') : t('users.emailVerifiedNo')}
+            </Tag>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-fg-muted">{t('users.status')}</span>
+            <Tag color={data.status === 'suspended' ? 'error' : 'success'} className="m-0">
+              {data.status === 'suspended' ? t('users.statusSuspended') : t('users.statusActive')}
             </Tag>
           </div>
           <div className="flex justify-between">
