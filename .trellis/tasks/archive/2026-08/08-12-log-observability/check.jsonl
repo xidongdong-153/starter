@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "验收时核对埋点字段、脱敏与请求日志分级是否符合规范"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "验收权限矩阵：admin 放行、非 admin 403、middleware 顺序、权限键与数据库目录一致"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "验收 AppError 处理与错误响应契约是否符合既有约定"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "验收前端路由守卫与菜单权限过滤"}

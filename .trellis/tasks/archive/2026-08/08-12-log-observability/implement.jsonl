@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/logging-guidelines.md", "reason": "日志规范：logger 来源、脱敏红线、请求日志分级，任务 A/B 必须遵守"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "权限规范：PermissionKeys 唯一来源、requireAuth 先于 requirePermission、admin 自动放行，任务 C 权限设计依据"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "API 模块目录与 route/service/repository 分层约定，任务 B/C 落点参考"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "admin 前端权限守卫与路由挂载方式，任务 D 页面权限实现参考"}
+{"file": ".trellis/spec/admin/frontend/directory-structure.md", "reason": "admin features/ 目录与路由注册约定，任务 D 落点参考"}
