@@ -18,3 +18,16 @@ pnpm --filter @starter/contracts build
 - API smoke tests 覆盖新增字段的成功和失败边界，Admin/Web 类型检查覆盖消费方。
 
 contracts 是共享边界，不能只运行本包 type-check 就宣称变更完成。
+
+## 修改 contracts 后运行独立 tsx 脚本前必须先 build
+
+`@starter/contracts` 的 package exports 用 `development` condition 指向 `src/index.ts`，
+dev 服务（tsx watch / vite）直接读源码；但独立 tsx 脚本（如
+`apps/api/src/scripts/bootstrap-admin.ts`）不带 development condition，
+解析到 `dist/` 旧构建产物，会报 "does not provide an export named X"。
+
+修改 contracts 源码后，运行这类脚本前先：
+
+```bash
+pnpm --filter @starter/contracts build
+```

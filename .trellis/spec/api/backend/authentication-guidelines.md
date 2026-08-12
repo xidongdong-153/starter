@@ -89,3 +89,61 @@ account: {
 ```
 
 前者会允许已登录用户把另一个邮箱的 provider 账号绑定进来；后者只放宽本地邮箱验证条件，仍要求 provider 已验证并匹配当前账号邮箱。
+
+## 场景：用户生命周期状态（status）
+
+### 1. 范围与触发条件
+
+- 适用范围：`user` 表的 `status` 列（active / suspended）+ 用户禁用/启用接口。
+- 触发条件：管理员在用户管理页禁用/启用用户，或实现"封禁"类需求。
+- 目标：被禁用用户无法登录、已有会话即时失效；启用后恢复登录。
+
+### 2. 签名
+
+```ts
+// 三层拦截
+// 1) 登录拦截：Better Auth 配置（auth.config.ts）
+user: { additionalFields: { status: { type: "string", required: false, defaultValue: "active", input: false } } }
+databaseHooks: { session: { create: { before: async (newSession) => { /* user.status === "suspended" 时 return false */ } } } }
+
+// 2) 会话失效：禁用操作事务内 DELETE FROM session WHERE user_id = ?
+// 3) guard 兜底（auth.service.ts requireSession）
+if (session.user.status === "suspended") {
+  throw new AppError(ApiErrorCodes.AUTH_USER_SUSPENDED, "账号已被禁用", 401);
+}
+
+// 管理接口
+PATCH /api/users/{userId}/status
+// body: { "status": "suspended" | "active" }，权限 authorization:manage
+```
+
+### 3. 契约
+
+- `user.status` 取值只有 `active` / `suspended`，默认 `active`；DB 层无 CHECK（见 database-guidelines），
+  由 contracts 的 `userStatusSchema`（z.enum）在接口入口强校验。
+- `UserManagementUser` 含 `status` 字段；`updateUserStatusSchema` 校验请求体。
+- 审计 action：`user.status_changed`，before/after 均为 `{ status }`。
+- 新错误码：`AUTH.USER_SUSPENDED`（401）。
+
+### 4. 校验与错误矩阵
+
+| 条件 | 结果 |
+| --- | --- |
+| suspended 用户登录（密码/OAuth） | 创建 session 被拒，登录失败（`FAILED_TO_CREATE_SESSION`），不暴露封禁细节 |
+| suspended 用户旧会话请求自有 API | 401（禁用时 session 已删除，通常是 AUTH.UNAUTHENTICATED；guard 检查兜底时返回 AUTH.USER_SUSPENDED） |
+| 未登录调用状态接口 | 401 |
+| 无 authorization:manage 权限 | 403 |
+| 目标用户不存在 | 404 |
+| 管理员禁用自己 | 400 COMMON.INVALID_REQUEST |
+| 目标状态与当前一致 | 200 幂等成功，不写审计 |
+
+### 5. 正确、基础和错误案例
+
+- 正确：禁用即删全部 session + 状态置 suspended，用户下次请求 401，重新登录被拒。
+- 基础：管理员先禁用再启用，用户重新登录恢复访问。
+- 错误：只改 status 不删 session，或只在登录接口拦、不处理已登录会话——封禁不即时生效。
+
+### 6. 必需测试
+
+`apps/api/src/test/user-status.smoke.test.ts` 覆盖：登录拦截、旧会话 401、guard 兜底
+（直接改库保留 session）、权限矩阵、防呆、幂等、审计写入。

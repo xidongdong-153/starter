@@ -38,3 +38,21 @@ repository 只负责 Drizzle 查询和持久化，不抛业务文案。需要同
 ## 测试数据库
 
 `apps/api/src/test/helpers.ts` 为每个测试创建临时目录、临时 SQLite 和临时 files 目录，并执行同一套 migration；测试结束必须调用 `cleanup()`。不要让 smoke test 读写 `apps/api/data/app.db`。
+
+## 已知坑：drizzle-kit 0.31.10 对带 CHECK 的新列生成坏 migration
+
+> **Warning**：给 SQLite 表新增带 CHECK 约束的列时，drizzle-kit 会生成表重建脚本，
+> 其中 `INSERT INTO __new_table(...) SELECT ... FROM old_table` 会把新列也放进
+> SELECT 列表，而旧表没有该列，`db:migrate` 报 "no such column" 失败。
+
+规避：不在 DB 层加 CHECK，改用应用层强校验（Zod schema 在接口入口拦截），
+如 `user.status` 用 contracts 的 `userStatusSchema`（z.enum）校验。
+
+```ts
+// 错误：migrate 失败
+status: text("status").notNull().default("active"),
+// (table) => [check("user_status_check", sql`${table.status} IN ('active','suspended')`)]
+
+// 正确：生成干净的 ALTER TABLE ADD COLUMN
+status: text("status").notNull().default("active"),
+```
