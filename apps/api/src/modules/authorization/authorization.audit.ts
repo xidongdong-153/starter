@@ -5,6 +5,7 @@ import type {
   AuditRoleKeysPayload,
   AuditRoleLifecyclePayload,
   AuditRoleMetadataPayload,
+  AuditUserStatusPayload,
   RoleLifecycleAuditAction,
   UserRolesAuditAction,
 } from "@starter/contracts";
@@ -62,6 +63,12 @@ export type AuditEventInput = AuditEventInputBase &
         targetType: "role";
         before: AuditRoleLifecyclePayload;
         after: AuditRoleLifecyclePayload;
+      }
+    | {
+        action: typeof AuditActions.USER_STATUS_CHANGED;
+        targetType: "user";
+        before: AuditUserStatusPayload;
+        after: AuditUserStatusPayload;
       }
   );
 
@@ -124,6 +131,11 @@ function projectPayloads(input: AuditEventInput): {
       return {
         before: { archived: input.before.archived },
         after: { archived: input.after.archived },
+      };
+    case AuditActions.USER_STATUS_CHANGED:
+      return {
+        before: { status: input.before.status },
+        after: { status: input.after.status },
       };
     default:
       return {

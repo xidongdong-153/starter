@@ -1,4 +1,5 @@
 import { z } from "@hono/zod-openapi";
+import { updateUserStatusSchema, userStatusSchema } from "@starter/contracts";
 import { isoDateTimeSchema } from "@api/openapi/responses.js";
 
 export const userManagementQuerySchema = z.object({
@@ -24,6 +25,7 @@ export const userManagementUserSchema = z.object({
   email: z.string().email(),
   image: z.string().nullable(),
   emailVerified: z.boolean(),
+  status: userStatusSchema,
   createdAt: isoDateTimeSchema,
   updatedAt: isoDateTimeSchema,
   roleKeys: z.array(z.string()),
@@ -43,4 +45,11 @@ export const userManagementUserDetailSchema = userManagementUserSchema.extend({
 
 export const userIdParamsSchema = z.object({
   userId: z.uuidv7(),
+});
+
+export const updateUserStatusBodySchema = updateUserStatusSchema;
+
+export const updateUserStatusResponseSchema = z.object({
+  id: z.uuidv7(),
+  status: userStatusSchema,
 });

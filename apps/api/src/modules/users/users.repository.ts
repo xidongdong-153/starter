@@ -1,13 +1,16 @@
 import type { AppDatabase } from "@api/infra/db/client.js";
-import type { UserManagementQuery } from "@starter/contracts";
+import type { UserManagementQuery, UserStatus } from "@starter/contracts";
 import { and, asc, eq, inArray, isNull, or, sql } from "drizzle-orm";
 import {
   account,
   profiles,
   roles,
+  session,
   user,
   userRoles,
 } from "@api/infra/db/schema/index.js";
+import { AuditActions } from "@starter/contracts";
+import { insertAuditEvent } from "@api/modules/authorization/authorization.audit.js";
 
 function escapeLike(value: string): string {
   return value.replace(/[!%_]/g, (char) => `!${char}`);
@@ -19,6 +22,7 @@ interface UserRow {
   email: string;
   image: string | null;
   emailVerified: boolean;
+  status: string;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -41,7 +45,64 @@ interface UserDetailRow {
   profile: typeof profiles.$inferSelect | null;
 }
 
+export type UpdateUserStatusResult =
+  | { kind: "ok"; id: string; status: UserStatus }
+  | { kind: "user-not-found" }
+  | { kind: "self-suspend" };
+
 export function createUsersRepository(db: AppDatabase) {
+  /**
+   * 更新用户状态。事务内：更新 status；禁用时删除该用户全部 session（即时失效）；写审计。
+   * 幂等：目标状态与当前状态一致时直接成功，不写审计。
+   */
+  function updateUserStatus(
+    actorId: string,
+    targetUserId: string,
+    status: UserStatus,
+    requestId: string | null,
+  ): UpdateUserStatusResult {
+    return db.transaction((tx) => {
+      const targetUser = tx
+        .select({ id: user.id, status: user.status })
+        .from(user)
+        .where(eq(user.id, targetUserId))
+        .get();
+      if (!targetUser) return { kind: "user-not-found" };
+
+      // 防呆：管理员不能禁用自己。放在幂等短路之前，语义优先。
+      if (status === "suspended" && actorId === targetUserId) {
+        return { kind: "self-suspend" };
+      }
+
+      // 幂等短路必须在防呆之后，否则管理员对自己重复提交 suspended 会绕过防呆。
+      if (targetUser.status === status) {
+        return { kind: "ok", id: targetUserId, status };
+      }
+
+      tx.update(user)
+        .set({ status, updatedAt: new Date() })
+        .where(eq(user.id, targetUserId))
+        .run();
+
+      if (status === "suspended") {
+        tx.delete(session).where(eq(session.userId, targetUserId)).run();
+      }
+
+      insertAuditEvent(tx, {
+        actorType: "user",
+        actorId,
+        action: AuditActions.USER_STATUS_CHANGED,
+        targetType: "user",
+        targetId: targetUserId,
+        before: { status: targetUser.status as UserStatus },
+        after: { status },
+        requestId,
+      });
+
+      return { kind: "ok", id: targetUserId, status };
+    });
+  }
+
   async function listUsers(
     query: UserManagementQuery,
   ): Promise<ListUsersResult> {
@@ -84,6 +145,7 @@ export function createUsersRepository(db: AppDatabase) {
         email: user.email,
         image: user.image,
         emailVerified: user.emailVerified,
+        status: user.status,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       })
@@ -117,6 +179,7 @@ export function createUsersRepository(db: AppDatabase) {
         email: user.email,
         image: user.image,
         emailVerified: user.emailVerified,
+        status: user.status,
         createdAt: user.createdAt,
         updatedAt: user.updatedAt,
       })
@@ -153,7 +216,7 @@ export function createUsersRepository(db: AppDatabase) {
     };
   }
 
-  return { getUserDetail, listUsers };
+  return { getUserDetail, listUsers, updateUserStatus };
 }
 
 export type UsersRepository = ReturnType<typeof createUsersRepository>;

@@ -8,6 +8,7 @@ export const ApiErrorCodes = {
   AUTH_ROLE_KEY_CONFLICT: 'AUTH.ROLE_KEY_CONFLICT',
   AUTH_SESSION_INVALID: 'AUTH.SESSION_INVALID',
   AUTH_UNAUTHENTICATED: 'AUTH.UNAUTHENTICATED',
+  AUTH_USER_SUSPENDED: 'AUTH.USER_SUSPENDED',
   COMMON_INVALID_REQUEST: 'COMMON.INVALID_REQUEST',
   COMMON_NOT_FOUND: 'COMMON.NOT_FOUND',
   COMMON_PAYLOAD_TOO_LARGE: 'COMMON.PAYLOAD_TOO_LARGE',
@@ -215,6 +216,16 @@ export type AuthConfig = {
   providers: { email: true; github: boolean; google: boolean }
 }
 
+export const userStatusSchema = z.enum(['active', 'suspended'])
+
+export type UserStatus = z.infer<typeof userStatusSchema>
+
+export const updateUserStatusSchema = z.object({
+  status: userStatusSchema,
+})
+
+export type UpdateUserStatusInput = z.infer<typeof updateUserStatusSchema>
+
 export const userManagementQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
@@ -230,6 +241,7 @@ export interface UserManagementUser {
   email: string
   image: string | null
   emailVerified: boolean
+  status: UserStatus
   createdAt: string
   updatedAt: string
   roleKeys: string[]
@@ -267,6 +279,7 @@ export const AuditActions = {
   ROLE_UPDATED: 'role.updated',
   USER_ROLES_INITIALIZED: 'user_roles.initialized',
   USER_ROLES_REPLACED: 'user_roles.replaced',
+  USER_STATUS_CHANGED: 'user.status_changed',
 } as const
 
 export type AuditAction = (typeof AuditActions)[keyof typeof AuditActions]
@@ -312,6 +325,9 @@ export const auditRoleMetadataPayloadSchema = z.object({
 export const auditRoleLifecyclePayloadSchema = z.object({
   archived: z.boolean(),
 })
+export const auditUserStatusPayloadSchema = z.object({
+  status: userStatusSchema,
+})
 
 export type AuditRoleKeysPayload = z.infer<typeof auditRoleKeysPayloadSchema>
 export type AuditPermissionKeysPayload = z.infer<typeof auditPermissionKeysPayloadSchema>
@@ -319,6 +335,7 @@ export type AuditRoleCreatedBefore = z.infer<typeof auditRoleCreatedBeforeSchema
 export type AuditRoleCreatedAfter = z.infer<typeof auditRoleCreatedAfterSchema>
 export type AuditRoleMetadataPayload = z.infer<typeof auditRoleMetadataPayloadSchema>
 export type AuditRoleLifecyclePayload = z.infer<typeof auditRoleLifecyclePayloadSchema>
+export type AuditUserStatusPayload = z.infer<typeof auditUserStatusPayloadSchema>
 export type AuditPayload =
   | AuditRoleKeysPayload
   | AuditPermissionKeysPayload
@@ -326,6 +343,7 @@ export type AuditPayload =
   | AuditRoleCreatedAfter
   | AuditRoleMetadataPayload
   | AuditRoleLifecyclePayload
+  | AuditUserStatusPayload
 
 export const authorizationAuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
@@ -380,6 +398,12 @@ export type AuthorizationAuditEvent = AuthorizationAuditEventBase &
         targetType: 'role'
         before: AuditRoleLifecyclePayload
         after: AuditRoleLifecyclePayload
+      }
+    | {
+        action: typeof AuditActions.USER_STATUS_CHANGED
+        targetType: 'user'
+        before: AuditUserStatusPayload
+        after: AuditUserStatusPayload
       }
   )
 

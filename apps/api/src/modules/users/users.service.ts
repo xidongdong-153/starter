@@ -4,6 +4,7 @@ import type {
   UserManagementUser,
   UserManagementUserDetail,
   UserManagementUserPage,
+  UserStatus,
 } from "@starter/contracts";
 import type { UsersRepository } from "./users.repository.js";
 import { ApiErrorCodes } from "@starter/contracts";
@@ -16,6 +17,7 @@ function toUserManagementUser(
     email: string;
     image: string | null;
     emailVerified: boolean;
+    status: string;
     createdAt: Date;
     updatedAt: Date;
   },
@@ -27,6 +29,7 @@ function toUserManagementUser(
     email: user.email,
     image: user.image,
     emailVerified: user.emailVerified,
+    status: user.status as UserManagementUser["status"],
     createdAt: user.createdAt.toISOString(),
     updatedAt: user.updatedAt.toISOString(),
     roleKeys,
@@ -105,7 +108,33 @@ export function createUsersService(repository: UsersRepository) {
     };
   }
 
-  return { getUserDetail, listUsers };
+  async function updateUserStatus(
+    actorId: string,
+    targetUserId: string,
+    status: UserStatus,
+    requestId: string | null,
+  ): Promise<{ id: string; status: UserStatus }> {
+    const result = repository.updateUserStatus(
+      actorId,
+      targetUserId,
+      status,
+      requestId,
+    );
+    switch (result.kind) {
+      case "user-not-found":
+        throw new AppError(ApiErrorCodes.COMMON_NOT_FOUND, "用户不存在", 404);
+      case "self-suspend":
+        throw new AppError(
+          ApiErrorCodes.COMMON_INVALID_REQUEST,
+          "不能禁用自己",
+          400,
+        );
+      default:
+        return { id: result.id, status: result.status };
+    }
+  }
+
+  return { getUserDetail, listUsers, updateUserStatus };
 }
 
 export type UsersService = ReturnType<typeof createUsersService>;

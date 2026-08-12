@@ -15,6 +15,8 @@ import { createRequirePermission } from "@api/modules/authorization/authorizatio
 import { createUsersRepository } from "./users.repository.js";
 import { createUsersService } from "./users.service.js";
 import {
+  updateUserStatusBodySchema,
+  updateUserStatusResponseSchema,
   userIdParamsSchema,
   userManagementQuerySchema,
   userManagementUserDetailSchema,
@@ -61,11 +63,40 @@ const getUserDetailRoute = createRoute({
   },
 });
 
+const updateUserStatusRoute = createRoute({
+  method: "patch",
+  path: "/api/users/{userId}/status",
+  tags: ["Users"],
+  security: [{ cookieAuth: [] }],
+  request: {
+    params: userIdParamsSchema,
+    body: {
+      content: { "application/json": { schema: updateUserStatusBodySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: apiSuccessResponse(
+      updateUserStatusResponseSchema,
+      "更新后的用户状态",
+      "UpdateUserStatusResponse",
+    ),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+  },
+});
+
 export function createUsersRoute(runtime: AppRuntime) {
   const requireAuth = createRequireAuth(runtime.auth);
   const requireUsersRead = createRequirePermission(
     runtime.db,
     PermissionKeys.AUTHORIZATION_READ,
+  );
+  const requireUsersManage = createRequirePermission(
+    runtime.db,
+    PermissionKeys.AUTHORIZATION_MANAGE,
   );
   const service = createUsersService(createUsersRepository(runtime.db));
   const app = new OpenAPIHono<HonoEnv>();
@@ -98,6 +129,24 @@ export function createUsersRoute(runtime: AppRuntime) {
         ),
         200,
       ),
+  );
+
+  app.openapi(
+    {
+      ...updateUserStatusRoute,
+      middleware: [requireAuth, requireUsersManage],
+    },
+    async (c) => {
+      const { userId } = c.req.valid("param");
+      const { status } = c.req.valid("json");
+      const data = await service.updateUserStatus(
+        c.var.currentUserId,
+        userId,
+        status,
+        c.var.requestId,
+      );
+      return c.json(createSuccessResponse(data, c.var.requestId), 200);
+    },
   );
 
   return app;

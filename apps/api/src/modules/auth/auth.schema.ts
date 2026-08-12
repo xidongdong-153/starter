@@ -19,6 +19,7 @@ export const user = sqliteTable(
       .notNull()
       .default(false),
     image: text("image"),
+    status: text("status").notNull().default("active"),
     createdAt: timestamp("created_at").notNull(),
     updatedAt: timestamp("updated_at").notNull(),
   },

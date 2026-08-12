@@ -28,6 +28,7 @@ import {
   auditRoleKeysPayloadSchema,
   auditRoleLifecyclePayloadSchema,
   auditRoleMetadataPayloadSchema,
+  auditUserStatusPayloadSchema,
   permissionSchema,
 } from "@starter/contracts";
 import { AppError } from "@api/shared/app-error.js";
@@ -262,6 +263,17 @@ export function toAuthorizationAuditEvent(
         record.beforeJson,
       ),
       after: parseWithSchema(auditRoleLifecyclePayloadSchema, record.afterJson),
+    };
+  }
+
+  if (action.data === AuditActions.USER_STATUS_CHANGED) {
+    if (targetType !== "user") throw corruptedAuditEvent();
+    return {
+      ...base,
+      action: action.data,
+      targetType,
+      before: parseWithSchema(auditUserStatusPayloadSchema, record.beforeJson),
+      after: parseWithSchema(auditUserStatusPayloadSchema, record.afterJson),
     };
   }
 

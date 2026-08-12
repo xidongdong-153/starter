@@ -3,7 +3,12 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { AuditActions, RoleKeys } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { AppLogger } from "@api/infra/log/index.js";
-import { profiles, roles, userRoles } from "@api/infra/db/schema/index.js";
+import {
+  profiles,
+  roles,
+  user,
+  userRoles,
+} from "@api/infra/db/schema/index.js";
 import { insertAuditEvent } from "@api/modules/authorization/authorization.audit.js";
 import type { AppEnv } from "@api/shared/env.js";
 import { generateId } from "@api/shared/id.js";
@@ -30,6 +35,16 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
       },
     },
     advanced: { database: { generateId } },
+    user: {
+      additionalFields: {
+        status: {
+          type: "string",
+          required: false,
+          defaultValue: "active",
+          input: false,
+        },
+      },
+    },
     emailAndPassword: { enabled: true, minPasswordLength: 8 },
     emailVerification: { sendVerificationEmail: async () => undefined },
     account: {
@@ -58,6 +73,20 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
     },
     trustedOrigins: env.corsOrigins,
     databaseHooks: {
+      session: {
+        create: {
+          before: async (newSession) => {
+            const target = db
+              .select({ status: user.status })
+              .from(user)
+              .where(eq(user.id, newSession.userId))
+              .get();
+            if (target?.status === "suspended") {
+              return false;
+            }
+          },
+        },
+      },
       user: {
         create: {
           after: async (newUser) => {

@@ -19,5 +19,9 @@ export async function requireSession(auth: AppAuth, headers: Headers) {
   if (!session) {
     throw new AppError(ApiErrorCodes.AUTH_UNAUTHENTICATED, "请先登录", 401);
   }
+  const status = session.user.status;
+  if (status === "suspended") {
+    throw new AppError(ApiErrorCodes.AUTH_USER_SUSPENDED, "账号已被禁用", 401);
+  }
   return session;
 }
