@@ -1,0 +1,10 @@
+{"file":".trellis/spec/guides/index.md","reason":"检查代理读取共享 Trellis 指南。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核 API route schema、AppType、exports 和客户端声明的跨层数据流。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查共享 DTO 和 schema 类型没有被 API 声明重新定义。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"复核 API route、OpenAPI、状态码和 smoke tests。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"复核 RPC 类型出口和前端可消费边界。"}
+{"file":".trellis/spec/api/frontend/type-safety.md","reason":"检查 AppType 的具体响应推导和 type-only 依赖。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"复核客户端可见接口和 OpenAPI 文档一致性。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/hono-rpc-feasibility.md","reason":"对照已复现的 Hono 类型累积行为和 helper 泛型问题。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"对照 exports 条件、Turbo graph、声明生成和 Node-only 类型图检查。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"确认 28 个普通 JSON route 和特殊路由不能被误纳入。"}

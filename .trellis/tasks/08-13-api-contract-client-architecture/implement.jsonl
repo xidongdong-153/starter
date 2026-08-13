@@ -1,0 +1,24 @@
+{"file":".trellis/spec/guides/index.md","reason":"父任务跨四个 package，加载共享 Trellis 指南作为统一规划和检查基线。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"核对 contracts -> API -> Web/Admin 的请求、响应、错误和构建数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"核对 schema、DTO、HTTP helper 和 RPC adapter 的重复定义与复用边界。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"contracts schema 所有权、依赖和目录规范。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"contracts 变更的类型、Lint、Format 和消费者检查。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Web/Admin 消费共享协议的根入口和运行时边界。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Zod schema、DTO 派生和兼容性规则。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"成功/失败 envelope、meta 和跨客户端检查项。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"Hono API 装配、route -> service -> repository -> presenter 规范。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API type-check、OpenAPI、smoke test 和构建质量门槛。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"API 对 Web/Admin 的 RPC、contracts 和 OpenAPI 客户端边界。"}
+{"file":".trellis/spec/api/frontend/type-safety.md","reason":"AppType、OpenAPI schema、DTO 和错误码的一致性要求。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"客户端可见接口、状态码、Cookie、文件 URL 和文档检查。"}
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web API 调用目录、Server/Client Component 和质量入口。"}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"Web contracts、运行时 guard、URL 编码和错误边界。"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web 类型、Lint、Format、build 和页面行为检查。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"Admin API、React Query、权限和测试目录规范。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"Admin DTO、表单转换、路由/store 类型和禁止 any 断言。"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"Admin 401/403、权限请求、路由和文件动作边界。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"Admin 类型、Lint、Format、Vitest 和构建质量门槛。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/article-and-current-architecture.md","reason":"父任务的当前架构、文章研究和独立 API 部署约束。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/hono-rpc-feasibility.md","reason":"Hono RPC route 类型累积、response helper 泛型和特殊接口分类证据。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"package exports、customConditions、Turbo、声明图和 bundle 边界证据。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"31 条 API 自有路由、28 条普通 JSON、26 个前端调用和测试缺口清单。"}

@@ -1,0 +1,9 @@
+{"file":".trellis/spec/guides/index.md","reason":"检查代理读取共享 Trellis 指南。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 schema、presenter、OpenAPI、客户端和 smoke test 的跨层一致性。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"按 contracts 后端规范复核目录和依赖边界。"}
+{"file":".trellis/spec/contracts/backend/error-handling.md","reason":"复核失败 envelope、错误码和 details 没有回归。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"执行 contracts 及消费者联合质量检查。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"复核共享协议对两个前端的公共入口。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查 DTO 派生、运行时 guard 和 import type。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"检查真实响应、meta 和边界字段。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"对照完整接口盘点复核 schema 和状态码覆盖。"}

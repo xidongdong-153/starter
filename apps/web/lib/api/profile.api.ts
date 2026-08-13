@@ -1,9 +1,14 @@
 import type { PublicProfile } from '@starter/contracts'
 import { resolveApiUrl } from '@web/lib/env.client'
-import { apiRequest } from '@web/lib/http'
+import { apiRpc, unwrapApiData } from '@web/lib/rpc'
 
 export async function getPublicProfile(userId: string): Promise<PublicProfile> {
-  const data = await apiRequest(`/api/profiles/${encodeURIComponent(userId)}`, { cache: 'no-store' })
+  const data = await unwrapApiData<unknown>(
+    apiRpc.api.profiles[':userId'].$get(
+      { param: { userId: encodeURIComponent(userId) } },
+      { init: { cache: 'no-store' } },
+    ),
+  )
 
   if (!isPublicProfile(data)) {
     throw new Error('公开资料的数据格式不正确。')

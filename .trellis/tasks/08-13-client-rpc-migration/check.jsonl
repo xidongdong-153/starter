@@ -1,0 +1,14 @@
+{"file":".trellis/spec/guides/index.md","reason":"检查代理读取共享 Trellis 指南。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"复核迁移前后请求字段、错误处理和特殊接口边界。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查旧 helper 清理和两个 app adapter 没有复制错误处理。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查领域函数使用 contracts 类型和显式表单转换。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"检查真实 envelope、meta 和运行时 guard 覆盖。"}
+{"file":".trellis/spec/api/frontend/component-guidelines.md","reason":"检查普通 JSON 与原始文件 Response 的边界。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"复核客户端可见 API 的状态码、Cookie、URL 和文档行为。"}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"复核 Web adapter 的错误、URL 编码和 DTO 使用。"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"复核 Web 构建和 API 调用质量检查。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"复核 Admin DTO、表单和 API 类型边界。"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"复核 Admin 401/403、权限和文件操作副作用。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"复核 Admin 测试和全套质量命令。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"对照 26 个去重后的普通 JSON operation 和例外接口。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"复核 API 声明消费和 runtime bundle 禁止项。"}

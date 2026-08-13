@@ -18,12 +18,14 @@
     "@starter/contracts": "workspace:*",
     "@starter/theme": "workspace:*",
     "better-auth": "catalog:",
+    "hono": "catalog:",
     "lucide-react": "catalog:",
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:"
   },
   "devDependencies": {
+    "@starter/api": "workspace:*",
     "@starter/eslint-config": "workspace:*",
     "@tailwindcss/postcss": "catalog:",
     "@types/node": "catalog:",

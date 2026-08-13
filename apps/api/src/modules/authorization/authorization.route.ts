@@ -320,226 +320,228 @@ export function createAuthorizationRoute(runtime: AppRuntime) {
   const service = createAuthorizationService(
     createAuthorizationRepository(runtime.db),
   );
-  const app = new OpenAPIHono<HonoEnv>();
+  const app = new OpenAPIHono<HonoEnv>()
 
-  app.openapi(
-    { ...currentPermissionsRoute, middleware: requireAuth },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.getCurrent(c.var.currentUserId),
-          c.var.requestId,
-        ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...listAuthorizationUsersRoute,
-      middleware: [requireAuth, requireAuthorizationRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(await service.listUsers(), c.var.requestId),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...replaceUserRolesRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.replaceUserRoles(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("param").userId,
-            c.req.valid("json"),
+    .openapi(
+      { ...currentPermissionsRoute, middleware: requireAuth },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getCurrent(c.var.currentUserId),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...listAuthorizationRolesRoute,
-      middleware: [requireAuth, requireAuthorizationRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.listRoles(c.req.valid("query").status),
-          c.var.requestId,
+    .openapi(
+      {
+        ...listAuthorizationUsersRoute,
+        middleware: [requireAuth, requireAuthorizationRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(await service.listUsers(), c.var.requestId),
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...createRoleRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.createRole(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("json"),
+    .openapi(
+      {
+        ...replaceUserRolesRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.replaceUserRoles(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("param").userId,
+              c.req.valid("json"),
+            ),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...updateRoleRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.updateRole(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("param").roleKey,
-            c.req.valid("json"),
+    .openapi(
+      {
+        ...listAuthorizationRolesRoute,
+        middleware: [requireAuth, requireAuthorizationRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.listRoles(c.req.valid("query").status),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...archiveRoleRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.archiveRole(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("param").roleKey,
+    .openapi(
+      {
+        ...createRoleRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.createRole(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("json"),
+            ),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...restoreRoleRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.restoreRole(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("param").roleKey,
+    .openapi(
+      {
+        ...updateRoleRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.updateRole(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("param").roleKey,
+              c.req.valid("json"),
+            ),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...roleImpactRoute,
-      middleware: [requireAuth, requireAuthorizationRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.getRoleImpact(c.req.valid("param").roleKey),
-          c.var.requestId,
-        ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...permissionImpactRoute,
-      middleware: [requireAuth, requireAuthorizationRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.getPermissionImpact(c.req.valid("param").permissionKey),
-          c.var.requestId,
-        ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...replaceRolePermissionsRoute,
-      middleware: [requireAuth, requireAuthorizationManage],
-    },
-    (c) =>
-      c.json(
-        createSuccessResponse(
-          service.replaceRolePermissions(
-            {
-              actorType: "user",
-              actorId: c.var.currentUserId,
-              requestId: c.var.requestId,
-            },
-            c.req.valid("param").roleKey,
-            c.req.valid("json"),
+    .openapi(
+      {
+        ...archiveRoleRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.archiveRole(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("param").roleKey,
+            ),
+            c.var.requestId,
           ),
-          c.var.requestId,
+          200,
         ),
-        200,
-      ),
-  );
+    )
 
-  app.openapi(
-    {
-      ...listAuditEventsRoute,
-      middleware: [requireAuth, requireAuditRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.listAuditEvents(c.req.valid("query")),
-          c.var.requestId,
+    .openapi(
+      {
+        ...restoreRoleRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.restoreRole(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("param").roleKey,
+            ),
+            c.var.requestId,
+          ),
+          200,
         ),
-        200,
-      ),
-  );
+    )
+
+    .openapi(
+      {
+        ...roleImpactRoute,
+        middleware: [requireAuth, requireAuthorizationRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getRoleImpact(c.req.valid("param").roleKey),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+
+    .openapi(
+      {
+        ...permissionImpactRoute,
+        middleware: [requireAuth, requireAuthorizationRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getPermissionImpact(
+              c.req.valid("param").permissionKey,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+
+    .openapi(
+      {
+        ...replaceRolePermissionsRoute,
+        middleware: [requireAuth, requireAuthorizationManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.replaceRolePermissions(
+              {
+                actorType: "user",
+                actorId: c.var.currentUserId,
+                requestId: c.var.requestId,
+              },
+              c.req.valid("param").roleKey,
+              c.req.valid("json"),
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+
+    .openapi(
+      {
+        ...listAuditEventsRoute,
+        middleware: [requireAuth, requireAuditRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.listAuditEvents(c.req.valid("query")),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    );
 
   return app;
 }

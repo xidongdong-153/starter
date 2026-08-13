@@ -99,65 +99,62 @@ export function createUsersRoute(runtime: AppRuntime) {
     PermissionKeys.AUTHORIZATION_MANAGE,
   );
   const service = createUsersService(createUsersRepository(runtime.db));
-  const app = new OpenAPIHono<HonoEnv>();
-
-  app.openapi(
-    {
-      ...listUsersRoute,
-      middleware: [requireAuth, requireUsersRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.listUsers(c.req.valid("query")),
-          c.var.requestId,
+  const app = new OpenAPIHono<HonoEnv>()
+    .openapi(
+      {
+        ...listUsersRoute,
+        middleware: [requireAuth, requireUsersRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.listUsers(c.req.valid("query")),
+            c.var.requestId,
+          ),
+          200,
         ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...getUserDetailRoute,
-      middleware: [requireAuth, requireUsersRead],
-    },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.getUserDetail(c.req.valid("param").userId),
-          c.var.requestId,
+    )
+    .openapi(
+      {
+        ...getUserDetailRoute,
+        middleware: [requireAuth, requireUsersRead],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getUserDetail(c.req.valid("param").userId),
+            c.var.requestId,
+          ),
+          200,
         ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    {
-      ...updateUserStatusRoute,
-      middleware: [requireAuth, requireUsersManage],
-    },
-    async (c) => {
-      const { userId } = c.req.valid("param");
-      const { status } = c.req.valid("json");
-      const data = await service.updateUserStatus(
-        c.var.currentUserId,
-        userId,
-        status,
-        c.var.requestId,
-      );
-      c.var.logger.info(
-        {
-          actorId: c.var.currentUserId,
-          event: "users.status.changed",
-          from: data.from,
-          targetUserId: userId,
-          to: data.status,
-        },
-        "用户状态变更",
-      );
-      return c.json(createSuccessResponse(data, c.var.requestId), 200);
-    },
-  );
+    )
+    .openapi(
+      {
+        ...updateUserStatusRoute,
+        middleware: [requireAuth, requireUsersManage],
+      },
+      async (c) => {
+        const { userId } = c.req.valid("param");
+        const { status } = c.req.valid("json");
+        const data = await service.updateUserStatus(
+          c.var.currentUserId,
+          userId,
+          status,
+          c.var.requestId,
+        );
+        c.var.logger.info(
+          {
+            actorId: c.var.currentUserId,
+            event: "users.status.changed",
+            from: data.from,
+            targetUserId: userId,
+            to: data.status,
+          },
+          "用户状态变更",
+        );
+        return c.json(createSuccessResponse(data, c.var.requestId), 200);
+      },
+    );
 
   return app;
 }

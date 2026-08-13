@@ -1,0 +1,12 @@
+{"file":".trellis/spec/guides/index.md","reason":"检查父任务是否遵守共享 Trellis 规划和质量规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查四个 package 的跨层数据流、schema 所有权和错误边界。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查没有新增平行 DTO、route type 或共享 client 抽象。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查 contracts schema 拆分和真实响应契约测试。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"检查根导出、meta、运行时 guard 和两个消费者。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 API route、OpenAPI、错误状态和 smoke tests。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"检查 AppType、RPC、特殊接口和文档共存。"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"检查 Web 迁移、构建和公开页面行为。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"检查 Admin 迁移、Query 副作用和测试。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/hono-rpc-feasibility.md","reason":"复核 AppType 完整性和具体响应类型验收。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"复核声明出口、Turbo 前置和 Node-only runtime 禁止项。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"复核父任务的接口数量、迁移范围和例外接口。"}

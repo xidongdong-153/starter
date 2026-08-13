@@ -12,7 +12,7 @@
     },
     "format:check": { "outputs": [] },
     "check-types": {
-      "dependsOn": ["^check-types"],
+      "dependsOn": ["^check-types", "^build"],
       "outputs": []
     },
     "test": { "outputs": ["coverage/**"] },

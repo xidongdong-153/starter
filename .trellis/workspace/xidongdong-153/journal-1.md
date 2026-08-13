@@ -243,3 +243,165 @@
 ### Status
 
 [IN PROGRESS] 方案和代码已按复核意见修正，等待用户确认后 commit。
+
+---
+
+## 2026-08-13 子任务 1：08-13-contracts-schema
+
+### Goal
+
+拆分 `packages/contracts` 为 common/auth/profile/files/users/authorization/system，让 contracts 成为普通 JSON 请求/响应 schema 的唯一共享来源，保持根导出兼容；API OpenAPI 文件改为引用 contracts；修复已确认的 DTO 漂移；添加真实响应契约测试。
+
+### Changes
+
+- `packages/contracts/src/` 拆为 `common.ts`、`auth.ts`、`profile.ts`、`files.ts`、`users.ts`、`authorization.ts`、`system.ts`，`index.ts` 只做重导出；所有原公共导出名称保留。
+- 平行 interface 改为 `z.infer` 派生类型：`PublicProfile`、`AccountProfile`、`FileItem`、`AuthConfig`、`CurrentSession`、`CurrentPermissions`、`AuthorizationUser/Role/...`、`UserManagement*`、`SystemLogs*` 等。
+- 新增响应 data schema（原来只有 API 侧定义）：`publicProfileSchema`、`accountProfileSchema`、`fileItemSchema`、`currentSessionSchema`、`authUserSchema`、`currentPermissionsSchema`、`authorization*Schema`、`userManagement*Schema`、`updateUserStatusResponseSchema`、`systemLogs*Schema` 等。
+- 漂移修复：用户状态更新响应补 `from` 字段（API 实际返回 `{ from, id, status }`）；审计事件 union 补 `user.status_changed` 分支；头像 URL 改为 `z.string()` 接受相对路径；错误码 schema 用 `z.enum(ApiErrorCodes)`；删除 users.openapi.ts 中重复的 `userManagementQuerySchema`。
+- `apps/api/src/modules/*/*.openapi.ts` 全部改为从 contracts 导入并仅注册 OpenAPI 组件名（`nameSchema` 辅助，通过 zod-to-openapi 全局 registry 注册 refId，绕开 zod@4.4.3 双副本问题）。
+- `apps/api/src/openapi/responses.ts` 的 `apiMetaSchema`/`apiErrorSchema`/`apiFailureSchema`/`okSchema`/`isoDateTimeSchema` 改为引用 contracts。
+- 新增 `apps/api/src/openapi/name-schema.ts`；新增 `apps/api/src/test/contract.smoke.test.ts`（5 个真实响应契约测试）。
+- Admin `getSystemLogs`/`useSystemLogsQuery` 参数改为 `Partial<SystemLogsQuery>`（z.infer 后 page/pageSize/limit 必填，调用方按服务端默认值语义传部分参数）。
+- `apps/api` 新增依赖 `@asteasolutions/zod-to-openapi`（catalog: ^8.5.0）。
+
+### Key Decisions
+
+- zod@4.4.3 无 exports map（main=index.cjs，module=index.js），Node ESM 与 esbuild/vite 解析到两个 zod 类副本；`extendZodWithOpenApi` 只 patch 了 @hono/zod-openapi 加载的副本，contracts schema 的 `.openapi()` 在 vitest/tsx 下不可用。方案：API 侧用 `zodToOpenAPIRegistry.add(schema, { _internal: { refId } })` 注册组件名，与 zod 副本无关。
+- 生产响应仍不重复 parse；共享 schema 只在 contract/smoke tests 中解析真实响应。
+
+### Testing
+
+- [OK] contracts：check-types / lint / format:check / build。
+- [OK] api：check-types / lint / format:check / build / 132 tests（13 文件，含新增 5 个契约测试）。
+- [OK] web：check-types / lint / format:check。
+- [OK] admin：check-types / lint / format:check / 66 tests。
+- [OK] `pnpm test`（API + Admin）。
+- [OK] `/doc` 探针：组件名全部保留，审计事件状态码完整。
+- 恢复 `apps/web/next-env.d.ts`（next typegen 副作用，非本任务改动）。
+
+### Status
+
+[COMPLETED] 子任务 1 检查全部通过。等待用户确认后启动子任务 2（api-rpc-boundary）。
+
+---
+
+## 2026-08-13 子任务 2：08-13-api-rpc-boundary
+
+### Goal
+
+让 29 个 OpenAPI route 完整进入 `AppType`（Hono RPC 类型），修复 response helper 泛型，调整 `@starter/api/rpc` exports 与 Turbo 前置，让 Web/Admin 用 type-only 引用稳定解析 API dist 声明，不命中 API source 或 `@api/*`。
+
+### Changes
+
+- route factory 链式化：auth/profile/files/users/authorization 五个模块改为 `new OpenAPIHono().openapi(...).openapi(...)` 链式注册，类型在模块内累积；Better Auth `app.on` 和二进制 `app.get`（avatar/content）后置为非链式注册。system 与 routes/index 原本已是链式。
+- 发现并记录 Hono 4.13 行为：`HonoBase.route()` 用 `|` 合并模块 schema（`MergeSchemaPath<SubSchema> | S`），`keyof` 联合取交集；`hc<AppType>()` 消费时经 `UnionToIntersection` 转交叉，client 为嵌套链形式（`client.api.users[":userId"].status.$patch`）。模块内 `.openapi()` 是 `&` 累积。
+- `responses.ts` 的 `apiSuccessSchema`/`apiSuccessResponse` 泛型化，`data` 保留传入 schema 的具体结构；`InferResponseType` 可拿到具体 DTO 字段。
+- 泛型化暴露真实漂移并修复：`/api/me` 的 `session.user`（better-auth 类型）与 `currentSessionSchema` 不匹配。contracts `userStatusSchema` 移入 common.ts，`authUserSchema` 补 `status` 字段；me handler 做 presenter 转换（`image ?? null`、status 归一、createdAt/updatedAt 转 ISO string）。
+- `apps/api/src/rpc.ts`：AppType 从 `OpenAPIHono<HonoEnv, S>` 提取 schema 后以 `OpenAPIHono<Env, S>` 重建（hono 的 Env），避免把 HonoEnv（pino/better-sqlite3/drizzle/nodemailer/better-auth 类型）作为 AppType 的 Env 暴露。
+- `apps/api/package.json`：`./rpc` exports 移除 `development` source 分支（只留 types/import 指向 dist）；build script 加 `--clean`（消除旧 dts chunk 残留）。
+- web/admin package.json：devDependencies 加 `@starter/api: workspace:*`，dependencies 加 `hono: catalog:`。
+- turbo.json：`check-types` 的 dependsOn 增加 `^build`，使 web/admin 的 check-types 前置 api#build（生成 dist/rpc.d.ts）。
+- 新增 `apps/api/src/test/rpc-type.probe.ts`：hc<AppType> 类型探针，覆盖 29 个 operation 存在性 + 代表性具体 data 类型断言。
+
+### Key Decisions
+
+- 保留 `routes/index.ts` 的 `.route()` 组合（Hono 4.13 `|` 合并是官方设计，hc 消费正常）；不手写平行 AppType。
+- `dist/rpc.d.ts` 依赖链含 createRoutes 签名内联（ReturnType 提取的 rollup-plugin-dts 语义），chunk 引用 pino/better-sqlite3/drizzle/nodemailer 等 Node 类型；被根 tsconfig `skipLibCheck: true` 容忍，trace 无 `apps/api/src`/`@api/*`，bundle 无 API runtime。已记录交接。
+- z.coerce 字段的 `InferRequestType` query 输入是 `unknown`（zod v4 z.input 语义），客户端传参边界留给子任务 3 的 adapter。
+
+### Testing
+
+- [OK] contracts：check-types / lint / format:check / build。
+- [OK] api：check-types / lint / format:check / build（--clean）/ 132 tests。
+- [OK] web：check-types / lint / format:check / build（next build）。
+- [OK] admin：check-types / lint / format:check / 66 tests / build（bundle 无 better-sqlite3/drizzle/nodemailer/pino）。
+- [OK] `pnpm test`、`pnpm turbo run check-types`（删除 dist 后 9 任务全成功，验证声明前置）。
+- [OK] Turbo dry graph：web/admin build 与 check-types 均前置 api#build。
+- [OK] traceResolution：web/admin 解析 `@starter/api/rpc` 命中 `dist/rpc.d.ts`，无 apps/api/src、无 @api/*。
+- 性能（带 hc<AppType> 消费探针）：admin Check 1.70→1.79s（+5%）、Total 2.89→3.15s（+9%）；web Check 0.28→0.36s、Total 1.41→1.60s（+13%）。dts：rpc.d.ts 254B + chunk 119.70KB。
+- 恢复 `apps/web/next-env.d.ts`（typegen 副作用）。
+
+### Status
+
+[COMPLETED] 子任务 2 检查全部通过。等待用户确认后启动子任务 3（client-rpc-migration）。
+
+---
+
+## 2026-08-13 子任务 3：08-13-client-rpc-migration
+
+### Goal
+
+Web/Admin 各建薄 Hono RPC adapter，26 个普通 JSON operation 迁移到 hc<AppType>()，保留 Better Auth/multipart/下载/头像专用边界。
+
+### Changes
+
+- 新增 `apps/web/lib/rpc.ts`、`apps/admin/src/api/rpc.ts`：`hc<AppType>(baseUrl, { init: { credentials: 'include' }, headers: { accept: 'application/json' } })` + `unwrapApiData`（网络错误 → ApiRequestError(0)；非 2xx → 带 status 错误；Admin 保持 401/403 通知；envelope 解包取 data）。
+- `apps/web/lib/http.ts`：导出 readJson/isApiSuccessBody/isApiFailureBody 供 adapter 复用；apiRequest 保留（回滚点）。
+- `apps/admin/src/api/http.ts`：导出 notifyApiAccessError/resolveErrorMessage/isApiSuccessBody；apiRequest/fetchApi 保留（upload FormData / download raw Response）。
+- Web 迁移：auth-config、public profile（动态 param + cache: no-store），保留 isAuthConfig/isPublicProfile 运行时 guard 和头像 URL 函数。
+- Admin 迁移 25 个 operation：health、logs、auth config、profile get/update/avatar set/clear、files list/rename/delete、users list/detail/status、authorization 全部 11 个。uploadFile（FormData）与 downloadFileBlob（raw Response）保留专用函数。
+- 手写响应 DTO 删除：HealthResponse、setAvatar/clearAvatar/deleteFile/status 的手写泛型改为 InferResponseType 推导或 contracts DTO 显式返回类型。
+- permissionKey param 不再 encodeURIComponent（permissionSchema 是 z.enum，param 类型是 Permission 联合；冒号在 path 段合法，服务端解码结果一致）。
+
+### Key Decisions
+
+- unwrapApiData 泛型无法从 Promise<Response> 推断（退化为 {}），统一用领域函数显式返回类型（contracts DTO 或 InferResponseType）驱动。
+- TS typeof 查询不允许 `expr[':key'].$method` 链，用 `(typeof expr)[':key']['$method']` 括号分组。
+- hono client 的 param 替换不做 URL 编码（replaceUrlParam 直接拼接），userId/fileId 显式 encodeURIComponent 保持旧行为；roleKey 原代码未编码，保持原样。
+- Web apiRequest 保留但已无调用方（回滚点）；Admin apiRequest 仍服务 upload。
+
+### Testing
+
+- [OK] web：check-types / lint / format:check / build（next build）。
+- [OK] admin：check-types / lint / format:check / 66 tests / build。
+- [OK] api：132 tests；`pnpm test` 仓库级通过。
+- [OK] e2e（真实 HTTP + hc）：/health 200 envelope、/api/config/auth 200 providers、/api/me 401、/api/system/logs?page=1 401、/api/profiles/:userId 非法 uuid 400（uuidv7 校验）、合法 v7 不存在 404。临时测试已删除。
+- [OK] $url() 探针：health/logs+query/profiles param/roles impact/users status/audit query 六条 URL 构建正确。
+- [OK] 静态边界：hc 仅两个 adapter；@starter/api/rpc 仅 import type；apiRequest< 仅 upload；手写 URL 仅 upload；页面/组件零 hc。
+- [OK] bundle：admin/web 产物无 better-sqlite3/drizzle/nodemailer/pino；hono client 进 common chunk（预期 runtime 依赖）。
+- 恢复 apps/web/next-env.d.ts（typegen 副作用）。
+
+### Status
+
+[COMPLETED] 子任务 3 检查全部通过。三个子任务均完成，等父任务集成检查与提交。
+
+---
+
+## 2026-08-13 父任务集成验收：08-13-api-contract-client-architecture
+
+### Result
+
+三个子任务的实现通过父任务级集成验收。contracts 根导出、API OpenAPI/RPC 类型、声明构建前置、Web/Admin RPC adapter、26 个普通 JSON 调用和特殊接口边界与父任务 PRD 一致。
+
+### Review Fixes
+
+- 修复 Admin RPC adapter：无效 JSON 不再抛原生 `SyntaxError`，无效 success envelope 不再当裸 JSON 返回；`2xx + failure envelope` 现在抛 `ApiRequestError`。
+- Admin `ApiRequestError` 保留 API failure 的 `code`，401/403 listener 行为不变。
+- 新增 `apps/admin/src/test/rpc.test.ts`，覆盖 success envelope、failure code、401 listener、2xx failure、无效 envelope、无效 JSON和网络错误。
+- API files/profile smoke tests 增加二进制响应 header 断言：文件 MIME、长度、Content-Disposition；头像 MIME、长度、Cache-Control 和字节内容。
+- 恢复 `apps/web/next-env.d.ts`，排除 Next typegen 生成差异。
+
+### Acceptance Evidence
+
+- contracts 只依赖 zod；根 `index.ts` 重导 auth/authorization/common/files/profile/system/users。
+- `rpc-type.probe.ts` 编译覆盖 29 个 OpenAPI operation（28 个普通 JSON候选 + multipart 类型存在性），并断言动态 param、query、JSON body、多状态和具体 data 字段。
+- Web/Admin 只在各自 `rpc.ts` 创建 `hc<AppType>()`；`@starter/api/rpc` 只有 type-only import；页面和 query hook 没有 `hc`。
+- 普通 JSON 领域函数不再使用手写 `apiRequest<TData>`；唯一剩余调用是 Admin multipart `POST /api/files`。
+- TypeScript trace：Web/Admin 均解析到 `apps/api/dist/rpc.d.ts`，无 `apps/api/src` 或 `@api/*`。
+- Turbo dry graph：Web/Admin build 和 check-types 都前置 `@starter/api#build`。
+- API declaration：`rpc.d.ts` 254B，当前 dts chunk 119.70KB；前序记录的 consumer type-check 增长未超过 20% 调查阈值。
+- Admin/Web bundle 无 better-sqlite3、Drizzle SQLite driver、Nodemailer、Pino、API runtime/source 标记。
+- Better Auth 注册/session/sign-out、multipart 上传、文件下载、头像、OpenAPI `/doc`、Scalar `/reference` 的 smoke tests 通过。
+
+### Final Checks
+
+- [OK] `pnpm check-types`：9 个 task 成功。
+- [OK] `pnpm lint`：6 个 package 成功，0 warning/error。
+- [OK] `pnpm format:check`：根目录和 6 个 package 通过。
+- [OK] `pnpm test`：API 132 tests，Admin 71 tests。
+- [OK] `pnpm build`：contracts/theme/API/Admin/Web 全部成功。
+- [OK] `git diff --check`。
+
+### Status
+
+[ACCEPTED] 实现已通过父任务验收。未执行 git commit/push/merge；三个子任务 task.json 仍为 in_progress、父任务仍为 planning，等待用户授权提交后按 Trellis 完成流程归档。

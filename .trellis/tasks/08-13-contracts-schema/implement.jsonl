@@ -1,0 +1,12 @@
+{"file":".trellis/spec/guides/index.md","reason":"读取 Trellis 共享指南入口，确认跨包任务的通用检查规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨 contracts、API、Web、Admin，按指南核对请求、响应和错误数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"拆分 schema 和 adapter 前检查现有重复定义，避免新增平行契约。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"contracts 后端入口规范，定义共享 schema 的依赖和开发前检查。"}
+{"file":".trellis/spec/contracts/backend/directory-structure.md","reason":"确认 contracts 文件组织和根入口边界。"}
+{"file":".trellis/spec/contracts/backend/error-handling.md","reason":"确认 error code、failure envelope 和 details 的兼容规则。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"确认 contracts 变更所需的联合检查命令。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"确认 Web/Admin 消费 contracts 的导入和运行时校验边界。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"确认 Zod schema、DTO 派生类型和兼容性要求。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"确认跨客户端的契约检查项。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"提供 API endpoint、schema 来源、字段漂移和测试覆盖清单。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/article-and-current-architecture.md","reason":"记录现有架构与文章研究结论，限定独立 API 和 contracts 责任。"}

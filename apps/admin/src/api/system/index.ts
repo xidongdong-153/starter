@@ -1,5 +1,4 @@
 export { getSystemHealth } from './health.api'
-export type { HealthResponse } from './health.api'
 export { getSystemLogs } from './logs.api'
 export {
   LOGS_DEFAULT_PAGE_SIZE,

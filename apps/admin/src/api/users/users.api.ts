@@ -1,32 +1,37 @@
-import type {
-  UserManagementQuery,
-  UserManagementUserDetail,
-  UserManagementUserPage,
-  UserStatus,
-} from '@starter/contracts'
+import type { UserManagementQuery, UserManagementUserPage, UserStatus } from '@starter/contracts'
+import type { InferResponseType } from 'hono/client'
 
-import { apiRequest } from '@admin/api/http'
+import { apiRpc, unwrapApiData } from '@admin/api/rpc'
 
-export function listUsers(query: UserManagementQuery) {
-  const searchParams = new URLSearchParams()
-  searchParams.set('page', String(query.page))
-  searchParams.set('pageSize', String(query.pageSize))
-  if (query.search) {
-    searchParams.set('search', query.search)
-  }
-  if (query.roleKey) {
-    searchParams.set('roleKey', query.roleKey)
-  }
-  return apiRequest<UserManagementUserPage>(`/api/users?${searchParams.toString()}`)
+type UserDetailData = InferResponseType<(typeof apiRpc.api.users)[':userId']['$get'], 200>['data']
+type StatusData = InferResponseType<(typeof apiRpc.api.users)[':userId']['status']['$patch'], 200>['data']
+
+export function listUsers(query: UserManagementQuery): Promise<UserManagementUserPage> {
+  return unwrapApiData(
+    apiRpc.api.users.$get({
+      query: {
+        page: String(query.page),
+        pageSize: String(query.pageSize),
+        search: query.search,
+        roleKey: query.roleKey,
+      },
+    }),
+  )
 }
 
-export function getUserDetail(userId: string) {
-  return apiRequest<UserManagementUserDetail>(`/api/users/${userId}`)
+export function getUserDetail(userId: string): Promise<UserDetailData> {
+  return unwrapApiData(
+    apiRpc.api.users[':userId'].$get({
+      param: { userId: encodeURIComponent(userId) },
+    }),
+  )
 }
 
-export function updateUserStatus(userId: string, status: UserStatus) {
-  return apiRequest<{ id: string; status: UserStatus }>(`/api/users/${userId}/status`, {
-    method: 'PATCH',
-    body: JSON.stringify({ status }),
-  })
+export function updateUserStatus(userId: string, status: UserStatus): Promise<StatusData> {
+  return unwrapApiData(
+    apiRpc.api.users[':userId'].status.$patch({
+      param: { userId: encodeURIComponent(userId) },
+      json: { status },
+    }),
+  )
 }

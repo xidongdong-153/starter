@@ -24,6 +24,7 @@
     "better-auth": "catalog:",
     "clsx": "catalog:",
     "dayjs": "catalog:",
+    "hono": "catalog:",
     "i18next": "catalog:",
     "lucide-react": "catalog:",
     "react": "catalog:",
@@ -36,6 +37,7 @@
     "zustand": "catalog:"
   },
   "devDependencies": {
+    "@starter/api": "workspace:*",
     "@starter/eslint-config": "workspace:*",
     "@tailwindcss/vite": "catalog:",
     "@testing-library/dom": "catalog:",

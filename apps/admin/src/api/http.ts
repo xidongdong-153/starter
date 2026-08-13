@@ -1,3 +1,5 @@
+import type { ApiErrorCode } from '@starter/contracts'
+
 import { resolveApiUrl } from './client'
 
 export type ApiAccessErrorStatus = 401 | 403
@@ -7,12 +9,28 @@ type ApiAccessErrorListener = (status: ApiAccessErrorStatus) => void
 const apiAccessErrorListeners = new Set<ApiAccessErrorListener>()
 
 interface ApiErrorBody {
-  error?: { message?: unknown }
+  error?: { code?: unknown; message?: unknown }
   message?: unknown
+}
+
+interface ApiFailureBody {
+  error: {
+    code?: unknown
+    message: string
+  }
+  meta: {
+    requestId: string
+    timestamp: string
+  }
+  ok: false
 }
 
 interface ApiSuccessBody<TData> {
   data: TData
+  meta: {
+    requestId: string
+    timestamp: string
+  }
   ok: true
 }
 
@@ -20,11 +38,13 @@ interface ApiSuccessBody<TData> {
  * 接口请求失败时抛出的错误，带 HTTP 状态码
  */
 export class ApiRequestError extends Error {
+  readonly code?: ApiErrorCode
   readonly status: number
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code?: ApiErrorCode) {
     super(message)
     this.name = 'ApiRequestError'
+    this.code = code
     this.status = status
   }
 }
@@ -49,7 +69,7 @@ export function subscribeApiAccessError(listener: ApiAccessErrorListener) {
   }
 }
 
-function notifyApiAccessError(status: number) {
+export function notifyApiAccessError(status: number) {
   if (status !== 401 && status !== 403) {
     return
   }
@@ -65,11 +85,16 @@ export async function apiRequest<TData>(path: string, init?: RequestInit): Promi
   const response = await fetchApi(path, init)
 
   if (!response.ok) {
-    throw new ApiRequestError(response.status, await resolveErrorMessage(response))
+    const error = await resolveApiError(response)
+    throw new ApiRequestError(response.status, error.message, error.code)
   }
 
-  const body = (await response.json()) as TData | ApiSuccessBody<TData>
-  return isApiSuccessBody(body) ? body.data : body
+  const body = await readJson(response)
+  if (!isApiSuccessBody<TData>(body)) {
+    throw new ApiRequestError(response.status, 'API 返回的数据格式不正确。')
+  }
+
+  return body.data
 }
 
 /**
@@ -95,27 +120,71 @@ export async function fetchApi(path: string, init?: RequestInit): Promise<Respon
   }
 }
 
-async function resolveErrorMessage(response: Response): Promise<string> {
+export async function resolveApiError(response: Response): Promise<{ code?: ApiErrorCode; message: string }> {
   const body = await readErrorBody(response)
   const message = body?.error?.message ?? body?.message
+  const code = typeof body?.error?.code === 'string' ? (body.error.code as ApiErrorCode) : undefined
 
   if (typeof message === 'string' && message.trim() !== '') {
-    return message
+    return { code, message }
   }
 
   if (response.status === 401) {
-    return '请先登录'
+    return { code, message: '请先登录' }
   }
 
   if (response.status === 403) {
-    return '当前账号没有这个操作的权限'
+    return { code, message: '当前账号没有这个操作的权限' }
   }
 
-  return `请求失败: ${response.status}`
+  return { code, message: `请求失败: ${response.status}` }
 }
 
-function isApiSuccessBody<TData>(body: TData | ApiSuccessBody<TData>): body is ApiSuccessBody<TData> {
-  return typeof body === 'object' && body !== null && 'ok' in body && body.ok === true && 'data' in body
+export function isApiSuccessBody<TData>(body: unknown): body is ApiSuccessBody<TData> {
+  if (typeof body !== 'object' || body === null || !('ok' in body) || body.ok !== true || !('data' in body)) {
+    return false
+  }
+
+  return hasApiMeta(body)
+}
+
+export function isApiFailureBody(body: unknown): body is ApiFailureBody {
+  if (
+    typeof body !== 'object' ||
+    body === null ||
+    !('ok' in body) ||
+    body.ok !== false ||
+    !('error' in body) ||
+    typeof body.error !== 'object' ||
+    body.error === null ||
+    !('message' in body.error) ||
+    typeof body.error.message !== 'string'
+  ) {
+    return false
+  }
+
+  return hasApiMeta(body)
+}
+
+export async function readJson(response: Response): Promise<unknown> {
+  try {
+    return await response.json()
+  } catch {
+    throw new ApiRequestError(response.status, 'API 没有返回有效的 JSON 数据。')
+  }
+}
+
+function hasApiMeta(body: object): body is { meta: { requestId: string; timestamp: string } } {
+  if (!('meta' in body) || typeof body.meta !== 'object' || body.meta === null) {
+    return false
+  }
+
+  return (
+    'requestId' in body.meta &&
+    typeof body.meta.requestId === 'string' &&
+    'timestamp' in body.meta &&
+    typeof body.meta.timestamp === 'string'
+  )
 }
 
 async function readErrorBody(response: Response): Promise<ApiErrorBody | null> {

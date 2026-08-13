@@ -8,11 +8,11 @@ export const LOGS_DEFAULT_PAGE_SIZE = 20
 
 export const systemLogsQueryKeys = {
   all: ['system', 'logs'] as const,
-  page: (filters: SystemLogsQuery) => [...systemLogsQueryKeys.all, 'page', filters] as const,
+  page: (filters: Partial<SystemLogsQuery>) => [...systemLogsQueryKeys.all, 'page', filters] as const,
   requestId: (requestId: string) => [...systemLogsQueryKeys.all, 'requestId', requestId] as const,
 }
 
-export function useSystemLogsQuery(filters: SystemLogsQuery) {
+export function useSystemLogsQuery(filters: Partial<SystemLogsQuery>) {
   return useQuery({
     queryKey: systemLogsQueryKeys.page(filters),
     queryFn: () => getSystemLogs(filters),

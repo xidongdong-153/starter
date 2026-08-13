@@ -66,8 +66,15 @@ it("登录用户可以读取、更新和公开读取个人资料，并设置和�
     expect((await readSuccess<{ fileId: string }>(avatar)).data.fileId).toBe(
       file.id,
     );
-    expect((await app.request(`/api/profiles/${user.id}/avatar`)).status).toBe(
-      200,
+    const avatarContent = await app.request(`/api/profiles/${user.id}/avatar`);
+    expect(avatarContent.status).toBe(200);
+    expect(avatarContent.headers.get("content-type")).toBe("image/png");
+    expect(avatarContent.headers.get("content-length")).toBe("4");
+    expect(avatarContent.headers.get("cache-control")).toBe(
+      "public, max-age=300",
+    );
+    expect(new Uint8Array(await avatarContent.arrayBuffer())).toEqual(
+      new Uint8Array([137, 80, 78, 71]),
     );
 
     const clear = await app.request("/api/profile/avatar", {

@@ -1,39 +1,35 @@
 import type { AccountProfile, UpdateProfileInput } from '@starter/contracts'
+import type { InferResponseType } from 'hono/client'
 
-import { apiRequest } from '@admin/api/http'
+import { apiRpc, unwrapApiData } from '@admin/api/rpc'
+
+type SetAvatarData = InferResponseType<typeof apiRpc.api.profile.avatar.$put, 200>['data']
+type ClearAvatarData = InferResponseType<typeof apiRpc.api.profile.avatar.$delete, 200>['data']
 
 /**
  * 读取当前账号资料
  */
-export function getProfile() {
-  return apiRequest<AccountProfile>('/api/profile')
+export function getProfile(): Promise<AccountProfile> {
+  return unwrapApiData(apiRpc.api.profile.$get())
 }
 
 /**
  * 保存当前账号资料
  */
-export function updateProfile(input: UpdateProfileInput) {
-  return apiRequest<AccountProfile>('/api/profile', {
-    method: 'PATCH',
-    body: JSON.stringify(input),
-  })
+export function updateProfile(input: UpdateProfileInput): Promise<AccountProfile> {
+  return unwrapApiData(apiRpc.api.profile.$patch({ json: input }))
 }
 
 /**
  * 用已上传的图片文件设置头像
  */
-export function setProfileAvatar(fileId: string) {
-  return apiRequest<{ fileId: string }>('/api/profile/avatar', {
-    method: 'PUT',
-    body: JSON.stringify({ fileId }),
-  })
+export function setProfileAvatar(fileId: string): Promise<SetAvatarData> {
+  return unwrapApiData(apiRpc.api.profile.avatar.$put({ json: { fileId } }))
 }
 
 /**
  * 清空头像
  */
-export function clearProfileAvatar() {
-  return apiRequest<{ ok: boolean }>('/api/profile/avatar', {
-    method: 'DELETE',
-  })
+export function clearProfileAvatar(): Promise<ClearAvatarData> {
+  return unwrapApiData(apiRpc.api.profile.avatar.$delete())
 }

@@ -39,6 +39,11 @@ it("文件上传、列表、下载、重命名、删除和用户所有权隔离�
       headers: { cookie: first.cookie },
     });
     expect(content.status).toBe(200);
+    expect(content.headers.get("content-type")).toBe("image/png");
+    expect(content.headers.get("content-length")).toBe("4");
+    expect(content.headers.get("content-disposition")).toBe(
+      'inline; filename="avatar.png"',
+    );
     expect(new Uint8Array(await content.arrayBuffer())).toEqual(
       new Uint8Array([137, 80, 78, 71]),
     );

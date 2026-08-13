@@ -1,8 +1,8 @@
 import type { AuthConfig } from '@starter/contracts'
-import { apiRequest } from '@web/lib/http'
+import { apiRpc, unwrapApiData } from '@web/lib/rpc'
 
 export async function getAuthConfig(): Promise<AuthConfig> {
-  const data = await apiRequest('/api/config/auth')
+  const data = await unwrapApiData<unknown>(apiRpc.api.config.auth.$get())
 
   if (!isAuthConfig(data)) {
     throw new Error('认证配置的数据格式不正确。')

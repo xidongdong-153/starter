@@ -1,16 +1,8 @@
-import { z } from "@hono/zod-openapi";
-import { isoDateTimeSchema } from "@api/openapi/responses.js";
+import {
+  fileItemSchema as fileItemSchemaBase,
+  fileListSchema as fileListSchemaBase,
+} from "@starter/contracts";
+import { nameSchema } from "@api/openapi/name-schema.js";
 
-export const fileItemSchema = z
-  .object({
-    id: z.uuidv7(),
-    name: z.string(),
-    mimeType: z.string(),
-    size: z.number().int().nonnegative(),
-    createdAt: isoDateTimeSchema,
-    updatedAt: isoDateTimeSchema,
-    contentUrl: z.string(),
-  })
-  .openapi("FileItem");
-
-export const fileListSchema = z.array(fileItemSchema);
+export const fileItemSchema = nameSchema(fileItemSchemaBase, "FileItem");
+export const fileListSchema = fileListSchemaBase;

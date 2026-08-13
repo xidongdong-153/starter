@@ -47,47 +47,54 @@ const meRoute = createRoute({
 
 export function createAuthRoute(runtime: AppRuntime) {
   const requireAuth = createRequireAuth(runtime.auth);
-  const app = new OpenAPIHono<HonoEnv>();
+  const app = new OpenAPIHono<HonoEnv>()
+    .openapi(authConfigRoute, (c) => {
+      const data: AuthConfig = {
+        providers: {
+          email: true,
+          github: Boolean(
+            runtime.env.GITHUB_CLIENT_ID && runtime.env.GITHUB_CLIENT_SECRET,
+          ),
+          google: Boolean(
+            runtime.env.GOOGLE_CLIENT_ID && runtime.env.GOOGLE_CLIENT_SECRET,
+          ),
+        },
+      };
+      return c.json(createSuccessResponse(data, c.var.requestId), 200);
+    })
+    .openapi({ ...meRoute, middleware: requireAuth }, async (c) => {
+      const session = await requireSession(runtime.auth, c.req.raw.headers);
+      const providers = await runtime.db
+        .select({ providerId: account.providerId })
+        .from(account)
+        .where(eq(account.userId, session.user.id));
+      return c.json(
+        createSuccessResponse(
+          {
+            user: {
+              id: session.user.id,
+              name: session.user.name,
+              email: session.user.email,
+              emailVerified: session.user.emailVerified,
+              image: session.user.image ?? null,
+              status:
+                session.user.status === "suspended" ? "suspended" : "active",
+              createdAt: session.user.createdAt.toISOString(),
+              updatedAt: session.user.updatedAt.toISOString(),
+            },
+            session: session.session,
+            providers: providers.map((item) => item.providerId),
+          },
+          c.var.requestId,
+        ),
+        200,
+      );
+    });
 
   registerAuthOpenApiComponents(app);
-
-  app.openapi(authConfigRoute, (c) => {
-    const data: AuthConfig = {
-      providers: {
-        email: true,
-        github: Boolean(
-          runtime.env.GITHUB_CLIENT_ID && runtime.env.GITHUB_CLIENT_SECRET,
-        ),
-        google: Boolean(
-          runtime.env.GOOGLE_CLIENT_ID && runtime.env.GOOGLE_CLIENT_SECRET,
-        ),
-      },
-    };
-    return c.json(createSuccessResponse(data, c.var.requestId), 200);
-  });
-
   app.on(["GET", "POST"], "/api/auth/*", (c) =>
     runtime.auth.handler(c.req.raw),
   );
-
-  app.openapi({ ...meRoute, middleware: requireAuth }, async (c) => {
-    const session = await requireSession(runtime.auth, c.req.raw.headers);
-    const providers = await runtime.db
-      .select({ providerId: account.providerId })
-      .from(account)
-      .where(eq(account.userId, session.user.id));
-    return c.json(
-      createSuccessResponse(
-        {
-          user: session.user,
-          session: session.session,
-          providers: providers.map((item) => item.providerId),
-        },
-        c.var.requestId,
-      ),
-      200,
-    );
-  });
 
   return app;
 }

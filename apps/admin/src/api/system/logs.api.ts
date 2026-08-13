@@ -1,16 +1,18 @@
 import type { SystemLogsQuery, SystemLogsResponse } from '@starter/contracts'
 
-import { apiRequest } from '@admin/api/http'
+import { apiRpc, unwrapApiData } from '@admin/api/rpc'
 
-export function getSystemLogs(query: SystemLogsQuery) {
-  const search = new URLSearchParams()
-  if (query.requestId) search.set('requestId', query.requestId)
-  if (query.level) search.set('level', query.level)
-  if (query.query) search.set('query', query.query)
-  if (query.page !== undefined) search.set('page', String(query.page))
-  if (query.pageSize !== undefined) search.set('pageSize', String(query.pageSize))
-  if (query.limit !== undefined) search.set('limit', String(query.limit))
-
-  const queryString = search.toString()
-  return apiRequest<SystemLogsResponse>(`/api/system/logs${queryString ? `?${queryString}` : ''}`)
+export function getSystemLogs(query: Partial<SystemLogsQuery>): Promise<SystemLogsResponse> {
+  return unwrapApiData(
+    apiRpc.api.system.logs.$get({
+      query: {
+        requestId: query.requestId,
+        level: query.level,
+        query: query.query,
+        page: query.page === undefined ? undefined : String(query.page),
+        pageSize: query.pageSize === undefined ? undefined : String(query.pageSize),
+        limit: query.limit === undefined ? undefined : String(query.limit),
+      },
+    }),
+  )
 }

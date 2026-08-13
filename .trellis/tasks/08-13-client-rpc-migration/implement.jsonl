@@ -1,0 +1,19 @@
+{"file":".trellis/spec/guides/index.md","reason":"读取 Trellis 共享指南入口，确认跨应用迁移和检查规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"按指南核对 Web/Admin adapter 到 API 的请求、响应和错误流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查两个应用各自的薄 adapter 是否复用本地 HTTP 错误和特殊 Response 逻辑。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"确认客户端共享 DTO、根入口和运行时边界。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查迁移后领域函数使用共享 DTO，不复制响应接口。"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"复核成功/失败 envelope、meta 和客户端联合检查。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"确认 API RPC 对 Web/Admin 的消费边界。"}
+{"file":".trellis/spec/api/frontend/component-guidelines.md","reason":"确认 JSON DTO 与文件 Response 不混用，页面不承担 API transport。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"复核状态码、Cookie、文件 URL 和 OpenAPI 回归。"}
+{"file":".trellis/spec/web/frontend/index.md","reason":"确认 Web API 调用目录、Server/Client Component 和检查命令。"}
+{"file":".trellis/spec/web/frontend/type-safety.md","reason":"复核 Web 的 contracts、运行时错误和 URL 编码规则。"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"复核 Web 类型、Lint、Format、build 和页面状态不变。"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"确认 Admin API、Query、权限和测试边界。"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"复核 Admin DTO、表单转换、status 和禁止 any 断言。"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"检查 401/403、权限 API、菜单和文件动作边界。"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"定义 Admin type-check、Lint、Format、Vitest 和交互回归。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"提供 Web/Admin 普通 JSON operation 和特殊接口迁移清单。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"提供客户端 type-only import、声明产物和 bundle 验收方法。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/hono-rpc-feasibility.md","reason":"提供 hc 输入、响应联合和普通 JSON/特殊接口分类依据。"}

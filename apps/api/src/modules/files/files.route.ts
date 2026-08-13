@@ -136,66 +136,93 @@ export function createFilesRoute(runtime: AppRuntime) {
     runtime.storage,
     createFilesRepository(runtime.db),
   );
-  const app = new OpenAPIHono<HonoEnv>();
-
-  app.openapi(
-    { ...listFilesRoute, middleware: [requireAuth, requireFileList] },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.list(c.var.currentUserId),
-          c.var.requestId,
+  const app = new OpenAPIHono<HonoEnv>()
+    .openapi(
+      { ...listFilesRoute, middleware: [requireAuth, requireFileList] },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.list(c.var.currentUserId),
+            c.var.requestId,
+          ),
+          200,
         ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    { ...uploadFileRoute, middleware: [requireAuth, requireFileUpload] },
-    async (c) => {
-      const form = c.req.valid("form");
-      const file = form.file;
-      if (!(file instanceof File)) {
-        throw new AppError(
-          ApiErrorCodes.COMMON_INVALID_REQUEST,
-          "请选择文件",
-          400,
-        );
-      }
-      const ownerId = c.var.currentUserId;
-      const failedBase = {
-        event: "files.upload.failed",
-        name: file.name,
-        ownerId,
-        size: file.size,
-      };
-      try {
-        const item = await service.upload(ownerId, file);
-        c.var.logger.info(
-          {
-            event: "files.upload.succeeded",
-            fileId: item.id,
-            mimeType: item.mimeType,
-            name: item.name,
-            ownerId,
-            size: item.size,
-          },
-          "文件上传成功",
-        );
-        return c.json(createSuccessResponse(item, c.var.requestId), 201);
-      } catch (error) {
-        if (error instanceof AppError) {
-          c.var.logger.warn(
-            { ...failedBase, code: error.code, message: error.message },
-            "文件上传失败",
+    )
+    .openapi(
+      { ...uploadFileRoute, middleware: [requireAuth, requireFileUpload] },
+      async (c) => {
+        const form = c.req.valid("form");
+        const file = form.file;
+        if (!(file instanceof File)) {
+          throw new AppError(
+            ApiErrorCodes.COMMON_INVALID_REQUEST,
+            "请选择文件",
+            400,
           );
-        } else {
-          c.var.logger.error({ err: error, ...failedBase }, "文件上传失败");
         }
-        throw error;
-      }
-    },
-  );
+        const ownerId = c.var.currentUserId;
+        const failedBase = {
+          event: "files.upload.failed",
+          name: file.name,
+          ownerId,
+          size: file.size,
+        };
+        try {
+          const item = await service.upload(ownerId, file);
+          c.var.logger.info(
+            {
+              event: "files.upload.succeeded",
+              fileId: item.id,
+              mimeType: item.mimeType,
+              name: item.name,
+              ownerId,
+              size: item.size,
+            },
+            "文件上传成功",
+          );
+          return c.json(createSuccessResponse(item, c.var.requestId), 201);
+        } catch (error) {
+          if (error instanceof AppError) {
+            c.var.logger.warn(
+              { ...failedBase, code: error.code, message: error.message },
+              "文件上传失败",
+            );
+          } else {
+            c.var.logger.error({ err: error, ...failedBase }, "文件上传失败");
+          }
+          throw error;
+        }
+      },
+    )
+    .openapi(
+      { ...renameFileRoute, middleware: [requireAuth, requireFileRename] },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.rename(
+              c.req.valid("param").fileId,
+              c.var.currentUserId,
+              c.req.valid("json").name,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...removeFileRoute, middleware: [requireAuth, requireFileDelete] },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.remove(
+              c.req.valid("param").fileId,
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    );
 
   app.get(
     "/api/files/:fileId/content",
@@ -205,37 +232,6 @@ export function createFilesRoute(runtime: AppRuntime) {
       if (!result.success) throwValidationError(result.error);
     }),
     (c) => service.open(c.req.valid("param").fileId, c.var.currentUserId),
-  );
-
-  app.openapi(
-    { ...renameFileRoute, middleware: [requireAuth, requireFileRename] },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.rename(
-            c.req.valid("param").fileId,
-            c.var.currentUserId,
-            c.req.valid("json").name,
-          ),
-          c.var.requestId,
-        ),
-        200,
-      ),
-  );
-
-  app.openapi(
-    { ...removeFileRoute, middleware: [requireAuth, requireFileDelete] },
-    async (c) =>
-      c.json(
-        createSuccessResponse(
-          await service.remove(
-            c.req.valid("param").fileId,
-            c.var.currentUserId,
-          ),
-          c.var.requestId,
-        ),
-        200,
-      ),
   );
 
   return app;

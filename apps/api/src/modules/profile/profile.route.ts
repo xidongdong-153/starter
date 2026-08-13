@@ -134,62 +134,57 @@ export function createProfileRoute(runtime: AppRuntime) {
     createProfileRepository(runtime.db),
     filesService,
   );
-  const app = new OpenAPIHono<HonoEnv>();
-
-  app.openapi(
-    { ...getCurrentProfileRoute, middleware: requireAuth },
-    async (c) =>
+  const app = new OpenAPIHono<HonoEnv>()
+    .openapi(
+      { ...getCurrentProfileRoute, middleware: requireAuth },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getCurrent(c.var.currentUserId),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi({ ...updateProfileRoute, middleware: requireAuth }, async (c) =>
       c.json(
         createSuccessResponse(
-          await service.getCurrent(c.var.currentUserId),
+          await service.updateCurrent(c.var.currentUserId, c.req.valid("json")),
           c.var.requestId,
         ),
         200,
       ),
-  );
-
-  app.openapi({ ...updateProfileRoute, middleware: requireAuth }, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.updateCurrent(c.var.currentUserId, c.req.valid("json")),
-        c.var.requestId,
-      ),
-      200,
-    ),
-  );
-
-  app.openapi({ ...setAvatarRoute, middleware: requireAuth }, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.setAvatar(
-          c.var.currentUserId,
-          c.req.valid("json").fileId,
+    )
+    .openapi({ ...setAvatarRoute, middleware: requireAuth }, async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.setAvatar(
+            c.var.currentUserId,
+            c.req.valid("json").fileId,
+          ),
+          c.var.requestId,
         ),
-        c.var.requestId,
+        200,
       ),
-      200,
-    ),
-  );
-
-  app.openapi({ ...clearAvatarRoute, middleware: requireAuth }, (c) =>
-    c.json(
-      createSuccessResponse(
-        service.clearAvatar(c.var.currentUserId),
-        c.var.requestId,
+    )
+    .openapi({ ...clearAvatarRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(
+          service.clearAvatar(c.var.currentUserId),
+          c.var.requestId,
+        ),
+        200,
       ),
-      200,
-    ),
-  );
-
-  app.openapi(getPublicProfileRoute, async (c) =>
-    c.json(
-      createSuccessResponse(
-        await service.getPublic(c.req.valid("param").userId),
-        c.var.requestId,
+    )
+    .openapi(getPublicProfileRoute, async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.getPublic(c.req.valid("param").userId),
+          c.var.requestId,
+        ),
+        200,
       ),
-      200,
-    ),
-  );
+    );
 
   app.get(
     "/api/profiles/:userId/avatar",

@@ -58,7 +58,7 @@ export function isApiRequestError(error: unknown, status?: number): error is Api
   return error instanceof ApiRequestError && (status === undefined || error.status === status)
 }
 
-async function readJson(response: Response): Promise<unknown> {
+export async function readJson(response: Response): Promise<unknown> {
   try {
     return await response.json()
   } catch {
@@ -66,11 +66,11 @@ async function readJson(response: Response): Promise<unknown> {
   }
 }
 
-function isApiSuccessBody(value: unknown): value is ApiSuccessBody {
+export function isApiSuccessBody(value: unknown): value is ApiSuccessBody {
   return isRecord(value) && value.ok === true && 'data' in value && isApiMeta(value.meta)
 }
 
-function isApiFailureBody(value: unknown): value is ApiFailureBody {
+export function isApiFailureBody(value: unknown): value is ApiFailureBody {
   return (
     isRecord(value) &&
     value.ok === false &&

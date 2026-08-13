@@ -1,0 +1,15 @@
+{"file":".trellis/spec/guides/index.md","reason":"读取 Trellis 共享指南入口，确认跨包任务的通用检查规则。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务跨 contracts、API、Web、Admin，按指南核对 route 类型、声明产物和客户端数据流。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查 AppType 和响应 helper 是否复用真实 route/schema，避免手写平行类型。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"确认 API 依赖 contracts 的 schema 所有权。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"确认客户端只消费 contracts 根入口和可序列化 DTO。"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查 API 声明被客户端 type-only 消费时的类型安全规则。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"读取 Hono API 装配、route、OpenAPI 和检查规则。"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"确认 route factory、OpenAPI、RPC 和测试文件边界。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"定义 API 类型、OpenAPI、smoke 和构建检查。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"确认 API 对 Web/Admin 的 RPC 和 contracts 消费边界。"}
+{"file":".trellis/spec/api/frontend/type-safety.md","reason":"检查 AppType、OpenAPI schema 和客户端可见错误类型。"}
+{"file":".trellis/spec/api/frontend/quality-guidelines.md","reason":"确认客户端可见路由、envelope、状态码和文档回归项。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/hono-rpc-feasibility.md","reason":"提供 route factory 类型丢失、response helper 泛型和 28 条路由的实证。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/rpc-build-boundary.md","reason":"提供 exports、customConditions、Turbo、声明图和 bundle 边界的实证。"}
+{"file":".trellis/tasks/08-13-api-contract-client-architecture/research/endpoint-inventory.md","reason":"提供 AppType 覆盖范围、特殊接口分类和状态码清单。"}

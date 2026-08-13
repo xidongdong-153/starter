@@ -17,6 +17,7 @@ packages:
 
 catalog:
   "@antfu/eslint-config": ^9.0.0
+  "@asteasolutions/zod-to-openapi": ^8.5.0
   "@better-auth/cli": 1.4.21
   "@hono/node-server": ^1.19.6
   "@hono/zod-openapi": ^1.5.1
