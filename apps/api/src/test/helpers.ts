@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { ApiFailure, ApiSuccess } from "@starter/contracts";
+import type { RuntimeDeps } from "@api/bootstrap/create-runtime.js";
 import { createApp, createRuntime } from "@api/app.js";
 
 const migrationFolder = resolve(
@@ -11,23 +12,29 @@ const migrationFolder = resolve(
   "../infra/db/migrations",
 );
 
-export function createTestApp(envOverrides: NodeJS.ProcessEnv = {}) {
+export function createTestApp(
+  envOverrides: NodeJS.ProcessEnv = {},
+  deps: RuntimeDeps = {},
+) {
   const testDir = mkdtempSync(join(tmpdir(), "starter-api-"));
-  const runtime = createRuntime({
-    APP_ENV: "test",
-    PORT: "7788",
-    DATABASE_PATH: join(testDir, "app.db"),
-    FILES_DIR: join(testDir, "files"),
-    BETTER_AUTH_SECRET: "test-secret-with-at-least-32-characters",
-    BETTER_AUTH_URL: "http://localhost:7788",
-    CORS_ORIGINS: "http://localhost:2333,http://localhost:4399",
-    GITHUB_CLIENT_ID: "",
-    GITHUB_CLIENT_SECRET: "",
-    GOOGLE_CLIENT_ID: "",
-    GOOGLE_CLIENT_SECRET: "",
-    AUTH_BOOTSTRAP_ADMIN_EMAIL: "",
-    ...envOverrides,
-  });
+  const runtime = createRuntime(
+    {
+      APP_ENV: "test",
+      PORT: "7788",
+      DATABASE_PATH: join(testDir, "app.db"),
+      FILES_DIR: join(testDir, "files"),
+      BETTER_AUTH_SECRET: "test-secret-with-at-least-32-characters",
+      BETTER_AUTH_URL: "http://localhost:7788",
+      CORS_ORIGINS: "http://localhost:2333,http://localhost:4399",
+      GITHUB_CLIENT_ID: "",
+      GITHUB_CLIENT_SECRET: "",
+      GOOGLE_CLIENT_ID: "",
+      GOOGLE_CLIENT_SECRET: "",
+      AUTH_BOOTSTRAP_ADMIN_EMAIL: "",
+      ...envOverrides,
+    },
+    deps,
+  );
   migrate(runtime.db, { migrationsFolder: migrationFolder });
 
   let closed = false;
@@ -61,13 +68,21 @@ export async function register(
   return { cookie, user: body.user };
 }
 
-export async function signIn(app: ReturnType<typeof createApp>, email: string) {
+export async function signInWithPassword(
+  app: ReturnType<typeof createApp>,
+  email: string,
+  password: string,
+) {
   const response = await app.request("/api/auth/sign-in/email", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password: "password-123" }),
+    body: JSON.stringify({ email, password }),
   });
   return response.headers.get("set-cookie")?.split(";")[0] ?? "";
+}
+
+export async function signIn(app: ReturnType<typeof createApp>, email: string) {
+  return signInWithPassword(app, email, "password-123");
 }
 
 export async function readSuccess<T>(

@@ -83,6 +83,12 @@ export function Login() {
         </Form.Item>
       </Form>
 
+      <div className="text-fg-muted mt-3 text-center text-sm">
+        <Link to={'/forgot-password' as never} className="hover:text-primary transition-colors">
+          {t('auth.forgotPasswordLink')}
+        </Link>
+      </div>
+
       <SocialSignInButtons onError={setErrorMessage} />
 
       <p className="text-fg-muted mt-6 text-center text-sm">

@@ -1,10 +1,12 @@
 import type { Logger as DrizzleLogger } from "drizzle-orm";
 import type { Logger } from "pino";
 import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
+import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
 import { createDatabase } from "@api/infra/db/client.js";
 import { createChildLogger, createLogger } from "@api/infra/log/index.js";
+import { createMailer } from "@api/infra/mail/index.js";
 import { LocalStorage } from "@api/infra/storage/index.js";
 import { createAuth } from "@api/modules/auth/auth.config.js";
 import { parseEnv, type AppEnv } from "@api/shared/env.js";
@@ -18,8 +20,14 @@ export interface AppRuntime {
   storage: StorageDriver;
 }
 
+export interface RuntimeDeps {
+  /** 测试时替换 mailer，捕获发出的验证/重置邮件 */
+  mailer?: Mailer;
+}
+
 export function createRuntime(
   input: NodeJS.ProcessEnv = process.env,
+  deps: RuntimeDeps = {},
 ): AppRuntime {
   const env = parseEnv(input);
   const logger = createLogger({
@@ -38,7 +46,13 @@ export function createRuntime(
     createDrizzleLogger(env, logger),
   );
   const storage = new LocalStorage(env.FILES_DIR);
-  const auth = createAuth(database.db, env, createChildLogger(logger, "auth"));
+  const mailer = deps.mailer ?? createMailer(env, logger);
+  const auth = createAuth(
+    database.db,
+    env,
+    createChildLogger(logger, "auth"),
+    mailer,
+  );
 
   return { auth, database, db: database.db, env, logger, storage };
 }

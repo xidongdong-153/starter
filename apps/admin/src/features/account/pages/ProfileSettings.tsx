@@ -4,7 +4,7 @@ import type { AccountProfile, UpdateProfileInput } from '@starter/contracts'
 import { PermissionKeys } from '@starter/contracts'
 
 import { resolveApiUrl } from '@admin/api/client'
-import { useAuthConfigQuery, useLinkSocialMutation } from '@admin/api/auth'
+import { useAdminSessionQuery, useAuthConfigQuery, useLinkSocialMutation } from '@admin/api/auth'
 import { useFilesQuery } from '@admin/api/files'
 import {
   useClearProfileAvatarMutation,
@@ -21,6 +21,8 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from '@tanstack/react-router'
 import { SiGithub, SiGoogle } from 'react-icons/si'
+
+import { PasswordSection } from '../components/PasswordSection'
 
 interface ProfileFormValues {
   availableForWork: boolean
@@ -132,6 +134,7 @@ export function ProfileSettings() {
   const fileReadPermission = usePermission(PermissionKeys.FILE_READ)
   const authConfigQuery = useAuthConfigQuery()
   const profileQuery = useProfileQuery()
+  const sessionQuery = useAdminSessionQuery()
   const linkSocialMutation = useLinkSocialMutation()
   const filesQuery = useFilesQuery({ enabled: fileListPermission.allowed && fileReadPermission.allowed })
   const updateProfileMutation = useUpdateProfileMutation()
@@ -435,6 +438,10 @@ export function ProfileSettings() {
               ) : null}
             </div>
           </section>
+
+          {sessionQuery.data?.user ? (
+            <PasswordSection hasCredential={profile.providers.includes('credential')} user={sessionQuery.data.user} />
+          ) : null}
         </>
       ) : null}
     </div>

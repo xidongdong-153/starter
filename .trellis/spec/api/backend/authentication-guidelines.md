@@ -11,7 +11,12 @@
 ### 2. 签名
 
 ```ts
-createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger): AppAuth
+createAuth(
+  db: AppDatabase,
+  env: AppEnv,
+  logger: AppLogger,
+  mailer: Mailer,
+): AppAuth
 ```
 
 Better Auth 客户端使用以下标准动作：
@@ -53,7 +58,7 @@ account: {
 | provider account 已属于其他用户 | 回调返回 `account_already_linked_to_different_user`，不转移 account |
 | OAuth callback 失败 | 使用 `errorCallbackURL` 返回前端，并由前端按错误 code 显示文案 |
 
-`requireLocalEmailVerified: false` 只兼容本项目当前不发送邮箱验证邮件的实现，不得同时关闭 provider 邮箱验证或允许不同邮箱关联。
+`requireLocalEmailVerified: false` 表示本地邮箱不强制验证（未验证也能登录），但不得同时关闭 provider 邮箱验证或允许不同邮箱关联。邮箱验证已实现：注册时 `sendOnSignUp: true` 自动发验证邮件，`sendVerificationEmail` / `sendResetPassword` 回调通过 `infra/mail/` 的 Mailer 发送，未配置 SMTP 时打印到日志；配置 SMTP 时必须同时设置 `SMTP_FROM`，否则 API 启动失败。验证 token 是 JWT，不从 `verification` 表读取；验证和重置链接指向 Admin 的 `/verify-email` / `/reset-password` 页面。
 
 ### 5. 正确、基础和错误案例
 

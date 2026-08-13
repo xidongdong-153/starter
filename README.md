@@ -37,6 +37,18 @@ cp apps/admin/.env.example apps/admin/.env.development
 
 至少把 `apps/api/.env.development` 中的 `BETTER_AUTH_SECRET` 改为 32 个字符以上的随机值。`DATABASE_PATH` 和 `FILES_DIR` 分别控制 SQLite 文件和上传目录。GitHub 或 Google 的 client ID 与 secret 必须成对填写；留空时 API 仍可启动，前端不会显示对应按钮。
 
+邮件发送支持验证邮箱和密码重置。不配置 SMTP 时邮件内容打印到 API 日志，适合本地开发；配置后走真实发送：
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587
+SMTP_USER=your-user
+SMTP_PASS=your-password
+SMTP_FROM=no-reply@example.com
+# 邮件链接指向的 Admin 前端地址，默认 http://localhost:2333
+ADMIN_BASE_URL=http://localhost:2333
+```
+
 ## 数据库
 
 首次启动前执行 migration：

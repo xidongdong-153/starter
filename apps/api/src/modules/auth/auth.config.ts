@@ -3,6 +3,11 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { AuditActions, RoleKeys } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { AppLogger } from "@api/infra/log/index.js";
+import type { Mailer } from "@api/infra/mail/index.js";
+import {
+  buildResetPasswordEmail,
+  buildVerificationEmail,
+} from "./auth.mail.js";
 import {
   profiles,
   roles,
@@ -16,7 +21,12 @@ import { and, eq, isNull } from "drizzle-orm";
 
 type AuthLogLevel = "debug" | "error" | "info" | "warn";
 
-export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
+export function createAuth(
+  db: AppDatabase,
+  env: AppEnv,
+  logger: AppLogger,
+  mailer: Mailer,
+) {
   return betterAuth({
     appName: "Starter",
     basePath: "/api/auth",
@@ -45,8 +55,23 @@ export function createAuth(db: AppDatabase, env: AppEnv, logger: AppLogger) {
         },
       },
     },
-    emailAndPassword: { enabled: true, minPasswordLength: 8 },
-    emailVerification: { sendVerificationEmail: async () => undefined },
+    emailAndPassword: {
+      enabled: true,
+      minPasswordLength: 8,
+      sendResetPassword: async ({ token, user }) => {
+        const link = `${env.ADMIN_BASE_URL}/reset-password?token=${token}`;
+        const body = buildResetPasswordEmail({ link, name: user.name });
+        await mailer.sendMail({ ...body, to: user.email });
+      },
+    },
+    emailVerification: {
+      sendOnSignUp: true,
+      sendVerificationEmail: async ({ token, user }) => {
+        const link = `${env.ADMIN_BASE_URL}/verify-email?token=${token}`;
+        const body = buildVerificationEmail({ link, name: user.name });
+        await mailer.sendMail({ ...body, to: user.email });
+      },
+    },
     account: {
       accountLinking: {
         enabled: true,

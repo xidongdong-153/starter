@@ -220,4 +220,26 @@
 
 ### Status
 
-[OK] **Completed**
+[IN PROGRESS] 代码完成，等待用户确认后 commit。
+
+## 2026-08-12 方案复核与修正
+
+### Changes
+
+- 配置 `SMTP_HOST` 时强制要求 `SMTP_FROM`，错误配置在 `parseEnv` 阶段抛错。
+- 邮件 HTML 模板对链接做属性转义。
+- OAuth-only 账号保留邮箱验证状态，但显示未设置邮箱密码提示，不显示不可用的修改密码表单。
+- 验证页成功后显示 1.5 秒成功提示并自动跳转登录页。
+- 修改密码测试创建两个会话，确认 `revokeOtherSessions: true` 后第二个会话返回空 session；新增 SMTP 配置错误测试。
+- 修正设计、执行计划和认证规范中的 JWT token、Mailer 注入、SMTP 发件人约束和 `createAuth` 签名。
+
+### Testing
+
+- [OK] API 127 例通过。
+- [OK] Admin 66 例通过。
+- [OK] `pnpm check` 6 个任务全部通过。
+- [OK] `git diff --check` 通过。
+
+### Status
+
+[IN PROGRESS] 方案和代码已按复核意见修正，等待用户确认后 commit。

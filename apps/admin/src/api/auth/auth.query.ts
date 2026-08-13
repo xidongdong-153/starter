@@ -1,11 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
+import { changePassword } from './change-password.api'
+import { requestPasswordReset } from './forgot-password.api'
+import { resetPassword } from './reset-password.api'
 import { getAuthConfig } from './auth-config.api'
 import { getAdminSession } from './session.api'
 import { linkSocial } from './link-social.api'
 import { signInEmail, signInSocial } from './sign-in.api'
 import { signOut } from './sign-out.api'
 import { signUpEmail } from './sign-up.api'
+import { sendVerificationEmail, verifyEmail } from './verify-email.api'
 
 export const authQueryKeys = {
   all: ['auth'] as const,
@@ -70,5 +74,35 @@ export function useSignOutMutation() {
     onSuccess: () => {
       queryClient.clear()
     },
+  })
+}
+
+export function useRequestPasswordResetMutation() {
+  return useMutation({
+    mutationFn: requestPasswordReset,
+  })
+}
+
+export function useResetPasswordMutation() {
+  return useMutation({
+    mutationFn: resetPassword,
+  })
+}
+
+export function useVerifyEmailMutation() {
+  return useMutation({
+    mutationFn: verifyEmail,
+  })
+}
+
+export function useSendVerificationEmailMutation() {
+  return useMutation({
+    mutationFn: sendVerificationEmail,
+  })
+}
+
+export function useChangePasswordMutation() {
+  return useMutation({
+    mutationFn: changePassword,
   })
 }

@@ -29,6 +29,12 @@ const envSchema = z.object({
           : value,
     z.email().optional(),
   ),
+  SMTP_HOST: z.string().optional().default(""),
+  SMTP_PORT: z.coerce.number().int().positive().default(587),
+  SMTP_USER: z.string().optional().default(""),
+  SMTP_PASS: z.string().optional().default(""),
+  SMTP_FROM: z.string().optional().default(""),
+  ADMIN_BASE_URL: z.string().url().default("http://localhost:2333"),
   OPENAPI_ENABLED: z.stringbool().default(true),
 });
 
@@ -36,6 +42,10 @@ export type AppEnv = z.infer<typeof envSchema> & { corsOrigins: string[] };
 
 export function parseEnv(input: NodeJS.ProcessEnv = process.env): AppEnv {
   const values = envSchema.parse(input);
+  if (values.SMTP_HOST && !values.SMTP_FROM) {
+    throw new Error("配置 SMTP_HOST 时必须同时配置 SMTP_FROM");
+  }
+
   return {
     ...values,
     corsOrigins: values.CORS_ORIGINS.split(",")
