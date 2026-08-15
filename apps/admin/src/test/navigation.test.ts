@@ -29,6 +29,7 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/files')
     expect(keys).not.toContain('/settings/authorization')
     expect(keys).not.toContain('/settings/authorization-audit')
+    expect(keys).not.toContain('/settings/ai/providers')
     expect(keys).not.toContain('/settings/users')
   })
 
@@ -49,6 +50,14 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/settings/authorization')
     expect(keys).not.toContain('/settings/users')
     expect(keys).not.toContain('/files')
+  })
+
+  it('只持有 ai:config:read 时显示 Provider 管理入口', () => {
+    const keys = buildKeys([PermissionKeys.AI_CONFIG_READ])
+
+    expect(keys).toContain('/settings/ai')
+    expect(keys).toContain('/settings/ai/providers')
+    expect(keys).not.toContain('/settings/authorization')
   })
 
   it('只持有 file:list 时显示文件分组，不显示授权与用户管理', () => {
@@ -83,6 +92,8 @@ describe('buildNavigationMenuItems', () => {
     )
 
     expect(childKeys).toContain('/settings/profile')
+    expect(childKeys).toContain('/settings/ai')
+    expect(childKeys).not.toContain('/settings/ai/providers')
     expect(childKeys).not.toContain('/settings/authorization')
     expect(childKeys).not.toContain('/settings/authorization-audit')
     expect(childKeys).not.toContain('/settings/users')

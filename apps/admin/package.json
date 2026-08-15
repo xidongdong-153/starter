@@ -24,6 +24,7 @@
     "better-auth": "catalog:",
     "clsx": "catalog:",
     "dayjs": "catalog:",
+    "eventsource-parser": "catalog:",
     "hono": "catalog:",
     "i18next": "catalog:",
     "lucide-react": "catalog:",

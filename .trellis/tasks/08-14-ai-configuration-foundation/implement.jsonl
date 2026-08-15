@@ -1,0 +1,19 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"约束 contracts、API、Admin 的数据流与跨层同步顺序"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"AI API 模块继续使用 route、service、repository、presenter 边界"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"约束 SQLite schema、事务、migration 和测试临时数据库"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"新增 AI AppError、状态码和 OpenAPI failure 必须遵循现有约定"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"管理员 AI 路由需要 session、permission seed 和服务端权限边界"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"凭据、prompt、response 和上游错误必须按日志规范脱敏"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"定义 API route、测试、OpenAPI 和 migration 的实现检查"}
+{"file":".trellis/spec/contracts/backend/error-handling.md","reason":"AI error code 和失败响应需要保持稳定共享契约"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Admin DTO、输入 schema 和网络边界不能复制或泄漏 SDK 类型"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"contracts 改动必须验证 API 与前端实际消费者"}
+{"file":".trellis/spec/admin/frontend/directory-structure.md","reason":"AI feature、API hooks、routes 和导航按现有 Admin 目录组织"}
+{"file":".trellis/spec/admin/frontend/component-guidelines.md","reason":"Provider 表单、模型列表和测试面板处理完整请求状态"}
+{"file":".trellis/spec/admin/frontend/hook-guidelines.md","reason":"SSE 生命周期与 React Query hooks 分开并正确清理 AbortController"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"服务端数据进入 Query，密钥和 stream 临时状态不持久化"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"表单值、管理员 DTO、用户 DTO 和 SSE event 显式收窄"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"AI Provider 页面需要 route、菜单、标签和操作级权限一致"}
+{"file":".trellis/tasks/08-14-ai-configuration-foundation/research/pi-ai-feasibility.md","reason":"固定 SDK 版本、Node 要求、Provider 范围和 adapter 结论"}
+{"file":".trellis/tasks/08-14-ai-configuration-foundation/research/pi-ai-auth-boundaries.md","reason":"CredentialStore、OAuth、Bedrock、Vertex 和 ModelsStore 的源码边界"}
+{"file":".trellis/tasks/08-14-ai-configuration-foundation/research/architecture-preview.md","reason":"保留用户确认的业务配置层与运行时适配层分离方向"}

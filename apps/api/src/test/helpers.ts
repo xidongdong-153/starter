@@ -23,6 +23,9 @@ export function createTestApp(
       PORT: "7788",
       DATABASE_PATH: join(testDir, "app.db"),
       FILES_DIR: join(testDir, "files"),
+      AI_CREDENTIAL_ENCRYPTION_KEY:
+        "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
+      AI_REQUEST_TIMEOUT_MS: "5000",
       BETTER_AUTH_SECRET: "test-secret-with-at-least-32-characters",
       BETTER_AUTH_URL: "http://localhost:7788",
       CORS_ORIGINS: "http://localhost:2333,http://localhost:4399",

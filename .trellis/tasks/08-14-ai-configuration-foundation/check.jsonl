@@ -1,0 +1,13 @@
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 Provider 配置到 Admin 消费的完整数据流和契约一致性"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 OpenAPI、validation、auth、service/repository 边界和 smoke tests"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 schema、CAS、事务、migration 与临时数据库验证"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"检查 JSON/SSE 两阶段错误与稳定错误码"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"检查响应和日志不含 credential、prompt、response 或原始 cause"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查 read/manage 权限 seed、middleware 和管理员访问矩阵"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查 AI schema、DTO 和所有消费者类型"}
+{"file":".trellis/spec/contracts/frontend/quality-guidelines.md","reason":"检查 Admin runtime 边界和共享契约兼容性"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"检查 route、菜单、标签栏、PermissionGuard 和 401/403 行为"}
+{"file":".trellis/spec/admin/frontend/component-guidelines.md","reason":"检查页面 loading、error、empty、pending、移动端和表单状态"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"检查 Query invalidation、SSE 临时状态和密钥持久化边界"}
+{"file":".trellis/tasks/08-14-ai-configuration-foundation/research/pi-ai-feasibility.md","reason":"核对 SDK 版本、Provider 总数、ImagesModels 排除和 Node engine"}
+{"file":".trellis/tasks/08-14-ai-configuration-foundation/research/pi-ai-auth-boundaries.md","reason":"核对 Store 方法、CAS、ambient shadow、特殊认证和动态 refresh"}

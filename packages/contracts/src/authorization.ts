@@ -6,6 +6,8 @@ export const PermissionKeys = {
   AUTHORIZATION_AUDIT_READ: 'authorization-audit:read',
   AUTHORIZATION_MANAGE: 'authorization:manage',
   AUTHORIZATION_READ: 'authorization:read',
+  AI_CONFIG_MANAGE: 'ai:config:manage',
+  AI_CONFIG_READ: 'ai:config:read',
   FILE_DELETE: 'file:delete',
   FILE_LIST: 'file:list',
   FILE_READ: 'file:read',

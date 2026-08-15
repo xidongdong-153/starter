@@ -1,5 +1,18 @@
 import { z } from "zod";
 
+const encryptionKeySchema = z.preprocess(
+  (value) =>
+    typeof value === "string" && value.trim() === "" ? undefined : value,
+  z
+    .string()
+    .refine((value) => {
+      if (!/^[A-Za-z0-9+/]{43}=$/u.test(value)) return false;
+      const decoded = Buffer.from(value, "base64");
+      return decoded.byteLength === 32 && decoded.toString("base64") === value;
+    }, "AI_CREDENTIAL_ENCRYPTION_KEY 必须是 32 字节密钥的 base64 编码")
+    .optional(),
+);
+
 const envSchema = z.object({
   APP_ENV: z.enum(["development", "test", "production"]).default("development"),
   APP_INSTANCE_ID: z.string().default("local"),
@@ -11,6 +24,13 @@ const envSchema = z.object({
   PORT: z.coerce.number().int().positive().default(7788),
   DATABASE_PATH: z.string().default("./data/app.db"),
   FILES_DIR: z.string().default("./data/files"),
+  AI_CREDENTIAL_ENCRYPTION_KEY: encryptionKeySchema,
+  AI_REQUEST_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(300_000)
+    .default(60_000),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.url().default("http://localhost:7788"),
   CORS_ORIGINS: z

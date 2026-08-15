@@ -25,6 +25,7 @@
     "test": "vitest run --config vitest.config.ts",
     "auth:generate": "dotenv -e .env.development -- better-auth generate --config src/modules/auth/auth.ts --output src/modules/auth/auth.generated.ts --yes",
     "auth:bootstrap-admin": "dotenv -e .env.development -- tsx src/scripts/bootstrap-admin.ts",
+    "ai:auth": "dotenv -e .env.development -- tsx src/scripts/ai-auth.ts",
     "db:generate": "dotenv -e .env.development -- drizzle-kit generate",
     "db:migrate": "dotenv -e .env.development -- drizzle-kit migrate",
     "db:check": "dotenv -e .env.development -- drizzle-kit check",
@@ -33,6 +34,7 @@
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "catalog:",
+    "@earendil-works/pi-ai": "catalog:",
     "@hono/node-server": "catalog:",
     "@hono/zod-openapi": "catalog:",
     "@hono/zod-validator": "catalog:",

@@ -1,0 +1,131 @@
+import type { AdminAiProvider, AiUserPreference } from '@starter/contracts'
+
+import {
+  aiQueryKeys,
+  useCheckAiProviderMutation,
+  useUpdateAiPreferenceMutation,
+  useUpdateAiProviderConfigMutation,
+} from '@admin/api/ai/ai.query'
+import { renderHook, waitFor } from '@testing-library/react'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+
+import { createQueryClientWrapper, createTestQueryClient } from './helpers'
+
+const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
+  checkAiProvider: vi.fn(),
+  updateAiPreference: vi.fn(),
+  updateAiProviderConfig: vi.fn(),
+}))
+
+vi.mock('@admin/api/ai/ai.api', () => ({
+  checkAiProvider,
+  clearAiProviderCredential: vi.fn(),
+  getAdminAiModels: vi.fn(),
+  getAiModels: vi.fn(),
+  getAiPreference: vi.fn(),
+  getAiProviders: vi.fn(),
+  refreshAiProviderModels: vi.fn(),
+  replaceAdminAiModels: vi.fn(),
+  setAdminAiDefault: vi.fn(),
+  setAiProviderState: vi.fn(),
+  updateAiPreference,
+  updateAiProviderConfig,
+}))
+
+const provider: AdminAiProvider = {
+  providerId: 'openai',
+  name: 'OpenAI',
+  enabled: false,
+  supportedAuthModes: ['api_key', 'ambient'],
+  activeCredentialType: 'api_key',
+  authStatus: 'needs_check',
+  authSource: null,
+  checkedAt: null,
+  credentialMask: '****test',
+  configFields: [],
+  configuredSettings: {},
+  setupInstructions: [],
+  supportsModelRefresh: false,
+  catalogModelCount: 1,
+  enabledModelCount: 0,
+  configRevision: 1,
+}
+
+beforeEach(() => {
+  checkAiProvider.mockReset()
+  updateAiPreference.mockReset()
+  updateAiProviderConfig.mockReset()
+})
+
+describe('ai query 状态', () => {
+  it('使用分离的管理员、模型和偏好 query key', () => {
+    expect(aiQueryKeys.adminProviders()).toEqual(['ai', 'admin', 'providers'])
+    expect(aiQueryKeys.adminModels()).toEqual(['ai', 'admin', 'models'])
+    expect(aiQueryKeys.models()).toEqual(['ai', 'models'])
+    expect(aiQueryKeys.preference()).toEqual(['ai', 'preference'])
+  })
+
+  it('provider 配置成功后失效管理员和用户 AI 查询', async () => {
+    updateAiProviderConfig.mockResolvedValue(provider)
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateAiProviderConfigMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({ providerId: 'openai', values: { apiKey: 'secret', settings: {} } })
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(4))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.adminProviders() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.adminModels() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.models() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.preference() })
+  })
+
+  it('provider 配置失败时不失效查询', async () => {
+    updateAiProviderConfig.mockRejectedValue(new Error('409'))
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateAiProviderConfigMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await expect(
+      result.current.mutateAsync({ providerId: 'openai', values: { apiKey: 'secret', settings: {} } }),
+    ).rejects.toThrow('409')
+    expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('认证检查失败后仍刷新已落库的 provider 状态', async () => {
+    checkAiProvider.mockRejectedValue(new Error('auth failed'))
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCheckAiProviderMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await expect(result.current.mutateAsync('openai')).rejects.toThrow('auth failed')
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(4))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.adminProviders() })
+  })
+
+  it('偏好更新只失效偏好和用户模型', async () => {
+    const preference: AiUserPreference = {
+      selectedModel: null,
+      effectiveModel: null,
+      effectiveSource: null,
+    }
+    updateAiPreference.mockResolvedValue(preference)
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateAiPreferenceMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync(null)
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(2))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.preference() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.models() })
+  })
+})

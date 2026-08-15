@@ -115,7 +115,12 @@ export async function fetchApi(path: string, init?: RequestInit): Promise<Respon
 
     notifyApiAccessError(response.status)
     return response
-  } catch {
+  } catch (error) {
+    if (init?.signal?.aborted) {
+      const reason = init.signal.reason
+      if (reason instanceof Error) throw reason
+      throw error
+    }
     throw new ApiRequestError(0, 'API 服务连不上，检查服务是否启动')
   }
 }

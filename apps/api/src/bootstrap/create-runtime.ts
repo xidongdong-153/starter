@@ -3,7 +3,13 @@ import type { Logger } from "pino";
 import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
 import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
+import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
+import {
+  createAiCrypto,
+  createAiGateway,
+  createAiRuntime,
+} from "@api/infra/ai/index.js";
 import { createDatabase } from "@api/infra/db/client.js";
 import { createChildLogger, createLogger } from "@api/infra/log/index.js";
 import { createMailer } from "@api/infra/mail/index.js";
@@ -12,6 +18,8 @@ import { createAuth } from "@api/modules/auth/auth.config.js";
 import { parseEnv, type AppEnv } from "@api/shared/env.js";
 
 export interface AppRuntime {
+  ai: AiRuntime;
+  aiGateway: AiGateway;
   auth: AppAuth;
   database: DatabaseBundle;
   db: AppDatabase;
@@ -23,6 +31,8 @@ export interface AppRuntime {
 export interface RuntimeDeps {
   /** 测试时替换 mailer，捕获发出的验证/重置邮件 */
   mailer?: Mailer;
+  ai?: AiRuntime;
+  aiGateway?: AiGateway;
 }
 
 export function createRuntime(
@@ -46,6 +56,19 @@ export function createRuntime(
     createDrizzleLogger(env, logger),
   );
   const storage = new LocalStorage(env.FILES_DIR);
+  const ai =
+    deps.ai ??
+    createAiRuntime(
+      database.db,
+      createAiCrypto(env.AI_CREDENTIAL_ENCRYPTION_KEY),
+    );
+  const aiGateway =
+    deps.aiGateway ??
+    createAiGateway(
+      ai.getModelsCollection(),
+      env.AI_REQUEST_TIMEOUT_MS,
+      ai.getProviderRequestEnv,
+    );
   const mailer = deps.mailer ?? createMailer(env, logger);
   const auth = createAuth(
     database.db,
@@ -54,7 +77,16 @@ export function createRuntime(
     mailer,
   );
 
-  return { auth, database, db: database.db, env, logger, storage };
+  return {
+    ai,
+    aiGateway,
+    auth,
+    database,
+    db: database.db,
+    env,
+    logger,
+    storage,
+  };
 }
 
 /**

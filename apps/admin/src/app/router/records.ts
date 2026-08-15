@@ -1,6 +1,7 @@
 import type { AdminRouteRecord } from './types'
 
 import { accountRoutes } from '@admin/features/account/routes'
+import { aiRoutes } from '@admin/features/ai/routes'
 import { authorizationRoutes } from '@admin/features/authorization/routes'
 import { authRoutes } from '@admin/features/auth/routes'
 import { errorRoutes } from '@admin/features/errors/routes'
@@ -15,6 +16,7 @@ export const appRouteRecords: AdminRouteRecord[] = [
   ...homeRoutes,
   ...filesRoutes,
   ...accountRoutes,
+  ...aiRoutes,
   ...authorizationRoutes,
   ...usersRoutes,
   ...systemRoutes,
