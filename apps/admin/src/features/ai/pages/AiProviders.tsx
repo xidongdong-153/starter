@@ -24,6 +24,7 @@ import {
   Form,
   Input,
   Popconfirm,
+  Radio,
   Select,
   Switch,
   Table,
@@ -32,7 +33,21 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { KeyRound, RefreshCw, Save, Search, Settings2, ShieldCheck, Trash2 } from 'lucide-react'
+import {
+  Boxes,
+  BrainCircuit,
+  Eye,
+  Globe,
+  KeyRound,
+  Layers,
+  RefreshCw,
+  Save,
+  Search,
+  Settings2,
+  ShieldCheck,
+  Trash2,
+  Wrench,
+} from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -52,6 +67,12 @@ function statusColor(status: AdminAiProvider['authStatus']): string | undefined 
   return undefined
 }
 
+function formatContextWindow(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(tokens % 1_000_000 === 0 ? 0 : 1)}M`
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(0)}K`
+  return tokens.toLocaleString()
+}
+
 export function AiProviders() {
   const { t } = useTranslation()
   const { message } = App.useApp()
@@ -67,7 +88,16 @@ export function AiProviders() {
   const setDefault = useSetAdminAiDefaultMutation()
   const [form] = Form.useForm<ProviderFormValues>()
 
-  const [query, setQuery] = useState('')
+  // Provider 过滤状态
+  const [providerQuery, setProviderQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('all')
+  const [enabledFilter, setEnabledFilter] = useState<string>('all')
+
+  // Model 过滤状态
+  const [modelQuery, setModelQuery] = useState('')
+  const [modelProviderFilter, setModelProviderFilter] = useState<string>('all')
+  const [modelCapabilityFilter, setModelCapabilityFilter] = useState<string>('all')
+
   const [drawerProvider, setDrawerProvider] = useState<AdminAiProvider | null>(null)
   const [selectedModelKeys, setSelectedModelKeys] = useState<string[]>([])
   const [defaultModelKey, setDefaultModelKey] = useState<string | undefined>()
@@ -86,18 +116,66 @@ export function AiProviders() {
     setDefaultModelKey(data.globalDefaultModel ? refKey(data.globalDefaultModel) : undefined)
   }, [modelsQuery.data])
 
-  const providers = useMemo(() => {
-    const needle = query.trim().toLowerCase()
-    if (!needle) return providersQuery.data ?? []
-    return (providersQuery.data ?? []).filter(
-      (provider) => provider.name.toLowerCase().includes(needle) || provider.providerId.toLowerCase().includes(needle),
-    )
-  }, [providersQuery.data, query])
+  // 过滤后的 Provider 列表
+  const filteredProviders = useMemo(() => {
+    let list = providersQuery.data ?? []
+    const needle = providerQuery.trim().toLowerCase()
+    if (needle) {
+      list = list.filter(
+        (provider) =>
+          provider.name.toLowerCase().includes(needle) || provider.providerId.toLowerCase().includes(needle),
+      )
+    }
+    if (statusFilter !== 'all') {
+      list = list.filter((provider) => provider.authStatus === statusFilter)
+    }
+    if (enabledFilter === 'enabled') {
+      list = list.filter((provider) => provider.enabled)
+    } else if (enabledFilter === 'disabled') {
+      list = list.filter((provider) => !provider.enabled)
+    }
+    return list
+  }, [providersQuery.data, providerQuery, statusFilter, enabledFilter])
 
-  const modelMap = useMemo(
-    () => new Map((modelsQuery.data?.items ?? []).map((model) => [refKey(model), model])),
-    [modelsQuery.data],
-  )
+  const allModels = useMemo(() => modelsQuery.data?.items ?? [], [modelsQuery.data])
+  const modelMap = useMemo(() => new Map(allModels.map((model) => [refKey(model), model])), [allModels])
+
+  // Provider 下拉选项列表（用于模型 Tab 筛选）
+  const providerOptionsForModelFilter = useMemo(() => {
+    const map = new Map<string, string>()
+    for (const model of allModels) {
+      map.set(model.providerId, model.providerName)
+    }
+    return [
+      { label: t('ai.models.allProviders'), value: 'all' },
+      ...Array.from(map.entries()).map(([id, name]) => ({ label: name, value: id })),
+    ]
+  }, [allModels, t])
+
+  // 过滤后的模型列表
+  const filteredModels = useMemo(() => {
+    let list = allModels
+    const needle = modelQuery.trim().toLowerCase()
+    if (needle) {
+      list = list.filter(
+        (model) =>
+          model.name.toLowerCase().includes(needle) ||
+          model.modelId.toLowerCase().includes(needle) ||
+          model.providerName.toLowerCase().includes(needle),
+      )
+    }
+    if (modelProviderFilter !== 'all') {
+      list = list.filter((model) => model.providerId === modelProviderFilter)
+    }
+    if (modelCapabilityFilter === 'tools') {
+      list = list.filter((model) => model.capabilities.supportsTools)
+    } else if (modelCapabilityFilter === 'reasoning') {
+      list = list.filter((model) => model.capabilities.supportsReasoning)
+    } else if (modelCapabilityFilter === 'vision') {
+      list = list.filter((model) => model.capabilities.supportsImageInput)
+    }
+    return list
+  }, [allModels, modelQuery, modelProviderFilter, modelCapabilityFilter])
 
   const openProvider = (provider: AdminAiProvider) => {
     setDrawerProvider(provider)
@@ -155,14 +233,31 @@ export function AiProviders() {
     )
   }
 
+  const selectAllFilteredModels = () => {
+    const eligibleKeys = filteredModels
+      .filter(
+        (m) =>
+          m.unavailableReason !== 'model_missing' &&
+          m.unavailableReason !== 'model_unavailable' &&
+          m.unavailableReason !== 'provider_not_ready',
+      )
+      .map(refKey)
+    const newKeys = Array.from(new Set([...selectedModelKeys, ...eligibleKeys]))
+    setSelectedModelKeys(newKeys)
+  }
+
+  const clearSelectedModels = () => {
+    setSelectedModelKeys([])
+  }
+
   const providerColumns: TableProps<AdminAiProvider>['columns'] = [
     {
       key: 'provider',
       title: t('ai.providers.columns.provider'),
       render: (_, provider) => (
         <div className="min-w-48">
-          <div className="font-medium">{provider.name}</div>
-          <Typography.Text className="break-all text-xs" type="secondary">
+          <div className="text-fg font-medium">{provider.name}</div>
+          <Typography.Text className="text-fg-muted font-mono text-xs" type="secondary">
             {provider.providerId}
           </Typography.Text>
         </div>
@@ -172,9 +267,9 @@ export function AiProviders() {
       key: 'auth',
       title: t('ai.providers.columns.auth'),
       render: (_, provider) => (
-        <div className="flex flex-wrap gap-1">
+        <div className="flex flex-wrap gap-1.5">
           {provider.supportedAuthModes.map((mode) => (
-            <Tag key={mode} className="m-0">
+            <Tag key={mode} className="border-border-subtle bg-surface-muted m-0 text-xs">
               {t(`ai.authMode.${mode}`)}
             </Tag>
           ))}
@@ -186,10 +281,14 @@ export function AiProviders() {
       title: t('ai.providers.columns.status'),
       render: (_, provider) => (
         <div className="space-y-1">
-          <Tag className="m-0" color={statusColor(provider.authStatus)}>
-            {t(`ai.authStatus.${provider.authStatus}`)}
-          </Tag>
-          {provider.credentialMask ? <div className="text-fg-muted text-xs">{provider.credentialMask}</div> : null}
+          <div className="flex items-center gap-1.5">
+            <Tag className="m-0 font-medium" color={statusColor(provider.authStatus)}>
+              {t(`ai.authStatus.${provider.authStatus}`)}
+            </Tag>
+            {provider.credentialMask ? (
+              <span className="text-fg-muted font-mono text-xs">{provider.credentialMask}</span>
+            ) : null}
+          </div>
           {provider.authSource ? (
             <div className="text-fg-muted text-xs">{t(`ai.authSource.${provider.authSource}`)}</div>
           ) : null}
@@ -199,8 +298,12 @@ export function AiProviders() {
     {
       key: 'models',
       title: t('ai.providers.columns.models'),
-      render: (_, provider) => `${provider.enabledModelCount} / ${provider.catalogModelCount}`,
-      width: 110,
+      render: (_, provider) => (
+        <span className="text-fg font-medium">
+          {provider.enabledModelCount} <span className="text-fg-muted font-normal">/ {provider.catalogModelCount}</span>
+        </span>
+      ),
+      width: 120,
     },
     {
       key: 'enabled',
@@ -225,24 +328,27 @@ export function AiProviders() {
       key: 'actions',
       title: t('ai.providers.columns.actions'),
       fixed: 'right',
-      width: 150,
+      width: 160,
       render: (_, provider) => (
-        <div className="flex gap-1">
-          <Tooltip title={t('ai.providers.configure')}>
-            <Button
-              type="text"
-              aria-label={t('ai.providers.configure')}
-              icon={<Settings2 className="size-4" />}
-              onClick={() => openProvider(provider)}
-            />
-          </Tooltip>
+        <div className="flex items-center gap-1">
+          <Button
+            type="primary"
+            size="small"
+            ghost
+            icon={<Settings2 className="size-3.5" />}
+            onClick={() => openProvider(provider)}
+          >
+            {t('ai.providers.configure')}
+          </Button>
+
           <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
             <Tooltip title={t('ai.providers.check')}>
               <Button
                 type="text"
+                size="small"
                 aria-label={t('ai.providers.check')}
                 loading={checkProvider.isPending && checkProvider.variables === provider.providerId}
-                icon={<ShieldCheck className="size-4" />}
+                icon={<ShieldCheck className="size-3.5" />}
                 onClick={() =>
                   void runProviderAction(
                     () => checkProvider.mutateAsync(provider.providerId),
@@ -255,9 +361,10 @@ export function AiProviders() {
               <Tooltip title={t('ai.providers.refresh')}>
                 <Button
                   type="text"
+                  size="small"
                   aria-label={t('ai.providers.refresh')}
                   loading={refreshModels.isPending && refreshModels.variables === provider.providerId}
-                  icon={<RefreshCw className="size-4" />}
+                  icon={<RefreshCw className="size-3.5" />}
                   onClick={() =>
                     void runProviderAction(
                       () => refreshModels.mutateAsync(provider.providerId),
@@ -279,28 +386,48 @@ export function AiProviders() {
       title: t('ai.models.columns.model'),
       render: (_, model) => (
         <div className="min-w-56">
-          <div className="font-medium">{model.name}</div>
-          <Typography.Text className="break-all text-xs" type="secondary">
+          <div className="text-fg font-medium">{model.name}</div>
+          <Typography.Text className="text-fg-muted font-mono text-xs" type="secondary">
             {model.modelId}
           </Typography.Text>
         </div>
       ),
     },
-    { dataIndex: 'providerName', key: 'provider', title: t('ai.models.columns.provider') },
+    {
+      dataIndex: 'providerName',
+      key: 'provider',
+      title: t('ai.models.columns.provider'),
+      render: (name) => <span className="font-medium">{name}</span>,
+      width: 140,
+    },
     {
       key: 'context',
       title: t('ai.models.columns.context'),
-      render: (_, model) => model.capabilities.contextWindow.toLocaleString(),
-      width: 120,
+      render: (_, model) => (
+        <span className="text-fg font-mono text-xs">{formatContextWindow(model.capabilities.contextWindow)}</span>
+      ),
+      width: 100,
     },
     {
       key: 'capabilities',
       title: t('ai.models.columns.capabilities'),
       render: (_, model) => (
         <div className="flex flex-wrap gap-1">
-          {model.capabilities.supportsTools ? <Tag className="m-0">Tools</Tag> : null}
-          {model.capabilities.supportsReasoning ? <Tag className="m-0">Reasoning</Tag> : null}
-          {model.capabilities.supportsImageInput ? <Tag className="m-0">Vision</Tag> : null}
+          {model.capabilities.supportsTools ? (
+            <Tag color="orange" className="m-0 inline-flex items-center gap-1 text-[11px]">
+              <Wrench className="size-2.5" /> Tools
+            </Tag>
+          ) : null}
+          {model.capabilities.supportsReasoning ? (
+            <Tag color="purple" className="m-0 inline-flex items-center gap-1 text-[11px]">
+              <BrainCircuit className="size-2.5" /> Reasoning
+            </Tag>
+          ) : null}
+          {model.capabilities.supportsImageInput ? (
+            <Tag color="blue" className="m-0 inline-flex items-center gap-1 text-[11px]">
+              <Eye className="size-2.5" /> Vision
+            </Tag>
+          ) : null}
         </div>
       ),
     },
@@ -312,6 +439,7 @@ export function AiProviders() {
           {model.available ? t('ai.models.available') : t(`ai.models.unavailable.${model.unavailableReason}`)}
         </Tag>
       ),
+      width: 130,
     },
   ]
 
@@ -336,121 +464,232 @@ export function AiProviders() {
         ]}
       />
 
-      <Tabs
-        items={[
-          {
-            key: 'providers',
-            label: t('ai.providers.tab'),
-            children: (
-              <section className="space-y-4">
-                <Input
-                  allowClear
-                  className="max-w-md"
-                  prefix={<Search className="size-4" />}
-                  placeholder={t('ai.providers.search')}
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-                {providerError ? (
-                  <Alert
-                    showIcon
-                    type="error"
-                    message={t('ai.providers.loadFailed')}
-                    description={providerError instanceof Error ? providerError.message : undefined}
-                    action={<Button onClick={() => void providersQuery.refetch()}>{t('common.retry')}</Button>}
-                  />
-                ) : null}
-                <Table
-                  columns={providerColumns}
-                  dataSource={providers}
-                  loading={providersQuery.isLoading}
-                  locale={{ emptyText: <Empty description={t('ai.providers.empty')} /> }}
-                  pagination={{ pageSize: 20, showSizeChanger: false }}
-                  rowKey="providerId"
-                  scroll={{ x: 980 }}
-                  size="middle"
-                />
-              </section>
-            ),
-          },
-          {
-            key: 'models',
-            label: t('ai.models.tab'),
-            children: (
-              <section className="space-y-4">
-                {modelsError ? (
-                  <Alert
-                    showIcon
-                    type="error"
-                    message={t('ai.models.loadFailed')}
-                    description={modelsError instanceof Error ? modelsError.message : undefined}
-                    action={<Button onClick={() => void modelsQuery.refetch()}>{t('common.retry')}</Button>}
-                  />
-                ) : null}
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <div className="flex min-w-0 flex-1 gap-2">
-                    <Select
-                      allowClear
-                      className="min-w-0 flex-1 lg:max-w-lg"
-                      disabled={!managePermission.allowed}
-                      options={enabledDefaultOptions}
-                      placeholder={t('ai.models.defaultPlaceholder')}
-                      value={defaultModelKey}
-                      onChange={setDefaultModelKey}
-                      showSearch
-                      optionFilterProp="label"
-                    />
-                    <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-                      <Button
-                        icon={<Save className="size-4" />}
-                        loading={setDefault.isPending}
-                        onClick={() => void saveDefault()}
-                      >
-                        {t('ai.models.saveDefault')}
-                      </Button>
-                    </PermissionGuard>
+      <div className="border-border-subtle bg-surface/85 rounded-2xl border p-5 shadow-sm backdrop-blur-xs sm:p-6">
+        <Tabs
+          items={[
+            {
+              key: 'providers',
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  <Boxes className="size-4" />
+                  {t('ai.providers.tab')}
+                </span>
+              ),
+              children: (
+                <section className="space-y-4 pt-2">
+                  {/* 筛选过滤工具栏 */}
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <Input
+                        allowClear
+                        className="w-64"
+                        prefix={<Search className="text-fg-muted size-4" />}
+                        placeholder={t('ai.providers.search')}
+                        value={providerQuery}
+                        onChange={(event) => setProviderQuery(event.target.value)}
+                      />
+                      <Select
+                        className="w-36"
+                        value={statusFilter}
+                        onChange={setStatusFilter}
+                        options={[
+                          { label: t('ai.providers.allStatus'), value: 'all' },
+                          { label: t('ai.authStatus.ready'), value: 'ready' },
+                          { label: t('ai.authStatus.needs_check'), value: 'needs_check' },
+                          { label: t('ai.authStatus.error'), value: 'error' },
+                          { label: t('ai.authStatus.not_configured'), value: 'not_configured' },
+                        ]}
+                      />
+                      <Radio.Group
+                        value={enabledFilter}
+                        onChange={(e) => setEnabledFilter(e.target.value)}
+                        optionType="button"
+                        buttonStyle="solid"
+                        size="middle"
+                        options={[
+                          { label: t('ai.providers.allStatus'), value: 'all' },
+                          { label: t('ai.providers.summary.enabled'), value: 'enabled' },
+                          { label: t('ai.models.unavailable.provider_disabled'), value: 'disabled' },
+                        ]}
+                      />
+                    </div>
                   </div>
-                  <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-                    <Button
-                      type="primary"
-                      icon={<Save className="size-4" />}
-                      loading={replaceModels.isPending}
-                      onClick={() => void saveWhitelist()}
-                    >
-                      {t('ai.models.saveWhitelist')}
-                    </Button>
-                  </PermissionGuard>
-                </div>
-                <Table
-                  columns={modelColumns}
-                  dataSource={modelsQuery.data?.items ?? []}
-                  loading={modelsQuery.isLoading}
-                  locale={{ emptyText: <Empty description={t('ai.models.empty')} /> }}
-                  pagination={{ pageSize: 20, showSizeChanger: true }}
-                  rowKey={refKey}
-                  rowSelection={
-                    managePermission.allowed
-                      ? {
-                          selectedRowKeys: selectedModelKeys,
-                          onChange: (keys) => setSelectedModelKeys(keys.map(String)),
-                          getCheckboxProps: (model) => ({
-                            disabled:
-                              model.unavailableReason === 'model_missing' ||
-                              model.unavailableReason === 'model_unavailable' ||
-                              model.unavailableReason === 'provider_not_ready',
-                          }),
-                        }
-                      : undefined
-                  }
-                  scroll={{ x: 980 }}
-                  size="middle"
-                />
-              </section>
-            ),
-          },
-        ]}
-      />
 
+                  {providerError ? (
+                    <Alert
+                      showIcon
+                      type="error"
+                      message={t('ai.providers.loadFailed')}
+                      description={providerError instanceof Error ? providerError.message : undefined}
+                      action={<Button onClick={() => void providersQuery.refetch()}>{t('common.retry')}</Button>}
+                    />
+                  ) : null}
+
+                  <Table
+                    columns={providerColumns}
+                    dataSource={filteredProviders}
+                    loading={providersQuery.isLoading}
+                    locale={{ emptyText: <Empty description={t('ai.providers.empty')} /> }}
+                    pagination={{ pageSize: 20, showSizeChanger: false }}
+                    rowKey="providerId"
+                    scroll={{ x: 980 }}
+                    size="middle"
+                  />
+                </section>
+              ),
+            },
+            {
+              key: 'models',
+              label: (
+                <span className="inline-flex items-center gap-1.5">
+                  <Layers className="size-4" />
+                  {t('ai.models.tab')}
+                </span>
+              ),
+              children: (
+                <section className="space-y-6 pt-2">
+                  {modelsError ? (
+                    <Alert
+                      showIcon
+                      type="error"
+                      message={t('ai.models.loadFailed')}
+                      description={modelsError instanceof Error ? modelsError.message : undefined}
+                      action={<Button onClick={() => void modelsQuery.refetch()}>{t('common.retry')}</Button>}
+                    />
+                  ) : null}
+
+                  {/* 全局默认模型独立卡片 */}
+                  <div className="border-border-subtle bg-surface-muted/50 flex flex-col justify-between gap-4 rounded-xl border p-4 sm:flex-row sm:items-center">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <Globe className="text-primary size-4" />
+                        <span className="text-fg text-sm font-semibold">{t('ai.models.globalDefaultCardTitle')}</span>
+                      </div>
+                      <p className="text-fg-muted mt-0.5 text-xs">{t('ai.models.globalDefaultCardDesc')}</p>
+                    </div>
+                    <div className="flex min-w-0 items-center gap-2 sm:max-w-md">
+                      <Select
+                        allowClear
+                        className="min-w-0 flex-1 sm:w-64"
+                        disabled={!managePermission.allowed}
+                        options={enabledDefaultOptions}
+                        placeholder={t('ai.models.defaultPlaceholder')}
+                        value={defaultModelKey}
+                        onChange={setDefaultModelKey}
+                        showSearch
+                        optionFilterProp="label"
+                      />
+                      <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+                        <Button
+                          icon={<Save className="size-4" />}
+                          loading={setDefault.isPending}
+                          onClick={() => void saveDefault()}
+                        >
+                          {t('ai.models.saveDefault')}
+                        </Button>
+                      </PermissionGuard>
+                    </div>
+                  </div>
+
+                  {/* 白名单表格与多维筛选 */}
+                  <div className="space-y-4">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-3">
+                        <Input
+                          allowClear
+                          className="w-56"
+                          prefix={<Search className="text-fg-muted size-4" />}
+                          placeholder={t('ai.models.searchPlaceholder')}
+                          value={modelQuery}
+                          onChange={(event) => setModelQuery(event.target.value)}
+                        />
+                        <Select
+                          className="w-44"
+                          value={modelProviderFilter}
+                          onChange={setModelProviderFilter}
+                          options={providerOptionsForModelFilter}
+                        />
+                        <Select
+                          className="w-36"
+                          value={modelCapabilityFilter}
+                          onChange={setModelCapabilityFilter}
+                          options={[
+                            { label: t('ai.models.filterCapabilities'), value: 'all' },
+                            { label: 'Tools (工具)', value: 'tools' },
+                            { label: 'Reasoning (推理)', value: 'reasoning' },
+                            { label: 'Vision (视觉)', value: 'vision' },
+                          ]}
+                        />
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+                          <Button size="small" onClick={selectAllFilteredModels}>
+                            {t('ai.models.selectAllFiltered')}
+                          </Button>
+                          <Button size="small" onClick={clearSelectedModels}>
+                            {t('ai.models.clearSelection')}
+                          </Button>
+                          <Button
+                            type="primary"
+                            icon={<Save className="size-4" />}
+                            loading={replaceModels.isPending}
+                            onClick={() => void saveWhitelist()}
+                          >
+                            {t('ai.models.saveWhitelist')}
+                          </Button>
+                        </PermissionGuard>
+                      </div>
+                    </div>
+
+                    {/* 已选统计指示条 */}
+                    <div className="border-border-subtle bg-surface-muted/30 flex items-center justify-between rounded-lg border px-3 py-1.5 text-xs">
+                      <span className="text-fg-muted">
+                        {t('ai.models.selectedCount', {
+                          selected: selectedModelKeys.length,
+                          total: allModels.length,
+                        })}
+                      </span>
+                      {filteredModels.length !== allModels.length ? (
+                        <span className="text-fg-muted/80">
+                          筛选结果: {filteredModels.length} / {allModels.length}
+                        </span>
+                      ) : null}
+                    </div>
+
+                    <Table
+                      columns={modelColumns}
+                      dataSource={filteredModels}
+                      loading={modelsQuery.isLoading}
+                      locale={{ emptyText: <Empty description={t('ai.models.empty')} /> }}
+                      pagination={{ pageSize: 20, showSizeChanger: true }}
+                      rowKey={refKey}
+                      rowSelection={
+                        managePermission.allowed
+                          ? {
+                              selectedRowKeys: selectedModelKeys,
+                              onChange: (keys) => setSelectedModelKeys(keys.map(String)),
+                              getCheckboxProps: (model) => ({
+                                disabled:
+                                  model.unavailableReason === 'model_missing' ||
+                                  model.unavailableReason === 'model_unavailable' ||
+                                  model.unavailableReason === 'provider_not_ready',
+                              }),
+                            }
+                          : undefined
+                      }
+                      scroll={{ x: 980 }}
+                      size="middle"
+                    />
+                  </div>
+                </section>
+              ),
+            },
+          ]}
+        />
+      </div>
+
+      {/* Provider 配置抽屉 */}
       <Drawer
         destroyOnHidden
         open={Boolean(drawerProvider)}
@@ -471,36 +710,48 @@ export function AiProviders() {
         }
       >
         {drawerProvider ? (
-          <div className="space-y-5">
+          <div className="space-y-6">
             <Alert
               showIcon
               type={drawerProvider.authStatus === 'error' ? 'error' : 'info'}
               message={t(`ai.authStatus.${drawerProvider.authStatus}`)}
-              description={drawerProvider.setupInstructions.join(' ')}
+              description={
+                <div className="mt-1 space-y-1">
+                  {drawerProvider.setupInstructions.map((instruction, idx) => (
+                    <p key={idx} className="text-xs leading-relaxed">
+                      {instruction}
+                    </p>
+                  ))}
+                </div>
+              }
             />
+
             <Form<ProviderFormValues>
               disabled={!managePermission.allowed}
               form={form}
               layout="vertical"
               initialValues={{ settings: {} }}
               onFinish={(values) => void saveProvider(values)}
+              className="space-y-4"
             >
               {drawerProvider.supportedAuthModes.includes('api_key') ? (
-                <Form.Item name="apiKey" label={t('ai.providers.apiKey')}>
+                <Form.Item name="apiKey" label={t('ai.providers.apiKey')} className="mb-4">
                   <Input.Password
                     autoComplete="new-password"
-                    prefix={<KeyRound className="size-4" />}
+                    prefix={<KeyRound className="text-fg-muted size-4" />}
                     placeholder={drawerProvider.credentialMask ?? t('ai.providers.apiKeyPlaceholder')}
                   />
                 </Form.Item>
               ) : null}
+
               {drawerProvider.configFields.map((field) => (
                 <Form.Item
                   key={field.key}
                   name={['settings', field.key]}
                   label={field.label}
-                  extra={field.description}
+                  extra={<span className="text-fg-muted text-xs">{field.description}</span>}
                   rules={field.required ? [{ required: true, message: t('ai.providers.fieldRequired') }] : undefined}
+                  className="mb-4"
                 >
                   {field.type === 'select' ? (
                     <Select options={field.options} />
@@ -510,8 +761,9 @@ export function AiProviders() {
                 </Form.Item>
               ))}
             </Form>
+
             <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-              <div className="border-border-subtle flex flex-wrap gap-2 border-t pt-4">
+              <div className="border-border-subtle flex flex-wrap items-center justify-between gap-3 border-t pt-5">
                 <Button
                   icon={<ShieldCheck className="size-4" />}
                   loading={checkProvider.isPending}
