@@ -32,6 +32,7 @@ const files = filesQuery.data ?? [];
 - 图标按钮使用 `lucide-react`，同时设置 `aria-label` 或 `Tooltip`。文件操作可参考 `FileList.tsx`。
 - 删除等不可逆动作使用 `App.useApp().modal.confirm`，成功后用 `message.success`，失败时显示 `Error` 消息。
 - 页面文案通过 `useTranslation` 和 `src/i18n/locales/{zh,en}.ts` 提供，不在领域组件里重复维护中英文分支。
+- 页面同时存在侧边栏/局部搜索框与主文本域（如聊天 TextArea）时，搜索框显式指定 `role="searchbox"`，确保无障碍语义与测试定位隔离。
 
 ## 不要做的事
 

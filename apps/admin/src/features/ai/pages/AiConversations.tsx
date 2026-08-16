@@ -22,23 +22,35 @@ import { AdminPageHeader } from '@admin/components/common'
 import { useMobile } from '@admin/hooks/useMobile'
 import { Alert, App, Button, Drawer, Empty, Input, Modal, Select, Spin, Tag, Tooltip } from 'antd'
 import {
+  ArrowDown,
   Bot,
+  Check,
+  ChevronDown,
+  ChevronRight,
   CircleAlert,
+  Code2,
+  Copy,
+  Database,
+  FileCheck,
+  Lightbulb,
   LoaderCircle,
   MessageCircle,
   Plus,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
   Square,
   Trash2,
+  User,
   Wrench,
 } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { MarkdownRenderer } from '../components/MarkdownRenderer'
 
 const { TextArea } = Input
-const conversationPage = { page: 1, pageSize: 20 }
+const conversationPage = { page: 1, pageSize: 50 }
 
 type StreamStatus = 'streaming' | 'completed' | 'aborted' | 'failed'
 
@@ -69,39 +81,67 @@ function statusColor(status: AiConversationMessageDto['status']): string {
   return 'processing'
 }
 
+function ToolActivityItem({
+  block,
+  safeSummaries,
+}: {
+  block: AiConversationContentBlock & { type: 'tool_activity' }
+  safeSummaries?: string[]
+}) {
+  const { t } = useTranslation()
+  const [expanded, setExpanded] = useState(false)
+  const hasDetails = Boolean(safeSummaries && safeSummaries.length > 0)
+
+  const isSuccess = block.status === 'succeeded'
+  const isRunning = block.status === 'running'
+
+  return (
+    <div className="border-border-subtle bg-surface-muted/60 my-2 overflow-hidden rounded-xl border text-xs shadow-2xs">
+      <div
+        className={`flex items-center justify-between px-3 py-2 ${
+          hasDetails ? 'cursor-pointer select-none hover:bg-surface-muted' : ''
+        }`}
+        onClick={() => hasDetails && setExpanded(!expanded)}
+      >
+        <div className="flex min-w-0 items-center gap-2">
+          <Wrench className="text-primary size-3.5 shrink-0" />
+          <span className="text-fg font-mono font-medium">{block.name}</span>
+          <Tag color={isSuccess ? 'success' : isRunning ? 'processing' : 'error'} className="m-0 text-[11px]">
+            {isSuccess
+              ? t('ai.conversations.toolSucceeded')
+              : isRunning
+                ? t('ai.conversations.toolRunning')
+                : block.status}
+          </Tag>
+        </div>
+        {hasDetails ? (
+          <button
+            type="button"
+            className="text-fg-muted hover:text-fg flex cursor-pointer items-center gap-1 border-0 bg-transparent p-0 text-xs"
+          >
+            <span>{expanded ? t('ai.conversations.collapse') : t('ai.conversations.expand')}</span>
+            {expanded ? <ChevronDown className="size-3.5" /> : <ChevronRight className="size-3.5" />}
+          </button>
+        ) : null}
+      </div>
+      {expanded && safeSummaries?.length ? (
+        <div className="border-border-subtle/80 bg-surface/40 border-t px-3 py-2 text-xs leading-5">
+          <p className="text-fg-muted m-0 whitespace-pre-wrap font-mono">{safeSummaries.join('\n')}</p>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 function MessageBlocks({ blocks, safeSummaries }: { blocks: AiConversationContentBlock[]; safeSummaries?: string[] }) {
   return (
     <div className="space-y-3">
       {blocks.map((block) => {
         if (block.type === 'text') {
-          return (
-            <p key={block.blockId} className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-7">
-              {block.text}
-            </p>
-          )
+          return <MarkdownRenderer key={block.blockId} content={block.text} />
         }
 
-        return (
-          <div
-            key={block.blockId}
-            className="border-border-subtle bg-surface-muted flex items-start gap-2 rounded-lg border p-3"
-          >
-            <Wrench className="text-fg-muted mt-0.5 size-4 shrink-0" />
-            <div className="min-w-0 text-xs">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-fg font-medium">{block.name}</span>
-                <Tag
-                  color={block.status === 'succeeded' ? 'success' : block.status === 'running' ? 'processing' : 'error'}
-                >
-                  {block.status}
-                </Tag>
-              </div>
-              {safeSummaries?.length ? (
-                <p className="text-fg-muted m-0 mt-1 break-words">{safeSummaries.join(' ')}</p>
-              ) : null}
-            </div>
-          </div>
-        )
+        return <ToolActivityItem key={block.blockId} block={block} safeSummaries={safeSummaries} />
       })}
     </div>
   )
@@ -119,35 +159,99 @@ function ConversationMessage({
   retryPending: boolean
 }) {
   const { t } = useTranslation()
+  const [copied, setCopied] = useState(false)
   const isUser = message.role === 'user'
+
+  const fullText = useMemo(() => {
+    return message.blocks
+      .filter((b) => b.type === 'text')
+      .map((b) => (b.type === 'text' ? b.text : ''))
+      .join('\n\n')
+  }, [message.blocks])
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(fullText)
+      setCopied(true)
+      setTimeout(setCopied, 2000, false)
+    } catch {
+      // 剪贴板不可用时静默降级
+    }
+  }
+
   return (
-    <article className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-      <div className={`max-w-[min(760px,92%)] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1`}>
+    <article className={`flex ${isUser ? 'justify-end' : 'justify-start'} group/msg`}>
+      <div className={`max-w-[min(820px,94%)] ${isUser ? 'items-end' : 'items-start'} flex flex-col gap-1.5`}>
         <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
-          {isUser ? t('ai.conversations.user') : t('ai.conversations.assistant')}
-          {!isUser && message.status !== 'completed' ? (
-            <Tag color={statusColor(message.status)}>{t(`ai.conversations.${message.status}`)}</Tag>
-          ) : null}
+          {isUser ? (
+            <>
+              <span>{t('ai.conversations.user')}</span>
+              <div className="bg-primary/20 text-primary flex size-5 items-center justify-center rounded-full">
+                <User className="size-3" />
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="bg-surface-muted text-primary border-border-subtle flex size-5 items-center justify-center rounded-full border">
+                <Bot className="size-3" />
+              </div>
+              <span className="font-medium">{t('ai.conversations.assistant')}</span>
+              {message.status !== 'completed' ? (
+                <Tag color={statusColor(message.status)} className="m-0 text-[11px]">
+                  {t(`ai.conversations.${message.status}`)}
+                </Tag>
+              ) : null}
+            </>
+          )}
         </div>
+
         <div
-          className={`border-border-subtle border px-4 py-3 ${
-            isUser ? 'bg-primary/10 rounded-2xl rounded-br-sm' : 'bg-surface rounded-2xl rounded-bl-sm'
+          className={`border-border-subtle relative border px-4 py-3.5 transition-shadow ${
+            isUser ? 'bg-primary/10 rounded-2xl rounded-tr-xs' : 'bg-surface rounded-2xl rounded-tl-xs shadow-2xs'
           }`}
         >
           <MessageBlocks blocks={message.blocks} />
-          {message.errorCode ? <p className="text-danger m-0 mt-2 break-words text-xs">{message.errorCode}</p> : null}
+          {message.errorCode ? (
+            <p className="text-danger border-danger/30 bg-danger/5 m-0 mt-3 rounded-lg border p-2 text-xs">
+              {message.errorCode}
+            </p>
+          ) : null}
         </div>
-        {retryable && message.generationId ? (
-          <Button
-            type="link"
-            size="small"
-            icon={<RotateCcw className="size-3.5" />}
-            loading={retryPending}
-            onClick={() => onRetry(message.generationId as string)}
-          >
-            {t('ai.conversations.retry')}
-          </Button>
-        ) : null}
+
+        <div className="flex items-center gap-2 px-1 text-xs opacity-0 transition-opacity group-hover/msg:opacity-100 focus-within:opacity-100">
+          {fullText ? (
+            <button
+              type="button"
+              onClick={() => void handleCopy()}
+              className="text-fg-muted hover:text-fg active:scale-95 inline-flex cursor-pointer items-center gap-1 border-0 bg-transparent py-0.5"
+            >
+              {copied ? (
+                <>
+                  <Check className="text-success size-3" />
+                  <span className="text-success text-[11px]">{t('ai.conversations.copySuccess')}</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="size-3" />
+                  <span className="text-[11px]">{t('ai.conversations.copy')}</span>
+                </>
+              )}
+            </button>
+          ) : null}
+
+          {retryable && message.generationId ? (
+            <Button
+              type="link"
+              size="small"
+              className="h-auto p-0 text-[11px]"
+              icon={<RotateCcw className="size-3" />}
+              loading={retryPending}
+              onClick={() => onRetry(message.generationId as string)}
+            >
+              {t('ai.conversations.retry')}
+            </Button>
+          ) : null}
+        </div>
       </div>
     </article>
   )
@@ -171,67 +275,169 @@ function ConversationList({
   deletePending: boolean
 }) {
   const { t } = useTranslation()
-  const items = conversations?.items ?? []
+  const [search, setSearch] = useState('')
+  const rawItems = conversations?.items ?? []
+
+  const items = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rawItems
+    return rawItems.filter(
+      (item) =>
+        item.title.toLowerCase().includes(q) ||
+        (item.lastModel && `${item.lastModel.providerId} ${item.lastModel.modelId}`.toLowerCase().includes(q)),
+    )
+  }, [rawItems, search])
+
   return (
-    <aside className="border-border-subtle bg-surface/70 flex min-h-0 w-full flex-col border-r lg:w-[280px] lg:shrink-0">
-      <div className="border-border-subtle flex items-center justify-between border-b px-4 py-3">
+    <aside className="border-border-subtle bg-surface-muted/30 flex min-h-0 w-full flex-col border-r lg:w-[300px] lg:shrink-0">
+      <div className="border-border-subtle/80 flex items-center justify-between border-b px-4 py-3">
         <div>
           <p className="text-fg m-0 text-sm font-semibold">{t('ai.conversations.mobileConversations')}</p>
-          <p className="text-fg-muted m-0 mt-0.5 text-xs">{items.length}</p>
+          <p className="text-fg-muted m-0 mt-0.5 text-xs">{rawItems.length} 个对话</p>
         </div>
         <Tooltip title={t('ai.conversations.newConversation')}>
           <Button
             type="primary"
-            shape="circle"
             icon={<Plus className="size-4" />}
             aria-label={t('ai.conversations.newConversation')}
             loading={createPending}
             onClick={onCreate}
-          />
+          >
+            {t('ai.conversations.newConversation')}
+          </Button>
         </Tooltip>
       </div>
+
+      <div className="border-border-subtle/60 border-b p-2">
+        <Input
+          role="searchbox"
+          prefix={<Search className="text-fg-muted size-3.5" />}
+          placeholder={t('ai.conversations.searchPlaceholder')}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          allowClear
+          size="middle"
+          className="rounded-lg text-xs"
+        />
+      </div>
+
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {items.length === 0 ? (
-          <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={t('ai.conversations.listEmpty')} className="my-12" />
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={search ? t('ai.conversations.listEmpty') : t('ai.conversations.empty')}
+            className="my-10 text-xs"
+          />
         ) : (
           <div className="space-y-1">
-            {items.map((conversation) => (
-              <div
-                key={conversation.id}
-                className={`group flex items-center gap-1 rounded-lg p-2 transition-colors ${
-                  selectedId === conversation.id ? 'bg-primary/10 text-primary' : 'hover:bg-surface-muted'
-                }`}
-              >
-                <button
-                  type="button"
-                  className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-1 text-left"
-                  onClick={() => onSelect(conversation.id)}
+            {items.map((conversation) => {
+              const isSelected = selectedId === conversation.id
+              return (
+                <div
+                  key={conversation.id}
+                  className={`group relative flex items-center gap-1.5 rounded-xl px-3 py-2.5 transition-all duration-150 ${
+                    isSelected
+                      ? 'bg-primary/10 text-primary border-primary/20 border shadow-2xs'
+                      : 'border-transparent hover:bg-surface-muted/80 border'
+                  }`}
                 >
-                  <span className="text-fg block truncate text-sm font-medium">{conversation.title}</span>
-                  <span className="text-fg-muted mt-1 block truncate text-xs">
-                    {conversation.lastModel
-                      ? `${conversation.lastModel.providerId} / ${conversation.lastModel.modelId}`
-                      : t('ai.conversations.modelUnavailable')}
-                  </span>
-                </button>
-                <Tooltip title={t('ai.conversations.delete')}>
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
-                    icon={<Trash2 className="size-3.5" />}
-                    aria-label={`${t('ai.conversations.delete')}: ${conversation.title}`}
-                    loading={deletePending}
-                    onClick={() => onDelete(conversation.id)}
-                  />
-                </Tooltip>
-              </div>
-            ))}
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 cursor-pointer border-0 bg-transparent p-0 text-left"
+                    onClick={() => onSelect(conversation.id)}
+                  >
+                    <span className={`block truncate text-sm font-medium ${isSelected ? 'text-primary' : 'text-fg'}`}>
+                      {conversation.title || t('ai.conversations.title')}
+                    </span>
+                    <span className="text-fg-muted mt-1 block truncate text-xs">
+                      {conversation.lastModel
+                        ? `${conversation.lastModel.providerId} / ${conversation.lastModel.modelId}`
+                        : t('ai.conversations.modelUnavailable')}
+                    </span>
+                  </button>
+                  <Tooltip title={t('ai.conversations.delete')}>
+                    <Button
+                      type="text"
+                      size="small"
+                      danger
+                      className="opacity-0 transition-opacity group-hover:opacity-100 focus:opacity-100"
+                      icon={<Trash2 className="size-3.5" />}
+                      aria-label={`${t('ai.conversations.delete')}: ${conversation.title}`}
+                      loading={deletePending}
+                      onClick={() => onDelete(conversation.id)}
+                    />
+                  </Tooltip>
+                </div>
+              )
+            })}
           </div>
         )}
       </div>
     </aside>
+  )
+}
+
+function QuickStarters({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
+  const { t } = useTranslation()
+
+  const starters = [
+    {
+      title: '代码审查与重构',
+      description: t('ai.conversations.quickPrompts.codeReview'),
+      icon: <Code2 className="text-primary size-4" />,
+      prompt: '请帮我审查以下代码，指出潜在的代码质量问题、边界异常与重构建议：\n\n```ts\n\n```',
+    },
+    {
+      title: 'SQL 性能优化',
+      description: t('ai.conversations.quickPrompts.sqlHelp'),
+      icon: <Database className="text-primary size-4" />,
+      prompt: '针对以下业务场景设计表结构，并编写高效且命中索引的 SQL 查询语句：\n\n业务需求：',
+    },
+    {
+      title: '技术机制拆解',
+      description: t('ai.conversations.quickPrompts.explainConcept'),
+      icon: <Lightbulb className="text-primary size-4" />,
+      prompt: '请用简明清晰的事实解释以下技术概念的工作机制、典型应用场景与常见误区：\n\n概念：',
+    },
+    {
+      title: '编写单元测试',
+      description: t('ai.conversations.quickPrompts.testGen'),
+      icon: <FileCheck className="text-primary size-4" />,
+      prompt: '请为以下业务函数编写完整的 Vitest / Jest 单元测试用例，覆盖正常与边界分支：\n\n```ts\n\n```',
+    },
+  ]
+
+  return (
+    <div className="mx-auto my-auto max-w-2xl px-4 py-8">
+      <div className="mb-6 text-center">
+        <div className="bg-primary/10 text-primary border-primary/20 mx-auto mb-3 flex size-12 items-center justify-center rounded-2xl border">
+          <Bot className="size-6" />
+        </div>
+        <h3 className="text-fg m-0 text-base font-semibold">{t('ai.conversations.emptyMessages')}</h3>
+        <p className="text-fg-muted m-0 mt-1 text-xs">{t('ai.conversations.quickPromptsTitle')}</p>
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        {starters.map((item, idx) => (
+          <button
+            key={idx}
+            type="button"
+            onClick={() => onSelectPrompt(item.prompt)}
+            className="border-border-subtle bg-surface hover:border-primary/40 hover:bg-surface-muted/60 active:scale-[0.98] group flex cursor-pointer flex-col items-start rounded-xl border p-4 text-left shadow-2xs transition-all duration-150"
+          >
+            <div className="mb-2 flex items-center gap-2">
+              <div className="bg-surface-muted group-hover:bg-primary/10 rounded-lg p-1.5 transition-colors">
+                {item.icon}
+              </div>
+              <span className="text-fg text-sm font-medium group-hover:text-primary transition-colors">
+                {item.title}
+              </span>
+            </div>
+            <p className="text-fg-muted m-0 line-clamp-2 text-xs leading-5">{item.description}</p>
+          </button>
+        ))}
+      </div>
+    </div>
   )
 }
 
@@ -255,6 +461,7 @@ export function AiConversations() {
   const [streamStatus, setStreamStatus] = useState<StreamStatus | null>(null)
   const [streamError, setStreamError] = useState<string | null>(null)
   const [toolSummaries, setToolSummaries] = useState<string[]>([])
+  const [showScrollBottom, setShowScrollBottom] = useState(false)
   const controllerRef = useRef<AbortController | null>(null)
   const streamTokenRef = useRef(0)
   const outputRef = useRef<HTMLDivElement | null>(null)
@@ -283,9 +490,27 @@ export function AiConversations() {
     if (effective) setSelectedModelKey(modelKey(effective))
   }, [preferenceQuery.data?.effectiveModel, selectedModelKey])
 
+  const scrollToBottom = () => {
+    if (outputRef.current) {
+      outputRef.current.scrollTo({
+        top: outputRef.current.scrollHeight,
+        behavior: 'smooth',
+      })
+    }
+  }
+
+  const handleScroll = () => {
+    if (!outputRef.current) return
+    const { scrollTop, scrollHeight, clientHeight } = outputRef.current
+    const isFarFromBottom = scrollHeight - (scrollTop + clientHeight) > 120
+    setShowScrollBottom(isFarFromBottom)
+  }
+
   useEffect(() => {
-    if (outputRef.current) outputRef.current.scrollTop = outputRef.current.scrollHeight
-  }, [streamText, selectedConversation?.messages.length])
+    if (outputRef.current && !showScrollBottom) {
+      outputRef.current.scrollTop = outputRef.current.scrollHeight
+    }
+  }, [streamText, selectedConversation?.messages.length, showScrollBottom])
 
   useEffect(
     () => () => {
@@ -369,8 +594,8 @@ export function AiConversations() {
     }
   }
 
-  const sendMessage = () => {
-    const text = input.trim()
+  const sendMessage = (customText?: string) => {
+    const text = (customText ?? input).trim()
     if (!selectedId || !text || controllerRef.current || activeGenerationId || models.length === 0) return
     const conversationId = selectedId
     const model = selectedModelKey ? modelMap.get(selectedModelKey) : undefined
@@ -487,7 +712,7 @@ export function AiConversations() {
   }
 
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
       sendMessage()
     }
@@ -538,7 +763,7 @@ export function AiConversations() {
           <Spin />
         </div>
       ) : conversationsQuery.data?.items.length === 0 ? (
-        <section className="border-border-subtle bg-surface flex min-h-0 flex-1 items-center justify-center rounded-xl border">
+        <section className="border-border-subtle bg-surface flex min-h-0 flex-1 items-center justify-center rounded-2xl border shadow-xs">
           <Empty description={t('ai.conversations.empty')}>
             <p className="text-fg-muted mb-4 max-w-sm text-sm">{t('ai.conversations.emptyHint')}</p>
             <Button type="primary" icon={<Plus className="size-4" />} onClick={() => void createConversation()}>
@@ -547,7 +772,7 @@ export function AiConversations() {
           </Empty>
         </section>
       ) : (
-        <section className="border-border-subtle bg-surface flex min-h-0 flex-1 overflow-hidden rounded-xl border">
+        <section className="border-border-subtle bg-surface flex min-h-0 flex-1 overflow-hidden rounded-2xl border shadow-xs">
           {isMobile ? (
             <Drawer
               title={t('ai.conversations.mobileConversations')}
@@ -580,7 +805,8 @@ export function AiConversations() {
           )}
 
           <main className="flex min-w-0 flex-1 flex-col">
-            <div className="border-border-subtle flex min-h-[60px] items-center justify-between gap-3 border-b px-4 py-3 sm:px-6">
+            {/* Header */}
+            <div className="border-border-subtle/80 bg-surface/90 flex min-h-[58px] items-center justify-between gap-3 border-b px-4 py-2.5 backdrop-blur-xs sm:px-6">
               <div className="flex min-w-0 items-center gap-3">
                 {isMobile ? (
                   <Button
@@ -591,24 +817,29 @@ export function AiConversations() {
                   />
                 ) : null}
                 <div className="min-w-0">
-                  <h2 className="text-fg m-0 truncate text-base font-semibold">
-                    {selectedConversation?.title ?? t('ai.conversations.title')}
+                  <h2 className="text-fg m-0 truncate text-sm font-semibold">
+                    {selectedConversation?.title || t('ai.conversations.title')}
                   </h2>
                   {selectedConversation?.lastModel ? (
-                    <p className="text-fg-muted m-0 mt-1 truncate text-xs">
+                    <p className="text-fg-muted m-0 mt-0.5 truncate text-[11px]">
                       {selectedConversation.lastModel.providerId} / {selectedConversation.lastModel.modelId}
                     </p>
                   ) : null}
                 </div>
               </div>
               {selectedConversation?.status === 'generating' || streamActive ? (
-                <Tag color="processing" icon={<LoaderCircle className="size-3 animate-spin" />}>
+                <Tag color="processing" icon={<LoaderCircle className="size-3 animate-spin" />} className="m-0">
                   {t('ai.conversations.generating')}
                 </Tag>
               ) : null}
             </div>
 
-            <div ref={outputRef} className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-8">
+            {/* Message viewport */}
+            <div
+              ref={outputRef}
+              onScroll={handleScroll}
+              className="relative min-h-0 flex-1 overflow-y-auto px-4 py-6 sm:px-8"
+            >
               {detailQuery.isLoading ? (
                 <div className="flex h-full items-center justify-center">
                   <Spin />
@@ -636,10 +867,15 @@ export function AiConversations() {
                   ))}
                   {pendingUserText ? (
                     <article className="flex justify-end">
-                      <div className="max-w-[min(760px,92%)]">
-                        <div className="text-fg-muted mb-1 px-1 text-right text-xs">{t('ai.conversations.user')}</div>
-                        <div className="border-border-subtle bg-primary/10 rounded-2xl rounded-br-sm border px-4 py-3">
-                          <p className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-7">
+                      <div className="max-w-[min(820px,94%)] items-end flex flex-col gap-1.5">
+                        <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
+                          <span>{t('ai.conversations.user')}</span>
+                          <div className="bg-primary/20 text-primary flex size-5 items-center justify-center rounded-full">
+                            <User className="size-3" />
+                          </div>
+                        </div>
+                        <div className="border-border-subtle bg-primary/10 rounded-2xl rounded-tr-xs border px-4 py-3.5">
+                          <p className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-6">
                             {pendingUserText}
                           </p>
                         </div>
@@ -648,20 +884,39 @@ export function AiConversations() {
                   ) : null}
                   {streamActive ? (
                     <article className="flex justify-start">
-                      <div className="max-w-[min(760px,92%)]">
-                        <div className="text-fg-muted mb-1 flex items-center gap-2 px-1 text-xs">
-                          <Bot className="size-3.5" />
-                          {t('ai.conversations.assistant')}
+                      <div className="max-w-[min(820px,94%)] items-start flex flex-col gap-1.5">
+                        <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
+                          <div className="bg-surface-muted text-primary border-border-subtle flex size-5 items-center justify-center rounded-full border">
+                            <Bot className="size-3" />
+                          </div>
+                          <span className="font-medium">{t('ai.conversations.assistant')}</span>
+                          <Tag
+                            color="processing"
+                            icon={<LoaderCircle className="size-3 animate-spin" />}
+                            className="m-0 text-[11px]"
+                          >
+                            {t('ai.conversations.streaming')}
+                          </Tag>
                         </div>
-                        <div className="border-border-subtle bg-surface rounded-2xl rounded-bl-sm border px-4 py-3">
-                          <p className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-7">
-                            {streamText || t('ai.conversations.generating')}
-                            <span className="bg-primary ml-1 inline-block h-4 w-1.5 animate-pulse rounded-xs align-middle" />
-                          </p>
+                        <div className="border-border-subtle bg-surface rounded-2xl rounded-tl-xs border px-4 py-3.5 shadow-2xs">
+                          {streamText ? (
+                            <div>
+                              <MarkdownRenderer content={streamText} />
+                              <span className="bg-primary ml-1 inline-block h-4 w-1.5 animate-pulse rounded-xs align-middle" />
+                            </div>
+                          ) : (
+                            <div className="flex items-center gap-2 text-sm text-fg-muted">
+                              <LoaderCircle className="size-4 animate-spin text-primary" />
+                              <span>{t('ai.conversations.generating')}...</span>
+                            </div>
+                          )}
                           {toolSummaries.length ? (
-                            <div className="text-fg-muted mt-3 flex items-center gap-2 text-xs">
-                              <Wrench className="size-3.5" />
-                              {toolSummaries.join(' ')}
+                            <div className="border-border-subtle bg-surface-muted/60 mt-3 rounded-lg border p-2.5 text-xs">
+                              <div className="text-fg-muted mb-1 flex items-center gap-1.5 font-medium">
+                                <Wrench className="size-3 text-primary" />
+                                <span>{t('ai.conversations.toolActivity')}</span>
+                              </div>
+                              <p className="text-fg m-0 font-mono text-[11px] leading-5">{toolSummaries.join('\n')}</p>
                             </div>
                           ) : null}
                         </div>
@@ -670,16 +925,12 @@ export function AiConversations() {
                   ) : null}
                 </div>
               ) : (
-                <div className="flex h-full min-h-[280px] items-center justify-center">
-                  <Empty
-                    image={<MessageCircle className="text-fg-muted/50 mx-auto size-10" />}
-                    description={t('ai.conversations.emptyMessages')}
-                  />
-                </div>
+                <QuickStarters onSelectPrompt={(p) => setInput(p)} />
               )}
+
               {streamError ? (
                 <Alert
-                  className="mx-auto mt-5 max-w-4xl"
+                  className="mx-auto mt-5 max-w-4xl rounded-xl"
                   showIcon
                   type="error"
                   icon={<CircleAlert className="size-4" />}
@@ -687,50 +938,88 @@ export function AiConversations() {
                   description={streamError}
                 />
               ) : null}
+
+              {/* Scroll to bottom button */}
+              {showScrollBottom ? (
+                <div className="sticky bottom-4 right-4 flex justify-end">
+                  <Tooltip title={t('ai.conversations.scrollToBottom')}>
+                    <Button
+                      shape="circle"
+                      type="default"
+                      className="shadow-md hover:scale-105 transition-transform"
+                      icon={<ArrowDown className="size-4" />}
+                      onClick={scrollToBottom}
+                    />
+                  </Tooltip>
+                </div>
+              ) : null}
             </div>
 
-            <div className="border-border-subtle bg-surface-muted/40 border-t p-4 sm:px-8">
+            {/* Input Composer */}
+            <div className="border-border-subtle/80 bg-surface-muted/30 border-t p-4 sm:px-8">
               {modelsQuery.data?.length === 0 ? (
-                <Alert className="mb-3" type="warning" showIcon message={t('ai.conversations.modelUnavailable')} />
+                <Alert
+                  className="mb-3 rounded-lg"
+                  type="warning"
+                  showIcon
+                  message={t('ai.conversations.modelUnavailable')}
+                />
               ) : null}
               <div className="mx-auto max-w-4xl">
-                <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                  <Select
-                    className="w-full sm:max-w-[360px]"
-                    options={modelOptions}
-                    value={selectedModelKey}
-                    onChange={setSelectedModelKey}
-                    placeholder={t('ai.conversations.selectModel')}
-                    showSearch
-                    optionFilterProp="label"
-                    disabled={streamActive || models.length === 0}
+                <div className="border-border-subtle bg-surface rounded-2xl border p-3 shadow-2xs focus-within:border-primary/50 focus-within:ring-1 focus-within:ring-primary/20 transition-all">
+                  {/* Top toolbar in input box */}
+                  <div className="mb-2 flex items-center justify-between gap-2 border-b border-border-subtle/60 pb-2">
+                    <div className="flex items-center gap-2">
+                      <Select
+                        className="w-[240px] sm:w-[280px]"
+                        size="small"
+                        options={modelOptions}
+                        value={selectedModelKey}
+                        onChange={setSelectedModelKey}
+                        placeholder={t('ai.conversations.selectModel')}
+                        showSearch
+                        optionFilterProp="label"
+                        disabled={streamActive || models.length === 0}
+                      />
+                    </div>
+                    {streamActive ? (
+                      <Button
+                        danger
+                        size="small"
+                        icon={<Square className="size-3.5" />}
+                        loading={stopGeneration.isPending}
+                        onClick={() => void stopStream()}
+                      >
+                        {t('ai.conversations.stop')}
+                      </Button>
+                    ) : null}
+                  </div>
+
+                  <TextArea
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    onKeyDown={handleInputKeyDown}
+                    placeholder={t('ai.conversations.inputPlaceholder')}
+                    autoSize={{ minRows: 2, maxRows: 8 }}
+                    maxLength={100000}
+                    disabled={!selectedId || streamActive}
+                    variant="borderless"
+                    className="p-1 resize-none text-sm leading-6"
                   />
-                  {streamActive ? (
+
+                  <div className="mt-2 flex items-center justify-between pt-1 text-xs">
+                    <span className="text-fg-muted/80 text-[11px]">
+                      {t('ai.conversations.keyboardHint')} · {input.length} 字
+                    </span>
                     <Button
-                      danger
-                      icon={<Square className="size-4" />}
-                      loading={stopGeneration.isPending}
-                      onClick={() => void stopStream()}
+                      type="primary"
+                      icon={<Send className="size-3.5" />}
+                      disabled={!canSend}
+                      onClick={() => sendMessage()}
                     >
-                      {t('ai.conversations.stop')}
+                      {t('ai.conversations.send')}
                     </Button>
-                  ) : null}
-                </div>
-                <TextArea
-                  value={input}
-                  onChange={(event) => setInput(event.target.value)}
-                  onKeyDown={handleInputKeyDown}
-                  placeholder={t('ai.conversations.inputPlaceholder')}
-                  autoSize={{ minRows: 2, maxRows: 8 }}
-                  maxLength={100000}
-                  disabled={!selectedId || streamActive}
-                  className="resize-none"
-                />
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="text-fg-muted text-xs">{input.length} / 100000</span>
-                  <Button type="primary" icon={<Send className="size-4" />} disabled={!canSend} onClick={sendMessage}>
-                    {t('ai.conversations.send')}
-                  </Button>
+                  </div>
                 </div>
               </div>
             </div>
