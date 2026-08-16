@@ -718,6 +718,7 @@ export default {
     brand: 'Starter Admin',
   },
   menu: {
+    ai: 'AI',
     aiChat: 'AI 会话',
     aiProviders: 'AI Provider',
     aiUsage: 'AI 用量审计',

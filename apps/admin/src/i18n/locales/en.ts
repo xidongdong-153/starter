@@ -724,6 +724,7 @@ export default {
     brand: 'Starter Admin',
   },
   menu: {
+    ai: 'AI',
     aiChat: 'AI Chat',
     aiProviders: 'AI Providers',
     aiUsage: 'AI Usage Audit',

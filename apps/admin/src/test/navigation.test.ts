@@ -30,7 +30,7 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/settings/authorization')
     expect(keys).not.toContain('/settings/authorization-audit')
     expect(keys).toContain('/ai/chat')
-    expect(keys).not.toContain('/settings/ai/providers')
+    expect(keys).not.toContain('/ai/providers')
     expect(keys).not.toContain('/settings/users')
   })
 
@@ -57,8 +57,8 @@ describe('buildNavigationMenuItems', () => {
     const keys = buildKeys([PermissionKeys.AI_CONFIG_READ])
 
     expect(keys).toContain('/ai/chat')
-    expect(keys).toContain('/settings/ai')
-    expect(keys).toContain('/settings/ai/providers')
+    expect(keys).toContain('/ai/settings')
+    expect(keys).toContain('/ai/providers')
     expect(keys).not.toContain('/settings/authorization')
   })
 
@@ -81,32 +81,49 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/404')
   })
 
-  it('无权限时 settings 分组仍因个人资料保留，但不含受保护项', () => {
+  it('无权限时 settings 分组仍因个人资料保留，且不包含 AI 项', () => {
     const items = buildNavigationMenuItems(undefined)
     const settingsGroup = items.find((item) => item && String(item.key) === 'settings')
 
     expect(settingsGroup).toBeDefined()
 
-    const childKeys = collectKeys(
+    const settingsChildKeys = collectKeys(
       settingsGroup && 'children' in settingsGroup && Array.isArray(settingsGroup.children)
         ? (settingsGroup.children as MenuItem[])
         : [],
     )
 
-    expect(childKeys).toContain('/settings/profile')
-    expect(childKeys).toContain('/settings/ai')
-    expect(childKeys).not.toContain('/settings/ai/providers')
-    expect(childKeys).not.toContain('/settings/authorization')
-    expect(childKeys).not.toContain('/settings/authorization-audit')
-    expect(childKeys).not.toContain('/settings/users')
+    expect(settingsChildKeys).toContain('/settings/profile')
+    expect(settingsChildKeys).not.toContain('/ai/chat')
+    expect(settingsChildKeys).not.toContain('/ai/settings')
+    expect(settingsChildKeys).not.toContain('/ai/providers')
+    expect(settingsChildKeys).not.toContain('/settings/authorization')
+    expect(settingsChildKeys).not.toContain('/settings/authorization-audit')
+    expect(settingsChildKeys).not.toContain('/settings/users')
+  })
+
+  it('无权限时 ai 分组保留会话入口，但不含受保护项', () => {
+    const items = buildNavigationMenuItems(undefined)
+    const aiGroup = items.find((item) => item && String(item.key) === 'ai')
+
+    expect(aiGroup).toBeDefined()
+
+    const aiChildKeys = collectKeys(
+      aiGroup && 'children' in aiGroup && Array.isArray(aiGroup.children) ? (aiGroup.children as MenuItem[]) : [],
+    )
+
+    expect(aiChildKeys).toContain('/ai/chat')
+    expect(aiChildKeys).toContain('/ai/settings')
+    expect(aiChildKeys).not.toContain('/ai/providers')
+    expect(aiChildKeys).not.toContain('/ai/usage')
   })
 
   it('分组按 navigationGroups 的 order 排列', () => {
     const items = buildNavigationMenuItems(Object.values(PermissionKeys))
     const groupKeys = items
       .map((item) => String(item?.key))
-      .filter((key) => ['examples', 'files', 'settings'].includes(key))
+      .filter((key) => ['ai', 'examples', 'files', 'settings'].includes(key))
 
-    expect(groupKeys).toEqual(['files', 'settings', 'examples'])
+    expect(groupKeys).toEqual(['files', 'ai', 'settings', 'examples'])
   })
 })

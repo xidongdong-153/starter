@@ -7,7 +7,7 @@ import type { ComponentType } from 'react'
 import { adminRouteRecords } from '@admin/app/router/records'
 import { hasPermission } from '@admin/app/authorization/permissions'
 import { renderIcon } from '@admin/utils/pathUtils'
-import { FolderOpen, Settings, Sparkles } from 'lucide-react'
+import { Bot, FolderOpen, Settings, Sparkles } from 'lucide-react'
 
 type MenuItem = Required<MenuProps>['items'][number]
 
@@ -30,6 +30,11 @@ export const navigationGroups: Record<string, NavigationGroup> = {
     icon: FolderOpen,
     label: 'menu.files',
     order: 10,
+  },
+  ai: {
+    icon: Bot,
+    label: 'menu.ai',
+    order: 15,
   },
   settings: {
     icon: Settings,
