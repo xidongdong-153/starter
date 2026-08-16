@@ -405,3 +405,25 @@ Web/Admin 各建薄 Hono RPC adapter，26 个普通 JSON operation 迁移到 hc<
 ### Status
 
 [ACCEPTED] 实现已通过父任务验收。未执行 git commit/push/merge；三个子任务 task.json 仍为 in_progress、父任务仍为 planning，等待用户授权提交后按 Trellis 完成流程归档。
+
+
+## Session 6: 优化AI会话admin页面UI交互与显示设计
+
+**Date**: 2026-08-16
+**Task**: 优化AI会话admin页面UI交互与显示设计
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+优化AI会话admin页面UI交互与显示设计，增加Markdown渲染与代码块复制、会话搜索过滤、快捷Prompt卡片与平滑滚动
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `d7a5c89` | (see git log) |
+
+### Status
+
+[OK] **Completed**
