@@ -15,6 +15,7 @@ const mocks = vi.hoisted(() => ({
   useAiConversationsQuery: vi.fn(),
   useAiModelsQuery: vi.fn(),
   useAiPreferenceQuery: vi.fn(),
+  usePromptTemplatesQuery: vi.fn(),
   useCreateAiConversationMutation: vi.fn(),
   useDeleteAiConversationMutation: vi.fn(),
   useStopAiConversationGenerationMutation: vi.fn(),
@@ -75,6 +76,7 @@ beforeEach(() => {
   mocks.useMobile.mockReturnValue(false)
   mocks.useAiModelsQuery.mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() })
   mocks.useAiPreferenceQuery.mockReturnValue({ data: { effectiveModel: null }, isLoading: false, error: null })
+  mocks.usePromptTemplatesQuery.mockReturnValue({ data: [], isLoading: false, error: null, refetch: vi.fn() })
   mocks.useAiConversationQuery.mockReturnValue({ data: undefined, isLoading: false, error: null, refetch: vi.fn() })
   mocks.useAiConversationsQuery.mockReturnValue({ data: undefined, isLoading: false, error: null, refetch: vi.fn() })
   mocks.useCreateAiConversationMutation.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })

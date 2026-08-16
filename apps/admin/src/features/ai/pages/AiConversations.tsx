@@ -16,6 +16,7 @@ import {
   useAiPreferenceQuery,
   useCreateAiConversationMutation,
   useDeleteAiConversationMutation,
+  usePromptTemplatesQuery,
   useStopAiConversationGenerationMutation,
 } from '@admin/api/ai'
 import { useMobile } from '@admin/hooks/useMobile'
@@ -29,12 +30,8 @@ import {
   ChevronDown,
   ChevronRight,
   CircleAlert,
-  Code2,
   Copy,
-  Database,
   Eraser,
-  FileCheck,
-  Lightbulb,
   LoaderCircle,
   MessageCircle,
   PanelLeft,
@@ -44,6 +41,7 @@ import {
   RotateCcw,
   Search,
   Send,
+  Sparkles,
   Square,
   Trash2,
   User,
@@ -425,33 +423,10 @@ function ConversationList({
 
 function QuickStarters({ onSelectPrompt }: { onSelectPrompt: (prompt: string) => void }) {
   const { t } = useTranslation()
+  const templatesQuery = usePromptTemplatesQuery()
+  const starters = templatesQuery.data ?? []
 
-  const starters = [
-    {
-      title: '代码审查与重构',
-      description: t('ai.conversations.quickPrompts.codeReview'),
-      icon: <Code2 className="text-primary size-4" />,
-      prompt: '请帮我审查以下代码，指出潜在的代码质量问题、边界异常与重构建议：\n\n```ts\n\n```',
-    },
-    {
-      title: 'SQL 性能优化',
-      description: t('ai.conversations.quickPrompts.sqlHelp'),
-      icon: <Database className="text-primary size-4" />,
-      prompt: '针对以下业务场景设计表结构，并编写高效且命中索引的 SQL 查询语句：\n\n业务需求：',
-    },
-    {
-      title: '技术机制拆解',
-      description: t('ai.conversations.quickPrompts.explainConcept'),
-      icon: <Lightbulb className="text-primary size-4" />,
-      prompt: '请用简明清晰的事实解释以下技术概念的工作机制、典型应用场景与常见误区：\n\n概念：',
-    },
-    {
-      title: '编写单元测试',
-      description: t('ai.conversations.quickPrompts.testGen'),
-      icon: <FileCheck className="text-primary size-4" />,
-      prompt: '请为以下业务函数编写完整的 Vitest / Jest 单元测试用例，覆盖正常与边界分支：\n\n```ts\n\n```',
-    },
-  ]
+  if (starters.length === 0) return null
 
   return (
     <div className="mx-auto my-auto max-w-2xl px-4 py-8">
@@ -464,19 +439,19 @@ function QuickStarters({ onSelectPrompt }: { onSelectPrompt: (prompt: string) =>
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {starters.map((item, idx) => (
+        {starters.map((item) => (
           <button
-            key={idx}
+            key={item.id}
             type="button"
-            onClick={() => onSelectPrompt(item.prompt)}
+            onClick={() => onSelectPrompt(item.content)}
             className="border-border-subtle bg-surface hover:border-primary/40 hover:bg-surface-muted/60 active:scale-[0.98] group flex cursor-pointer flex-col items-start rounded-xl border p-4 text-left shadow-2xs transition-all duration-150"
           >
             <div className="mb-2 flex items-center gap-2">
               <div className="bg-surface-muted group-hover:bg-primary/10 rounded-lg p-1.5 transition-colors">
-                {item.icon}
+                <Sparkles className="size-4" />
               </div>
               <span className="text-fg text-sm font-medium group-hover:text-primary transition-colors">
-                {item.title}
+                {item.name}
               </span>
             </div>
             <p className="text-fg-muted m-0 line-clamp-2 text-xs leading-5">{item.description}</p>

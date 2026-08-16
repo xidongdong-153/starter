@@ -48,6 +48,13 @@ export const aiQueryKeys = {
   conversationList: (query: { page: number; pageSize: number }) => [...aiQueryKeys.conversationLists(), query] as const,
   conversationDetails: () => [...aiQueryKeys.conversations(), 'detail'] as const,
   conversationDetail: (conversationId: string) => [...aiQueryKeys.conversationDetails(), conversationId] as const,
+  systemPrompts: () => [...aiQueryKeys.admin, 'system-prompts'] as const,
+  globalSystemPrompt: () => [...aiQueryKeys.admin, 'settings', 'system-prompt'] as const,
+  promptTemplates: () => [...aiQueryKeys.admin, 'prompt-templates'] as const,
+  promptTemplatesPublic: () => [...aiQueryKeys.all, 'prompt-templates'] as const,
+  skills: () => [...aiQueryKeys.all, 'skills'] as const,
+  skillDetails: () => [...aiQueryKeys.skills(), 'detail'] as const,
+  skillDetail: (skillId: string) => [...aiQueryKeys.skillDetails(), skillId] as const,
 }
 
 export const aiProvidersQueryOptions = queryOptions({
