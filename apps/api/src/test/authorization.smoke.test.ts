@@ -73,6 +73,15 @@ it("授权 migration 写入系统目录并给已有用户回填 operator", () =>
     sqlite.exec(
       readFileSync(resolve(migrationsFolder, "0005_pale_madrox.sql"), "utf8"),
     );
+    sqlite.exec(
+      readFileSync(resolve(migrationsFolder, "0006_crazy_banshee.sql"), "utf8"),
+    );
+    sqlite.exec(
+      readFileSync(
+        resolve(migrationsFolder, "0007_clammy_shinobi_shaw.sql"),
+        "utf8",
+      ),
+    );
 
     expect(sqlite.prepare("SELECT key FROM roles ORDER BY key").all()).toEqual([
       { key: "admin" },

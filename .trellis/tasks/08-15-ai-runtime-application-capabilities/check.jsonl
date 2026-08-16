@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查所有子任务是否保持 SDK 和敏感信息边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 storage 到 service、API 和 UI 的完整读写流"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行 API、数据库和 smoke test 质量检查"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"执行 Admin 状态、权限和响应式检查"}

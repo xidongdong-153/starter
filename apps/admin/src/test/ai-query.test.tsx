@@ -1,8 +1,9 @@
-import type { AdminAiProvider, AiUserPreference } from '@starter/contracts'
+import type { AdminAiProvider, AiConversationSummary, AiUserPreference } from '@starter/contracts'
 
 import {
   aiQueryKeys,
   useCheckAiProviderMutation,
+  useCreateAiConversationMutation,
   useUpdateAiPreferenceMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai/ai.query'
@@ -11,8 +12,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClientWrapper, createTestQueryClient } from './helpers'
 
-const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
+const { checkAiProvider, createAiConversation, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
   checkAiProvider: vi.fn(),
+  createAiConversation: vi.fn(),
   updateAiPreference: vi.fn(),
   updateAiProviderConfig: vi.fn(),
 }))
@@ -20,11 +22,16 @@ const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoist
 vi.mock('@admin/api/ai/ai.api', () => ({
   checkAiProvider,
   clearAiProviderCredential: vi.fn(),
+  createAiConversation,
+  deleteAiConversation: vi.fn(),
   getAdminAiModels: vi.fn(),
+  getAiConversation: vi.fn(),
+  getAiConversations: vi.fn(),
   getAiModels: vi.fn(),
   getAiPreference: vi.fn(),
   getAiProviders: vi.fn(),
   refreshAiProviderModels: vi.fn(),
+  stopAiConversationGeneration: vi.fn(),
   replaceAdminAiModels: vi.fn(),
   setAdminAiDefault: vi.fn(),
   setAiProviderState: vi.fn(),
@@ -53,11 +60,49 @@ const provider: AdminAiProvider = {
 
 beforeEach(() => {
   checkAiProvider.mockReset()
+  createAiConversation.mockReset()
   updateAiPreference.mockReset()
   updateAiProviderConfig.mockReset()
 })
 
 describe('ai query 状态', () => {
+  it('会话列表使用带分页的独立 query key', () => {
+    expect(aiQueryKeys.conversationList({ page: 1, pageSize: 20 })).toEqual([
+      'ai',
+      'conversations',
+      'list',
+      { page: 1, pageSize: 20 },
+    ])
+    expect(aiQueryKeys.conversationDetail('conversation-id')).toEqual([
+      'ai',
+      'conversations',
+      'detail',
+      'conversation-id',
+    ])
+  })
+
+  it('创建会话成功后刷新列表', async () => {
+    const conversation: AiConversationSummary = {
+      id: '01958c80-8df7-7ce2-8f90-123456789001',
+      title: '新会话',
+      status: 'idle',
+      activeGenerationId: null,
+      lastModel: null,
+      createdAt: '2025-01-01T00:00:00.000Z',
+      updatedAt: '2025-01-01T00:00:00.000Z',
+    }
+    createAiConversation.mockResolvedValue(conversation)
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCreateAiConversationMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({})
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.conversationLists() }))
+  })
+
   it('使用分离的管理员、模型和偏好 query key', () => {
     expect(aiQueryKeys.adminProviders()).toEqual(['ai', 'admin', 'providers'])
     expect(aiQueryKeys.adminModels()).toEqual(['ai', 'admin', 'models'])

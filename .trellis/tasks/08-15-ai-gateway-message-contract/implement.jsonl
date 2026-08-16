@@ -1,0 +1,8 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"Gateway 修改前读取 API 分层和开发检查"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"保持 pi-ai 只在 infra 层和现有错误/SSE 安全边界"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"Gateway 错误需要映射到稳定 AppError code"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"禁止原始 Provider 错误、消息和 thinking 进入日志"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"新增跨层消息和事件 contracts"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"Admin 继续对 SSE 事件做运行时 schema 校验"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 SDK event 到项目 DTO 再到旧 SSE 的转换"}
+{"file":".trellis/tasks/08-15-ai-gateway-message-contract/research/gateway-message-contract.md","reason":"固定 pi-ai 0.84.1 Context、Tool、usage 和事件事实"}

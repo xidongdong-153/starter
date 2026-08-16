@@ -1,0 +1,6 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查工具 DTO 和 SDK 类型隔离"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查每次工具执行前的服务端权限判断"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"检查日志字段白名单和 marker 扫描"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 timeout、abort、并行和轮数测试"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查工具判别联合和 Zod schema"}
+{"file":".trellis/tasks/08-15-ai-tool-execution-foundation/research/tool-execution.md","reason":"核对校验错误泄漏和工具预算风险"}

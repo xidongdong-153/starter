@@ -29,6 +29,7 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/files')
     expect(keys).not.toContain('/settings/authorization')
     expect(keys).not.toContain('/settings/authorization-audit')
+    expect(keys).toContain('/ai/chat')
     expect(keys).not.toContain('/settings/ai/providers')
     expect(keys).not.toContain('/settings/users')
   })
@@ -55,6 +56,7 @@ describe('buildNavigationMenuItems', () => {
   it('只持有 ai:config:read 时显示 Provider 管理入口', () => {
     const keys = buildKeys([PermissionKeys.AI_CONFIG_READ])
 
+    expect(keys).toContain('/ai/chat')
     expect(keys).toContain('/settings/ai')
     expect(keys).toContain('/settings/ai/providers')
     expect(keys).not.toContain('/settings/authorization')

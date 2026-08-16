@@ -1,0 +1,1 @@
+ALTER TABLE `ai_model_calls` ADD `timeout_ms` integer DEFAULT 120000 NOT NULL;

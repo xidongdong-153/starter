@@ -1,0 +1,8 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"工具 orchestrator 和 registry 遵循 API 分层"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"工具调用保持 pi-ai 适配和消息安全边界"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"模型返回工具后仍需按当前用户查询服务端权限"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"工具参数、结果和原始异常不得进入日志"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"工具 timeout、limit、abort 和 failure 使用稳定分类"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"新增 Tool definition、call、result 和 status contracts"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 tool call、handler、tool result、会话和审计流"}
+{"file":".trellis/tasks/08-15-ai-tool-execution-foundation/research/tool-execution.md","reason":"固定 pi-ai Tool、校验、预算和 faux Provider 事实"}

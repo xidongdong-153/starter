@@ -20,6 +20,7 @@ import type {
 import { AiGatewayError, AiRuntimeError } from "@api/infra/ai/index.js";
 import { AppError } from "@api/shared/app-error.js";
 
+import type { AiInvocationRunner } from "./ai-usage-audit.service.js";
 import type { AiProviderConfigRecord } from "./ai.repository.js";
 import { AiProviderConfigConflictError } from "./ai.repository.js";
 import {
@@ -35,6 +36,8 @@ export function createAiService(
   >,
   runtime: AiRuntime,
   gateway: AiGateway,
+  invocationRunner?: AiInvocationRunner,
+  requestTimeoutMs = 120_000,
 ) {
   async function listProviders(): Promise<AdminAiProvider[]> {
     await runtime.ensureReady();
@@ -394,7 +397,7 @@ export function createAiService(
       : selectModelForUser(userId);
     return {
       model,
-      async *stream(signal?: AbortSignal) {
+      async *stream(requestId: string, signal?: AbortSignal) {
         if (!isModelAllowed(model)) {
           throw new AppError(
             ApiErrorCodes.AI_MODEL_NOT_ALLOWED,
@@ -402,7 +405,61 @@ export function createAiService(
             403,
           );
         }
-        yield* gateway.stream({ model, prompt: input.prompt, signal });
+        const gatewayInput = {
+          model,
+          messages: [
+            {
+              role: "user" as const,
+              content: [
+                {
+                  type: "text" as const,
+                  text: input.prompt,
+                  turnIndex: 0,
+                  contentIndex: 0,
+                  blockId: "0:0",
+                },
+              ],
+            },
+          ],
+          turnIndex: 0,
+          timeoutMs: requestTimeoutMs,
+          signal,
+        };
+        const events = invocationRunner
+          ? invocationRunner.stream(
+              {
+                requestId,
+                userId,
+                scenario: "model_test",
+                timeoutMs: requestTimeoutMs,
+              },
+              gatewayInput,
+            )
+          : gateway.stream(gatewayInput);
+        for await (const event of events) {
+          if (event.type === "text_delta") {
+            yield { type: "text_delta", text: event.text } as const;
+          } else if (event.type === "completed") {
+            if (event.stopReason === "tool_use") {
+              throw new AiGatewayError("upstream", {
+                usage: event.usage,
+                cost: event.cost,
+                stopReason: event.stopReason,
+              });
+            }
+            const { inputTokens, outputTokens, totalTokens } = event.usage;
+            yield {
+              type: "done",
+              stopReason: event.stopReason,
+              usage:
+                inputTokens === null ||
+                outputTokens === null ||
+                totalTokens === null
+                  ? undefined
+                  : { inputTokens, outputTokens, totalTokens },
+            } as const;
+          }
+        }
       },
     };
   }
@@ -529,7 +586,23 @@ export function createAiService(
     return definition;
   }
 
+  async function resolveConversationModel(
+    userId: string,
+    requestedModel?: AiModelRef,
+  ): Promise<AiModelRef> {
+    await runtime.ensureReady();
+    return requestedModel
+      ? requireExplicitModel(requestedModel)
+      : selectModelForUser(userId);
+  }
+
+  function isConversationModelAllowed(model: AiModelRef): boolean {
+    return isModelAllowed(model);
+  }
+
   return {
+    resolveConversationModel,
+    isConversationModelAllowed,
     listProviders,
     updateProviderConfig,
     clearProviderCredential,

@@ -1,0 +1,7 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查 Gateway 适配没有泄漏 SDK 类型和敏感字段"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"检查 timeout、abort、auth 和 upstream 错误兼容"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行 API 单元、smoke 和构建检查"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"检查新增 Zod schema 和导出"}
+{"file":".trellis/spec/contracts/frontend/type-safety.md","reason":"检查客户端运行时解析和旧 SSE 兼容"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 SDK 到 contracts 到 Admin 的字段一致性"}
+{"file":".trellis/tasks/08-15-ai-gateway-message-contract/research/gateway-message-contract.md","reason":"核对事件映射、usage/cost 和 faux Provider 风险"}

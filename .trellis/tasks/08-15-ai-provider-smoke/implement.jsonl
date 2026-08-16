@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"smoke runner 复用 API runtime 和脚本模式"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"runner 必须调用正式 Gateway 并保持 credential 边界"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"stdout、stderr 和 logger 禁止输出 prompt、response 和 secret"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"runner 自动测试和常规 CI 隔离"}
+{"file":".trellis/tasks/08-15-ai-provider-smoke/research/provider-smoke.md","reason":"固定命令、环境变量、OAuth、动态目录和 CI 设计"}

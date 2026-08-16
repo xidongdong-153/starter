@@ -1,0 +1,7 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查审计不泄漏消息、凭据和 SDK 类型"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查表、索引、migration 和临时 SQLite"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查独立权限和 admin 默认权限"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"检查 begin/finalize 失败日志白名单"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查终态矩阵、分页和 presenter 白名单"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"检查筛选、分页、Drawer、权限和移动布局"}
+{"file":".trellis/tasks/08-15-ai-usage-audit/research/usage-audit.md","reason":"核对 usage/cost、敏感扫描和写失败风险"}

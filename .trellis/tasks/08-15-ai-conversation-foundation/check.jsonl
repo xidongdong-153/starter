@@ -1,0 +1,7 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查会话调用和旧 AI 接口兼容"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 migration、cascade、索引和临时数据库测试"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 API owner、并发、SSE 和恢复测试"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"检查聊天页状态、交互和移动布局"}
+{"file":".trellis/spec/admin/frontend/type-safety.md","reason":"检查会话 DTO 和 SSE schema 消费"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 generation 终态与客户端状态一致"}
+{"file":".trellis/tasks/08-15-ai-conversation-foundation/research/conversation-foundation.md","reason":"核对用户隔离、停止、恢复和测试风险"}

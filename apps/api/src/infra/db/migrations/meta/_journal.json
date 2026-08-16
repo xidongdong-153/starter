@@ -43,6 +43,27 @@
       "when": 1786764925234,
       "tag": "0005_pale_madrox",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786815654484,
+      "tag": "0006_crazy_banshee",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786856827598,
+      "tag": "0007_clammy_shinobi_shaw",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786858774547,
+      "tag": "0008_illegal_giant_girl",
+      "breakpoints": true
     }
   ]
 }

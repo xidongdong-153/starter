@@ -4,6 +4,8 @@ import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
 import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
+import type { AiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
+import { createAiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
 import {
   createAiCrypto,
@@ -20,6 +22,7 @@ import { parseEnv, type AppEnv } from "@api/shared/env.js";
 export interface AppRuntime {
   ai: AiRuntime;
   aiGateway: AiGateway;
+  aiTools: AiToolRegistry;
   auth: AppAuth;
   database: DatabaseBundle;
   db: AppDatabase;
@@ -33,6 +36,7 @@ export interface RuntimeDeps {
   mailer?: Mailer;
   ai?: AiRuntime;
   aiGateway?: AiGateway;
+  aiTools?: AiToolRegistry;
 }
 
 export function createRuntime(
@@ -70,6 +74,7 @@ export function createRuntime(
       ai.getProviderRequestEnv,
     );
   const mailer = deps.mailer ?? createMailer(env, logger);
+  const aiTools = deps.aiTools ?? createAiToolRegistry([]);
   const auth = createAuth(
     database.db,
     env,
@@ -80,6 +85,7 @@ export function createRuntime(
   return {
     ai,
     aiGateway,
+    aiTools,
     auth,
     database,
     db: database.db,

@@ -1,13 +1,21 @@
 import type { AppRuntime } from "@api/bootstrap/create-runtime.js";
 import type { HonoEnv } from "@api/shared/hono-env.js";
-import type { AiTestStreamEvent } from "@starter/contracts";
-import { PermissionKeys } from "@starter/contracts";
+import type { Context } from "hono";
+import type {
+  AiConversationStreamEvent,
+  AiTestStreamEvent,
+} from "@starter/contracts";
+import { ApiErrorCodes, PermissionKeys } from "@starter/contracts";
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { streamSSE } from "hono/streaming";
 
 import { createRequireAuth } from "@api/modules/auth/index.js";
-import { createRequirePermission } from "@api/modules/authorization/index.js";
+import {
+  createAuthorizationRepository,
+  createRequirePermission,
+} from "@api/modules/authorization/index.js";
 import { createSuccessResponse } from "@api/shared/response.js";
+import { AppError } from "@api/shared/app-error.js";
 
 import {
   checkAiProviderRoute,
@@ -24,6 +32,27 @@ import {
   updateAiProviderConfigRoute,
   updateAiProviderStateRoute,
 } from "./ai.openapi.js";
+import {
+  createAiConversationRoute,
+  deleteAiConversationRoute,
+  getAiConversationRoute,
+  listAiConversationsRoute,
+  retryAiConversationRoute,
+  sendAiConversationMessageRoute,
+  stopAiConversationGenerationRoute,
+} from "./ai-conversation.openapi.js";
+import {
+  getAiUsageAuditRoute,
+  listAiUsageAuditRoute,
+} from "./ai-usage-audit.openapi.js";
+import { createAiToolOrchestrator } from "./ai-tool-orchestrator.js";
+import { createAiUsageAuditRepository } from "./ai-usage-audit.repository.js";
+import {
+  createAiInvocationRunner,
+  createAiUsageAuditService,
+} from "./ai-usage-audit.service.js";
+import { createAiConversationRepository } from "./ai-conversation.repository.js";
+import { createAiConversationService } from "./ai-conversation.service.js";
 import { createAiRepository } from "./ai.repository.js";
 import { createAiService } from "./ai.service.js";
 
@@ -37,10 +66,43 @@ export function createAiRoute(runtime: AppRuntime) {
     runtime.db,
     PermissionKeys.AI_CONFIG_MANAGE,
   );
+  const requireUsageRead = createRequirePermission(
+    runtime.db,
+    PermissionKeys.AI_USAGE_READ,
+  );
+  const usageAuditService = createAiUsageAuditService(
+    createAiUsageAuditRepository(runtime.db),
+    runtime.logger.child({ module: "ai-usage-audit" }),
+  );
+  const invocationRunner = createAiInvocationRunner(
+    runtime.aiGateway,
+    usageAuditService,
+  );
+  const authorizationRepository = createAuthorizationRepository(runtime.db);
+  const toolOrchestrator = createAiToolOrchestrator({
+    invocationRunner,
+    registry: runtime.aiTools,
+    audit: usageAuditService,
+    hasPermission: authorizationRepository.hasPermission,
+    logger: runtime.logger.child({ module: "ai-tool-orchestrator" }),
+  });
   const service = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
     runtime.aiGateway,
+    invocationRunner,
+    runtime.env.AI_REQUEST_TIMEOUT_MS,
+  );
+  const conversationService = createAiConversationService(
+    createAiConversationRepository(runtime.db),
+    runtime.aiGateway,
+    {
+      isAllowed: service.isConversationModelAllowed,
+      resolve: service.resolveConversationModel,
+    },
+    invocationRunner,
+    runtime.env.AI_REQUEST_TIMEOUT_MS,
+    toolOrchestrator,
   );
 
   return new OpenAPIHono<HonoEnv>()
@@ -232,7 +294,10 @@ export function createAiRoute(runtime: AppRuntime) {
             requestId,
             model: prepared.model,
           });
-          for await (const event of prepared.stream(abortController.signal)) {
+          for await (const event of prepared.stream(
+            requestId,
+            abortController.signal,
+          )) {
             await writeEvent(stream, event);
             if (event.type === "done") {
               c.var.logger.info(
@@ -269,7 +334,194 @@ export function createAiRoute(runtime: AppRuntime) {
           c.req.raw.signal.removeEventListener("abort", abort);
         }
       });
-    });
+    })
+    .openapi(
+      {
+        ...listAiUsageAuditRoute,
+        middleware: [requireAuth, requireUsageRead],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            usageAuditService.listModelCalls(c.req.valid("query")),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...getAiUsageAuditRoute,
+        middleware: [requireAuth, requireUsageRead],
+      },
+      (c) => {
+        const item = usageAuditService.getModelCall(
+          c.req.valid("param").callId,
+        );
+        if (!item) {
+          throw new AppError(
+            ApiErrorCodes.COMMON_NOT_FOUND,
+            "未找到这条模型调用记录",
+            404,
+          );
+        }
+        return c.json(createSuccessResponse(item, c.var.requestId), 200);
+      },
+    )
+    .openapi({ ...createAiConversationRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(
+          conversationService.createConversation(
+            c.var.currentUserId,
+            c.req.valid("json"),
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+    )
+    .openapi({ ...listAiConversationsRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(
+          conversationService.listConversations(
+            c.var.currentUserId,
+            c.req.valid("query"),
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+    )
+    .openapi({ ...getAiConversationRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(
+          conversationService.getConversation(
+            c.req.valid("param").conversationId,
+            c.var.currentUserId,
+          ),
+          c.var.requestId,
+        ),
+        200,
+      ),
+    )
+    .openapi({ ...deleteAiConversationRoute, middleware: requireAuth }, (c) => {
+      conversationService.deleteConversation(
+        c.req.valid("param").conversationId,
+        c.var.currentUserId,
+      );
+      return c.json(
+        createSuccessResponse({ deleted: true as const }, c.var.requestId),
+        200,
+      );
+    })
+    .openapi(
+      { ...sendAiConversationMessageRoute, middleware: requireAuth },
+      async (c) => {
+        const prepared = await conversationService.prepareSend(
+          c.req.valid("param").conversationId,
+          c.var.currentUserId,
+          c.req.valid("json"),
+        );
+        return streamConversation(
+          c,
+          conversationService,
+          prepared,
+          c.var.requestId,
+        );
+      },
+    )
+    .openapi(
+      { ...retryAiConversationRoute, middleware: requireAuth },
+      async (c) => {
+        const prepared = await conversationService.prepareRetry(
+          c.req.valid("param").conversationId,
+          c.var.currentUserId,
+          c.req.valid("json"),
+        );
+        return streamConversation(
+          c,
+          conversationService,
+          prepared,
+          c.var.requestId,
+        );
+      },
+    )
+    .openapi(
+      { ...stopAiConversationGenerationRoute, middleware: requireAuth },
+      (c) => {
+        const params = c.req.valid("param");
+        const result = conversationService.stopGeneration(
+          params.conversationId,
+          params.generationId,
+          c.var.currentUserId,
+        );
+        return c.json(
+          createSuccessResponse(result.generation, c.var.requestId),
+          result.statusCode,
+        );
+      },
+    );
+}
+
+type AiConversationService = ReturnType<typeof createAiConversationService>;
+type PreparedConversation = Awaited<
+  ReturnType<AiConversationService["prepareSend"]>
+>;
+
+function streamConversation(
+  c: Context<HonoEnv>,
+  service: AiConversationService,
+  prepared: PreparedConversation,
+  requestId: string,
+) {
+  c.header("Cache-Control", "no-cache");
+  c.header("X-Accel-Buffering", "no");
+
+  return streamSSE(c, async (stream) => {
+    const abortController = new AbortController();
+    const abort = () => {
+      abortController.abort();
+      service.abortPrepared(prepared);
+    };
+    c.req.raw.signal.addEventListener("abort", abort, { once: true });
+    stream.onAbort(abort);
+    const heartbeat = setInterval(() => {
+      void stream.write(": heartbeat\n\n").catch(abort);
+    }, 15_000);
+
+    try {
+      await writeConversationEvent(stream, {
+        type: "start",
+        requestId,
+        conversationId: prepared.conversationId,
+        generationId: prepared.generationId,
+        assistantMessageId: prepared.assistantMessageId,
+        model: prepared.model,
+      });
+      for await (const event of service.streamGeneration(
+        prepared,
+        requestId,
+        abortController.signal,
+      )) {
+        await writeConversationEvent(stream, event);
+      }
+    } catch {
+      service.abortPrepared(prepared);
+      if (!stream.aborted) {
+        await writeConversationEvent(stream, {
+          type: "error",
+          code: ApiErrorCodes.AI_REQUEST_ABORTED,
+          message: "生成已停止",
+          retryable: true,
+          requestId,
+        });
+      }
+    } finally {
+      clearInterval(heartbeat);
+      c.req.raw.signal.removeEventListener("abort", abort);
+      service.abortPrepared(prepared);
+    }
+  });
 }
 
 async function writeEvent(
@@ -277,6 +529,15 @@ async function writeEvent(
     writeSSE: (message: { data: string; event?: string }) => Promise<void>;
   },
   event: AiTestStreamEvent,
+): Promise<void> {
+  await stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
+}
+
+async function writeConversationEvent(
+  stream: {
+    writeSSE: (message: { data: string; event?: string }) => Promise<void>;
+  },
+  event: AiConversationStreamEvent,
 ): Promise<void> {
   await stream.writeSSE({ event: event.type, data: JSON.stringify(event) });
 }

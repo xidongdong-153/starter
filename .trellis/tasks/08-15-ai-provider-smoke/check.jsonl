@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查 runner 只走正式 Gateway 和安全错误分类"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"检查所有输出不含真实输入和 secret"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 fake/faux 测试和默认任务无网络访问"}
+{"file":".trellis/tasks/08-15-ai-provider-smoke/research/provider-smoke.md","reason":"核对 smoke 环境变量和 CI 隔离风险"}

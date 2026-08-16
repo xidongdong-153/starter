@@ -1,0 +1,10 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"会话 API 遵循 route、service、repository、presenter 分层"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"会话调用继续使用现有模型白名单、默认模型和 SSE 规则"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"新增 conversation、message、generation 表和 migration"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"owner、并发、上下文和流错误使用稳定 code"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"新增 Admin 聊天 feature、route 和请求层"}
+{"file":".trellis/spec/admin/frontend/hook-guidelines.md","reason":"SSE abort、generation ID 和 Query 副作用清理"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"会话服务端状态、partial overlay 和局部 UI 状态归属"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"新增会话请求、响应、分页和 SSE contracts"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查消息从 SQLite 到 Gateway 再到 Admin 的完整流"}
+{"file":".trellis/tasks/08-15-ai-conversation-foundation/research/conversation-foundation.md","reason":"固定表结构、SSE 生命周期、owner 边界和 timeout 风险"}

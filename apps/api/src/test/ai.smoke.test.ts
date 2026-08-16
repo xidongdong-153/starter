@@ -1,10 +1,11 @@
 import type {
   AdminAiModelsResponse,
   AdminAiProvider,
+  AiTestStreamEvent,
   AiUserModel,
   AiUserPreference,
 } from "@starter/contracts";
-import { ApiErrorCodes } from "@starter/contracts";
+import { aiTestStreamEventSchema, ApiErrorCodes } from "@starter/contracts";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 
@@ -31,14 +32,107 @@ const systemContext = {
   requestId: null,
 } as const;
 
+function parseAiTestStream(body: string): AiTestStreamEvent[] {
+  return body
+    .trim()
+    .split(/\r?\n\r?\n/)
+    .map((frame) => {
+      const lines = frame.split(/\r?\n/);
+      expect(lines).toHaveLength(2);
+      expect(lines[0]).toMatch(/^event: /);
+      expect(lines[1]).toMatch(/^data: /);
+
+      const eventName = lines[0]?.slice("event: ".length);
+      const data = lines[1]?.slice("data: ".length) ?? "";
+      const event = aiTestStreamEventSchema.parse(JSON.parse(data) as unknown);
+      expect(event.type).toBe(eventName);
+      return event;
+    });
+}
+
 const fakeGateway: AiGateway = {
   async *stream(input) {
-    if (input.prompt === "timeout") throw new AiGatewayError("timeout");
-    yield { type: "text_delta", text: "fake answer" };
+    const firstMessage = input.messages[0];
+    const prompt =
+      firstMessage?.role === "user" ? firstMessage.content[0]?.text : undefined;
+    if (prompt === "timeout") throw new AiGatewayError("timeout");
+    if (prompt === "auth") throw new AiGatewayError("auth");
+    if (prompt === "upstream") throw new AiGatewayError("upstream");
+    if (prompt === "aborted") throw new AiGatewayError("aborted");
+    if (prompt === "tool_use") {
+      yield {
+        type: "tool_call_completed",
+        id: "unexpected-call",
+        name: "unexpected_tool",
+        arguments: { value: "must not leak" },
+        turnIndex: input.turnIndex,
+        contentIndex: 0,
+        blockId: `${input.turnIndex}:0`,
+      };
+      yield {
+        type: "completed",
+        turnIndex: input.turnIndex,
+        assistantMessage: {
+          role: "assistant",
+          blocks: [
+            {
+              type: "tool_call",
+              id: "unexpected-call",
+              name: "unexpected_tool",
+              arguments: { value: "must not leak" },
+              turnIndex: input.turnIndex,
+              contentIndex: 0,
+              blockId: `${input.turnIndex}:0`,
+            },
+          ],
+        },
+        stopReason: "tool_use",
+        usage: {
+          inputTokens: 3,
+          outputTokens: 2,
+          cacheReadTokens: 0,
+          cacheWriteTokens: 0,
+          cacheWrite1hTokens: null,
+          reasoningTokens: null,
+          totalTokens: 5,
+        },
+        cost: null,
+      };
+      return;
+    }
     yield {
-      type: "done",
+      type: "text_delta",
+      text: "fake answer",
+      turnIndex: input.turnIndex,
+      contentIndex: 0,
+      blockId: `${input.turnIndex}:0`,
+    };
+    yield {
+      type: "completed",
+      turnIndex: input.turnIndex,
+      assistantMessage: {
+        role: "assistant",
+        blocks: [
+          {
+            type: "text",
+            text: "fake answer",
+            turnIndex: input.turnIndex,
+            contentIndex: 0,
+            blockId: `${input.turnIndex}:0`,
+          },
+        ],
+      },
       stopReason: "stop",
-      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+      usage: {
+        inputTokens: 3,
+        outputTokens: 2,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cacheWrite1hTokens: null,
+        reasoningTokens: null,
+        totalTokens: 5,
+      },
+      cost: null,
     };
   },
 };
@@ -468,11 +562,88 @@ it("配置、模型白名单、用户偏好和 SSE 使用同一套 AI 服务端�
       "text/event-stream",
     );
     const streamBody = await streamResponse.text();
-    expect(streamBody).toContain("event: start");
-    expect(streamBody).toContain("fake answer");
-    expect(streamBody).toContain("event: done");
-    expect(streamBody).not.toContain("test prompt");
-    expect(streamBody).not.toContain(fakeKey);
+    const streamEvents = parseAiTestStream(streamBody);
+    expect(streamEvents.map((event) => event.type)).toEqual([
+      "start",
+      "text_delta",
+      "done",
+    ]);
+    expect(streamEvents[0]).toMatchObject({
+      type: "start",
+      model: modelRef,
+      requestId: expect.any(String),
+    });
+    expect(streamEvents[1]).toEqual({
+      type: "text_delta",
+      text: "fake answer",
+    });
+    expect(streamEvents[2]).toEqual({
+      type: "done",
+      stopReason: "stop",
+      usage: { inputTokens: 3, outputTokens: 2, totalTokens: 5 },
+    });
+    const usageDenied = await app.request("/api/ai/usage/calls", {
+      headers: { cookie: user.cookie },
+    });
+    expect(usageDenied.status).toBe(403);
+
+    const usageListResponse = await app.request(
+      "/api/ai/usage/calls?page=1&pageSize=20",
+      {
+        headers: { cookie: admin.cookie },
+      },
+    );
+    expect(usageListResponse.status).toBe(200);
+    const usageList = (
+      await readSuccess<{
+        items: Array<Record<string, unknown>>;
+        total: number;
+      }>(usageListResponse)
+    ).data;
+    expect(usageList.total).toBeGreaterThanOrEqual(1);
+    const successfulCall = usageList.items.find(
+      (item) => item.result === "succeeded",
+    );
+    expect(successfulCall).toMatchObject({
+      scenario: "model_test",
+      providerId: modelRef.providerId,
+      modelId: modelRef.modelId,
+    });
+    expect(Object.keys(successfulCall ?? {}).sort()).toEqual(
+      [
+        "conversationId",
+        "cost",
+        "durationMs",
+        "errorCode",
+        "finishedAt",
+        "generationId",
+        "id",
+        "modelId",
+        "providerId",
+        "requestId",
+        "result",
+        "scenario",
+        "startedAt",
+        "stopReason",
+        "timeoutMs",
+        "usage",
+        "userId",
+      ].sort(),
+    );
+    expect(JSON.stringify(successfulCall)).not.toContain("test prompt");
+    expect(JSON.stringify(successfulCall)).not.toContain(fakeKey);
+
+    const usageDetailResponse = await app.request(
+      `/api/ai/usage/calls/${successfulCall?.id as string}`,
+      {
+        headers: { cookie: admin.cookie },
+      },
+    );
+    expect(usageDetailResponse.status).toBe(200);
+    expect(
+      (await readSuccess<{ toolExecutions: unknown[] }>(usageDetailResponse))
+        .data.toolExecutions,
+    ).toEqual([]);
 
     const recheckResponse = await app.request(
       "/api/ai/admin/providers/openai/check",
@@ -493,8 +664,144 @@ it("配置、模型白名单、用户偏好和 SSE 使用同一套 AI 服务端�
     });
     expect(timeoutResponse.status).toBe(200);
     const timeoutBody = await timeoutResponse.text();
-    expect(timeoutBody).toContain("event: error");
-    expect(timeoutBody).toContain(ApiErrorCodes.AI_UPSTREAM_TIMEOUT);
+    const timeoutEvents = parseAiTestStream(timeoutBody);
+    expect(timeoutEvents.map((event) => event.type)).toEqual([
+      "start",
+      "error",
+    ]);
+    expect(timeoutEvents[1]).toMatchObject({
+      type: "error",
+      code: ApiErrorCodes.AI_UPSTREAM_TIMEOUT,
+      retryable: true,
+    });
+
+    for (const [prompt, code] of [
+      ["auth", ApiErrorCodes.AI_PROVIDER_AUTH_FAILED],
+      ["upstream", ApiErrorCodes.AI_UPSTREAM_ERROR],
+      ["aborted", ApiErrorCodes.AI_REQUEST_ABORTED],
+    ] as const) {
+      const errorResponse = await app.request("/api/ai/test", {
+        method: "POST",
+        headers: {
+          cookie: user.cookie,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ prompt }),
+      });
+      expect(errorResponse.status).toBe(200);
+      const errorBody = await errorResponse.text();
+      const errorEvents = parseAiTestStream(errorBody);
+      expect(errorEvents.map((event) => event.type)).toEqual([
+        "start",
+        "error",
+      ]);
+      expect(errorEvents[1]).toMatchObject({ type: "error", code });
+      expect(errorBody).not.toContain(prompt);
+    }
+
+    const unexpectedToolResponse = await app.request("/api/ai/test", {
+      method: "POST",
+      headers: { cookie: user.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt: "tool_use" }),
+    });
+    expect(unexpectedToolResponse.status).toBe(200);
+    const unexpectedToolBody = await unexpectedToolResponse.text();
+    const unexpectedToolEvents = parseAiTestStream(unexpectedToolBody);
+    expect(unexpectedToolEvents.map((event) => event.type)).toEqual([
+      "start",
+      "error",
+    ]);
+    expect(unexpectedToolEvents[1]).toMatchObject({
+      type: "error",
+      code: ApiErrorCodes.AI_UPSTREAM_ERROR,
+    });
+    expect(unexpectedToolBody).not.toContain("unexpected_tool");
+    expect(unexpectedToolBody).not.toContain("must not leak");
+    const completedUsageResponse = await app.request(
+      "/api/ai/usage/calls?page=1&pageSize=100",
+      { headers: { cookie: admin.cookie } },
+    );
+    const completedUsage = (
+      await readSuccess<{
+        items: Array<{
+          id: string;
+          userId: string;
+          providerId: string;
+          modelId: string;
+          requestId: string;
+          startedAt: string;
+          result: string;
+          stopReason: string | null;
+        }>;
+      }>(completedUsageResponse)
+    ).data.items;
+    expect(completedUsage.map((item) => item.result)).toEqual(
+      expect.arrayContaining([
+        "succeeded",
+        "timed_out",
+        "auth_failed",
+        "upstream_failed",
+        "cancelled",
+      ]),
+    );
+    expect(
+      completedUsage.filter((item) => item.stopReason === "tool_use"),
+    ).toEqual([expect.objectContaining({ result: "succeeded" })]);
+
+    const filterTarget = completedUsage[0]!;
+    const exactFilter = new URLSearchParams({
+      page: "1",
+      pageSize: "20",
+      userId: filterTarget.userId,
+      providerId: filterTarget.providerId,
+      modelId: filterTarget.modelId,
+      requestId: filterTarget.requestId,
+      from: new Date(
+        new Date(filterTarget.startedAt).getTime() - 1,
+      ).toISOString(),
+      to: new Date(
+        new Date(filterTarget.startedAt).getTime() + 1,
+      ).toISOString(),
+    });
+    const exactFilterResponse = await app.request(
+      `/api/ai/usage/calls?${exactFilter.toString()}`,
+      { headers: { cookie: admin.cookie } },
+    );
+    expect(
+      (
+        await readSuccess<{ items: Array<{ id: string }> }>(exactFilterResponse)
+      ).data.items.map((item) => item.id),
+    ).toEqual([filterTarget.id]);
+
+    const firstPageResponse = await app.request(
+      "/api/ai/usage/calls?page=1&pageSize=2",
+      { headers: { cookie: admin.cookie } },
+    );
+    const secondPageResponse = await app.request(
+      "/api/ai/usage/calls?page=2&pageSize=2",
+      { headers: { cookie: admin.cookie } },
+    );
+    const firstPageIds = (
+      await readSuccess<{ items: Array<{ id: string }> }>(firstPageResponse)
+    ).data.items.map((item) => item.id);
+    const secondPageIds = (
+      await readSuccess<{ items: Array<{ id: string }> }>(secondPageResponse)
+    ).data.items.map((item) => item.id);
+    expect(firstPageIds).toHaveLength(2);
+    expect(secondPageIds).toHaveLength(2);
+    expect(firstPageIds.some((id) => secondPageIds.includes(id))).toBe(false);
+
+    const timedOutUsageResponse = await app.request(
+      "/api/ai/usage/calls?page=1&pageSize=20&result=timed_out",
+      { headers: { cookie: admin.cookie } },
+    );
+    expect(
+      (
+        await readSuccess<{ items: Array<{ result: string }> }>(
+          timedOutUsageResponse,
+        )
+      ).data.items.every((item) => item.result === "timed_out"),
+    ).toBe(true);
 
     const replaceConfigResponse = await app.request(
       "/api/ai/admin/providers/openai/config",

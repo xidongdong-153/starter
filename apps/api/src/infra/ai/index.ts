@@ -1,7 +1,24 @@
 export { createAiCrypto } from "./ai-crypto.js";
 export type { AiCrypto } from "./ai-crypto.js";
 export { AiGatewayError, createAiGateway } from "./ai-gateway.js";
-export type { AiGateway, AiGatewayEvent } from "./ai-gateway.js";
+export type {
+  AiGateway,
+  AiGatewayErrorCode,
+  AiGatewayErrorDetails,
+  AiGatewayErrorKind,
+  AiGatewayEvent,
+  AiGatewayInput,
+  AiGatewayStopReason,
+  AiModelAssistantMessage,
+  AiModelContentBlock,
+  AiModelContentMetadata,
+  AiModelMessage,
+  AiModelTextBlock,
+  AiModelToolCall,
+  AiModelToolDefinition,
+  AiModelToolResult,
+  AiModelUserMessage,
+} from "./ai-gateway.types.js";
 export type { AiProviderDefinition } from "./ai-provider-registry.js";
 export { AiRuntimeError, createAiRuntime } from "./ai-runtime.js";
 export type {

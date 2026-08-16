@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"父任务必须保持现有 AI SDK、凭据、模型和 SSE 安全边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"父任务跨 contracts、API、SQLite 和 Admin，需要检查完整数据流"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"父任务集成验收使用 API 质量门禁"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"父任务包含聊天和调用审计页面验收"}

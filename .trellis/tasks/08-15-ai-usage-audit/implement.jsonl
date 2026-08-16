@@ -1,0 +1,10 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"调用审计 route、service、repository、presenter 分层"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"审计消费安全 Gateway usage/cost，不读取 SDK message"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"新增 calls、tool executions 表、索引和 migration"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"新增独立 ai:usage:read permission"}
+{"file":".trellis/spec/api/backend/logging-guidelines.md","reason":"审计写失败日志不能包含输入和原始数据库错误"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"调用审计 route、菜单、标签和 API 权限一致"}
+{"file":".trellis/spec/admin/frontend/state-management.md","reason":"筛选、分页、列表和 Drawer 使用 Query/局部 state"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"新增审计 query、列表、详情和 usage/cost DTO"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 Gateway 终态到 SQLite、API 和 Admin 的数据流"}
+{"file":".trellis/tasks/08-15-ai-usage-audit/research/usage-audit.md","reason":"固定最小表结构、终态幂等、cost 和权限风险"}
