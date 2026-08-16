@@ -427,3 +427,85 @@ Web/Admin 各建薄 Hono RPC adapter，26 个普通 JSON operation 迁移到 hc<
 ### Status
 
 [OK] **Completed**
+
+---
+
+## 2026-08-16: AI Tool/Prompt/Skills 设计与验证（进行中）
+
+### 任务树
+
+- parent `08-16-ai-tool-prompt-skills`：整体设计（design.md 含三个能力层架构、数据流、表设计、API 契约）
+- child `08-16-ai-test-tools`：测试用 AI 工具注册（进行中，代码完成 + 测试全绿）
+- child `08-16-ai-prompt-config`：Prompt 配置（规划完成，待实施）
+- child `08-16-ai-skills`：Skills 能力包（规划完成，待实施）
+
+### 关键决策
+
+- D-1: 测试工具 env 开关 `AI_TEST_TOOLS_ENABLED`（dev 开，生产不配即关）
+- D-2: Prompt 两层都做（system prompt 管理 + 模板库）
+- D-3: Skills 数据库 + 渐进式披露 + read_skill 工具
+- D-4: 完整前端（三个管理页 + 对话页集成）
+
+### pi 参考要点（已读 /Users/wuwanzhu/Code/pi）
+
+- Tool: `AgentHarnessTool` 工厂 + TypeBox schema、beforeToolCall/afterToolCall 钩子、parallel/sequential 模式
+- Skills: Agent Skills 标准，SKILL.md + frontmatter，system prompt 只注入 name+description+location XML（渐进式披露）
+- Prompt: prompt templates（/name 展开 + 参数），system prompt 编译进源码不用户可配置
+
+### 子任务 1 完成内容
+
+- `apps/api/src/modules/ai/test-tools.ts`：7 个测试工具（echo/get_current_time/add_numbers/random_number/fail_tool/slow_tool/admin_secret）
+- `create-runtime.ts` + `env.ts`：AI_TEST_TOOLS_ENABLED 开关
+- `ai-test-tools.test.ts`：204 用例全绿（含注册、全链路 echo、失败、权限、超时、脱敏）
+- `pnpm check` 全绿
+- 待办：真实模型对话验证（与后续子任务统一验证）
+
+### 技术要点
+
+- orchestrator 在工具 timed_out 时会抛 AI_TOOL_TIMED_OUT 而非继续流（测试需捕获 error）
+- slow_tool 触发超时需 seconds > timeoutMs/1000（4 秒 > 3 秒工具超时）
+- 测试事件数组推断：空数组 + push 让 TS evolving array 推断，避免显式联合类型
+
+### 子任务 2 完成内容（08-16-ai-prompt-config）
+
+- 表：ai_system_prompts / ai_prompt_templates 新增；ai_settings.global_system_prompt_id、ai_conversations.system_prompt_id 加列（migration 0009）
+- 契约：SystemPrompt/PromptTemplate schema + conversation 请求 systemPromptId（send 支持 null 清除）
+- 后端：ai-prompt.repository/service/openapi；conversation service resolveSystemPrompt（会话级 → 全局默认）→ streamGeneration 注入 gatewayInput；orchestrator 透传 systemPrompt；新增 3 个错误码 AI_PROMPT_NOT_FOUND/REFERENCED/NAME_CONFLICT
+- API：system-prompts CRUD + GET/PUT settings/system-prompt + prompt-templates CRUD（模板列表登录可读）
+- 前端：SystemPrompts/PromptTemplates 管理页、QuickStarters 改为 API 拉取、routes+i18n+prompt.api/query
+- 测试：ai-prompt-config.test.ts 5 用例（CRUD/403/引用删除 409/注入优先级/模板排序），209 全绿 + pnpm check 绿
+- 技术要点：readSuccess<T> 泛型是 data 本身；antfu/consistent-chaining 与 prettier 冲突时用中间变量；RPC 类型需 pnpm --filter @starter/api build 更新 dist/rpc.d.ts
+
+### 待办
+
+- 三个子任务真实模型对话验证（统一做）
+- 提交前用户确认
+
+### 子任务 3 完成内容（08-16-ai-skills）
+
+- 表：ai_skills（name unique / description / content / enabled），migration 0010
+- 契约：aiSkillSummarySchema（无 content）/ aiSkillSchema / create/update 请求；错误码 AI_SKILL_NOT_FOUND、AI_SKILL_NAME_CONFLICT
+- 后端：ai-skill.repository/service/openapi（5 路由，GET 列表登录可读无 content，详情+写 manage）；read_skill 工具（闭包注入 repository，始终注册，未找到/停用抛错走 failed）；appendSkillDescriptions 纯函数（XML 转义，无技能时原样）
+- 装配：ai.route.ts 合并 registry + skillAccess 注入 conversation service（listDescriptions 适配）
+- 前端：Skills.tsx 管理页（列表/新建/编辑/启用开关/删除，编辑时 GET 详情拉 content）、routes order 8/9/10、i18n zh/en、prompt.api/query 加 skill hooks
+- 测试：ai-skills.test.ts 5 用例（CRUD/403/appendSkillDescriptions 转义/对话注入断言含停用过滤/read_skill 成功与未找到+审计脱敏），API 214 + admin 96 全绿 + pnpm check 绿
+- 注意：ai-conversations.test.tsx 的 vi.mock 需补 usePromptTemplatesQuery（子任务 2 引入）
+- 待办：真实模型对话验证（系统提示词生效、测试工具、read_skill）统一做
+
+### 三个子任务全部完成，剩余：
+
+1. parent 级集成验收 P-1~P-6（真实模型 + 浏览器验证）
+2. 提交前用户确认改动摘要
+
+### 真实模型集成验收（2026-08-16，DeepSeek V4 Flash via OpenCode Go）
+
+- 发现并修复：7788 端口被凌晨旧 API 进程占用（env 无 AI_TEST_TOOLS_ENABLED），新进程 EADDRINUSE 退出导致测试工具未注册；杀旧进程重启后 echo 生效
+- 验证通过项：
+  1. read_skill 渐进式披露：模型自动感知 available_skills 并调用 read_skill 加载 test-skill-verify（succeeded）
+  2. echo/add_numbers/get_current_time 工具调用成功（审计 succeeded）
+  3. 系统提示词生效：模型正确复述"你是 starter 项目的智能助手。回答要简洁、用中文。"
+  4. 会话级 systemPromptId 覆盖生效：模型以【OVERRIDE】开头自称覆盖测试助手
+  5. 权限拒绝：普通用户调 admin_secret → status=forbidden + AI.TOOL_FORBIDDEN
+  6. 审计脱敏：ai_tool_executions 列结构本身无 args/结果字段；ai_model_calls 无 prompt/messages 字段；记录状态正确
+- 浏览器 UI 验证受限：ego-browser 隔离环境拦截跨端口 fetch（2333→7788），登录失败；页面导航正常。建议真实浏览器验证 UI
+- 遗留：验证数据（verify-* 资源、verify-user 用户、3 个会话）待清理或保留，问用户
