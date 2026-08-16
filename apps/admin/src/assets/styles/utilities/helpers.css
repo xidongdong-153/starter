@@ -8,4 +8,26 @@
       display: none;
     }
   }
+
+  /* 聊天专用精美细滚动条 */
+  .chat-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: color-mix(in srgb, var(--color-border-subtle) 85%, transparent) transparent;
+
+    &::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    &::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    &::-webkit-scrollbar-thumb {
+      background: color-mix(in srgb, var(--color-border-subtle) 85%, transparent);
+      border-radius: 9999px;
+      transition: background-color 0.2s ease;
+    }
+    &::-webkit-scrollbar-thumb:hover {
+      background: color-mix(in srgb, var(--color-primary) 70%, transparent);
+    }
+  }
 }

@@ -167,6 +167,10 @@ export default {
       errorTitle: '生成失败',
       emptyMessages: '发送第一条消息，开始对话。',
       mobileConversations: '会话列表',
+      conversationsCount: '{{count}} 个对话',
+      collapseSidebar: '收起侧边栏',
+      expandSidebar: '展开侧边栏',
+      clearInput: '清空输入',
       close: '关闭',
     },
     usage: {

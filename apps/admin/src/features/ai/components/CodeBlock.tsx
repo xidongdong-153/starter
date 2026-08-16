@@ -24,14 +24,14 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
   const displayLang = language?.trim().toLowerCase() || 'text'
 
   return (
-    <div className="border-border-subtle my-3 overflow-hidden rounded-xl border bg-surface-muted/80 text-xs shadow-xs">
-      <div className="border-border-subtle/80 bg-surface-muted/95 flex items-center justify-between border-b px-3.5 py-1.5">
-        <span className="text-fg-muted font-mono font-medium tracking-wide lowercase">{displayLang}</span>
+    <div className="border-border-subtle my-3 overflow-hidden rounded-xl border bg-surface-muted/60 text-xs shadow-2xs">
+      <div className="border-border-subtle/80 bg-surface-muted/90 flex items-center justify-between border-b px-3.5 py-1.5 backdrop-blur-xs">
+        <span className="text-fg-muted font-mono text-[11px] font-medium tracking-wider uppercase">{displayLang}</span>
         <button
           type="button"
           onClick={() => void handleCopy()}
           aria-label={t('ai.conversations.copyCode')}
-          className="text-fg-muted hover:text-fg hover:bg-surface-elevated/60 active:scale-95 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-all duration-150"
+          className="text-fg-muted hover:text-fg hover:bg-surface-elevated/70 active:scale-95 inline-flex cursor-pointer items-center gap-1.5 rounded-md px-2 py-0.5 transition-all duration-150"
         >
           {copied ? (
             <>
@@ -46,7 +46,7 @@ export function CodeBlock({ code, language }: CodeBlockProps) {
           )}
         </button>
       </div>
-      <div className="overflow-x-auto p-3.5 font-mono text-[13px] leading-6 selection:bg-primary/20">
+      <div className="chat-scrollbar overflow-x-auto p-3.5 pt-3 pb-3.5 font-mono text-[13px] leading-6 selection:bg-primary/20">
         <pre className="text-fg m-0 whitespace-pre font-mono">
           <code>{code}</code>
         </pre>

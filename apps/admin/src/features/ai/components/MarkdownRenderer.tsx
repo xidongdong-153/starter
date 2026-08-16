@@ -278,14 +278,14 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
             const inline = parseInlineTokens(block.text)
             if (block.level === 1) {
               return (
-                <h1 key={key} className="text-fg m-0 mt-4 mb-2 text-lg font-bold">
+                <h1 key={key} className="text-fg m-0 mt-4 mb-2 text-lg font-bold tracking-tight">
                   {renderInlineTokens(inline, key)}
                 </h1>
               )
             }
             if (block.level === 2) {
               return (
-                <h2 key={key} className="text-fg m-0 mt-3.5 mb-1.5 text-base font-semibold">
+                <h2 key={key} className="text-fg m-0 mt-3.5 mb-1.5 text-base font-semibold tracking-tight">
                   {renderInlineTokens(inline, key)}
                 </h2>
               )
@@ -298,7 +298,7 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
               )
             }
             return (
-              <h4 key={key} className="text-fg m-0 mt-2 mb-1 text-sm font-medium">
+              <h4 key={key} className="text-fg m-0 mt-2.5 mb-0.5 text-sm font-medium">
                 {renderInlineTokens(inline, key)}
               </h4>
             )
@@ -308,10 +308,10 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
             return (
               <blockquote
                 key={key}
-                className="border-primary/60 bg-surface-muted/50 text-fg-muted my-2 rounded-r-lg border-l-3 py-1.5 pr-3 pl-3 text-xs italic"
+                className="border-primary/60 bg-surface-muted/50 text-fg-muted my-2 rounded-r-xl border-l-3 py-2 pr-3 pl-3.5 text-xs italic"
               >
                 {block.lines.map((l, lIdx) => (
-                  <p key={`${key}-l-${lIdx}`} className="m-0">
+                  <p key={`${key}-l-${lIdx}`} className="m-0 leading-5">
                     {renderInlineTokens(parseInlineTokens(l), `${key}-l-${lIdx}`)}
                   </p>
                 ))}
@@ -320,7 +320,7 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
 
           case 'ul':
             return (
-              <ul key={key} className="text-fg m-0 my-2 list-disc space-y-1 pl-5">
+              <ul key={key} className="text-fg m-0 my-2 list-disc space-y-1.5 pl-5 leading-relaxed">
                 {block.items.map((item, itemIdx) => (
                   <li key={`${key}-it-${itemIdx}`}>
                     {renderInlineTokens(parseInlineTokens(item), `${key}-it-${itemIdx}`)}
@@ -331,7 +331,7 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
 
           case 'ol':
             return (
-              <ol key={key} className="text-fg m-0 my-2 list-decimal space-y-1 pl-5">
+              <ol key={key} className="text-fg m-0 my-2 list-decimal space-y-1.5 pl-5 leading-relaxed">
                 {block.items.map((item, itemIdx) => (
                   <li key={`${key}-it-${itemIdx}`}>
                     {renderInlineTokens(parseInlineTokens(item), `${key}-it-${itemIdx}`)}
@@ -341,16 +341,19 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
             )
 
           case 'hr':
-            return <hr key={key} className="border-border-subtle my-4 border-t" />
+            return <hr key={key} className="border-border-subtle my-3.5 border-t" />
 
           case 'table':
             return (
-              <div key={key} className="border-border-subtle my-3 overflow-x-auto rounded-lg border">
+              <div
+                key={key}
+                className="border-border-subtle chat-scrollbar my-3 overflow-x-auto rounded-xl border shadow-2xs"
+              >
                 <table className="min-w-full divide-border-subtle divide-y text-left text-xs">
-                  <thead className="bg-surface-muted text-fg font-medium">
+                  <thead className="bg-surface-muted/90 text-fg font-medium">
                     <tr>
                       {block.headers.map((h, hIdx) => (
-                        <th key={`${key}-th-${hIdx}`} className="px-3 py-2">
+                        <th key={`${key}-th-${hIdx}`} className="px-3.5 py-2 whitespace-nowrap">
                           {renderInlineTokens(parseInlineTokens(h), `${key}-th-${hIdx}`)}
                         </th>
                       ))}
@@ -358,9 +361,9 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
                   </thead>
                   <tbody className="divide-border-subtle divide-y bg-surface">
                     {block.rows.map((row, rIdx) => (
-                      <tr key={`${key}-r-${rIdx}`} className="hover:bg-surface-muted/50">
+                      <tr key={`${key}-r-${rIdx}`} className="hover:bg-surface-muted/40 transition-colors">
                         {row.map((cell, cIdx) => (
-                          <td key={`${key}-r-${rIdx}-c-${cIdx}`} className="text-fg px-3 py-2">
+                          <td key={`${key}-r-${rIdx}-c-${cIdx}`} className="text-fg px-3.5 py-2 leading-relaxed">
                             {renderInlineTokens(parseInlineTokens(cell), `${key}-r-${rIdx}-c-${cIdx}`)}
                           </td>
                         ))}
@@ -374,7 +377,7 @@ export const MarkdownRenderer = memo(({ content, className = '' }: MarkdownRende
           case 'paragraph':
           default:
             return (
-              <p key={key} className="text-fg m-0 whitespace-pre-wrap break-words leading-6">
+              <p key={key} className="text-fg m-0 whitespace-pre-wrap break-words leading-relaxed">
                 {renderInlineTokens(parseInlineTokens(block.lines.join('\n')), key)}
               </p>
             )

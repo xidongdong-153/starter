@@ -169,6 +169,10 @@ export default {
       errorTitle: 'Generation failed',
       emptyMessages: 'Send the first message to start a conversation.',
       mobileConversations: 'Conversations',
+      conversationsCount: '{{count}} conversations',
+      collapseSidebar: 'Collapse sidebar',
+      expandSidebar: 'Expand sidebar',
+      clearInput: 'Clear input',
       close: 'Close',
     },
     usage: {
