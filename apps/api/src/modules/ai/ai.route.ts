@@ -42,10 +42,35 @@ import {
   stopAiConversationGenerationRoute,
 } from "./ai-conversation.openapi.js";
 import {
+  createPromptTemplateRoute,
+  createSystemPromptRoute,
+  deletePromptTemplateRoute,
+  deleteSystemPromptRoute,
+  getGlobalSystemPromptRoute,
+  listPromptTemplatesRoute,
+  listSystemPromptsRoute,
+  updateGlobalSystemPromptRoute,
+  updatePromptTemplateRoute,
+  updateSystemPromptRoute,
+} from "./ai-prompt.openapi.js";
+import { createAiPromptRepository } from "./ai-prompt.repository.js";
+import { createAiPromptService } from "./ai-prompt.service.js";
+import {
+  createAiSkillRoute,
+  deleteAiSkillRoute,
+  getAiSkillRoute,
+  listAiSkillsRoute,
+  updateAiSkillRoute,
+} from "./ai-skill.openapi.js";
+import { createAiSkillRepository } from "./ai-skill.repository.js";
+import { createAiSkillService } from "./ai-skill.service.js";
+import { createReadSkillTool } from "./ai-skill-tools.js";
+import {
   getAiUsageAuditRoute,
   listAiUsageAuditRoute,
 } from "./ai-usage-audit.openapi.js";
 import { createAiToolOrchestrator } from "./ai-tool-orchestrator.js";
+import { createAiToolRegistry } from "./ai-tool-registry.js";
 import { createAiUsageAuditRepository } from "./ai-usage-audit.repository.js";
 import {
   createAiInvocationRunner,
@@ -79,9 +104,13 @@ export function createAiRoute(runtime: AppRuntime) {
     usageAuditService,
   );
   const authorizationRepository = createAuthorizationRepository(runtime.db);
+  const skillRepository = createAiSkillRepository(runtime.db);
   const toolOrchestrator = createAiToolOrchestrator({
     invocationRunner,
-    registry: runtime.aiTools,
+    registry: createAiToolRegistry([
+      ...runtime.aiTools.list(),
+      createReadSkillTool(skillRepository),
+    ]),
     audit: usageAuditService,
     hasPermission: authorizationRepository.hasPermission,
     logger: runtime.logger.child({ module: "ai-tool-orchestrator" }),
@@ -93,6 +122,10 @@ export function createAiRoute(runtime: AppRuntime) {
     invocationRunner,
     runtime.env.AI_REQUEST_TIMEOUT_MS,
   );
+  const promptService = createAiPromptService(
+    createAiPromptRepository(runtime.db),
+  );
+  const skillService = createAiSkillService(skillRepository);
   const conversationService = createAiConversationService(
     createAiConversationRepository(runtime.db),
     runtime.aiGateway,
@@ -103,6 +136,12 @@ export function createAiRoute(runtime: AppRuntime) {
     invocationRunner,
     runtime.env.AI_REQUEST_TIMEOUT_MS,
     toolOrchestrator,
+    {
+      assertAvailable: promptService.assertSystemPromptAvailable,
+      getGlobalSystemPromptId: promptService.getGlobalSystemPromptId,
+      resolveContent: promptService.resolveSystemPromptContent,
+    },
+    { listDescriptions: skillService.listEnabledDescriptions },
   );
 
   return new OpenAPIHono<HonoEnv>()
@@ -460,6 +499,205 @@ export function createAiRoute(runtime: AppRuntime) {
           result.statusCode,
         );
       },
+    )
+    .openapi(
+      { ...listSystemPromptsRoute, middleware: [requireAuth, requireRead] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.listSystemPrompts(),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...createSystemPromptRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.createSystemPrompt(
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...updateSystemPromptRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.updateSystemPrompt(
+              c.req.valid("param").id,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...deleteSystemPromptRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            {
+              deleted: promptService.deleteSystemPrompt(
+                c.req.valid("param").id,
+              ),
+            },
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...getGlobalSystemPromptRoute,
+        middleware: [requireAuth, requireRead],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            {
+              systemPromptId: promptService.getGlobalSystemPromptId(),
+            },
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...updateGlobalSystemPromptRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.setGlobalSystemPrompt(
+              c.req.valid("json").systemPromptId,
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi({ ...listPromptTemplatesRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(promptService.listTemplates(), c.var.requestId),
+        200,
+      ),
+    )
+    .openapi(
+      {
+        ...createPromptTemplateRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.createTemplate(
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...updatePromptTemplateRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            promptService.updateTemplate(
+              c.req.valid("param").id,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...deletePromptTemplateRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            {
+              deleted: promptService.deleteTemplate(c.req.valid("param").id),
+            },
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi({ ...listAiSkillsRoute, middleware: requireAuth }, (c) =>
+      c.json(
+        createSuccessResponse(skillService.listSkills(), c.var.requestId),
+        200,
+      ),
+    )
+    .openapi(
+      { ...getAiSkillRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            skillService.getSkill(c.req.valid("param").id),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...createAiSkillRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            skillService.createSkill(c.req.valid("json"), c.var.currentUserId),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...updateAiSkillRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            skillService.updateSkill(
+              c.req.valid("param").id,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...deleteAiSkillRoute, middleware: [requireAuth, requireManage] },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            { deleted: skillService.deleteSkill(c.req.valid("param").id) },
+            c.var.requestId,
+          ),
+          200,
+        ),
     );
 }
 

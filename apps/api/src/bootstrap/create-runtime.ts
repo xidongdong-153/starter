@@ -6,6 +6,7 @@ import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
 import type { AiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
 import { createAiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
+import { createTestAiTools } from "@api/modules/ai/test-tools.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
 import {
   createAiCrypto,
@@ -74,7 +75,9 @@ export function createRuntime(
       ai.getProviderRequestEnv,
     );
   const mailer = deps.mailer ?? createMailer(env, logger);
-  const aiTools = deps.aiTools ?? createAiToolRegistry([]);
+  const aiTools =
+    deps.aiTools ??
+    createAiToolRegistry(env.AI_TEST_TOOLS_ENABLED ? createTestAiTools() : []);
   const auth = createAuth(
     database.db,
     env,

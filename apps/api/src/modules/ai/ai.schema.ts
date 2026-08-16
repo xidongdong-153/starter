@@ -77,12 +77,79 @@ export const aiEnabledModels = sqliteTable(
   ],
 );
 
+export const aiSystemPrompts = sqliteTable("ai_system_prompts", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull().unique(),
+  content: text("content").notNull(),
+  enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+  createdBy: text("created_by").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  updatedBy: text("updated_by").references(() => user.id, {
+    onDelete: "set null",
+  }),
+  createdAt: timestamp("created_at").notNull(),
+  updatedAt: timestamp("updated_at").notNull(),
+});
+
+export const aiPromptTemplates = sqliteTable(
+  "ai_prompt_templates",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull().default(""),
+    content: text("content").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    sortOrder: integer("sort_order").notNull().default(0),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_prompt_templates_enabled_sort_idx").on(
+      table.enabled,
+      table.sortOrder,
+    ),
+  ],
+);
+
+export const aiSkills = sqliteTable(
+  "ai_skills",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull(),
+    content: text("content").notNull(),
+    enabled: integer("enabled", { mode: "boolean" }).notNull().default(true),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_skills_enabled_name_idx").on(table.enabled, table.name),
+  ],
+);
+
 export const aiSettings = sqliteTable(
   "ai_settings",
   {
     id: text("id").primaryKey(),
     globalProviderId: text("global_provider_id"),
     globalModelId: text("global_model_id"),
+    globalSystemPromptId: text("global_system_prompt_id").references(
+      () => aiSystemPrompts.id,
+      { onDelete: "set null" },
+    ),
     updatedBy: text("updated_by").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -249,6 +316,10 @@ export const aiConversations = sqliteTable(
     title: text("title").notNull(),
     status: text("status").notNull().default("idle"),
     activeGenerationId: text("active_generation_id"),
+    systemPromptId: text("system_prompt_id").references(
+      () => aiSystemPrompts.id,
+      { onDelete: "set null" },
+    ),
     lastProviderId: text("last_provider_id"),
     lastModelId: text("last_model_id"),
     createdAt: timestamp("created_at").notNull(),

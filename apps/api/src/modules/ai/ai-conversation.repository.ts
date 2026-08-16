@@ -25,6 +25,7 @@ interface BeginSendGenerationInput extends BeginGenerationInput {
   title: string;
   userContentJson: string;
   userMessageId: string;
+  systemPromptId: string | null | undefined;
 }
 
 interface BeginRetryGenerationInput extends BeginGenerationInput {
@@ -50,6 +51,7 @@ export function createAiConversationRepository(db: AppDatabase) {
     id: string;
     ownerId: string;
     title: string;
+    systemPromptId: string | null;
     now: Date;
   }): AiConversationRecord {
     db.insert(aiConversations)
@@ -58,6 +60,7 @@ export function createAiConversationRepository(db: AppDatabase) {
         ownerId: input.ownerId,
         title: input.title,
         status: "idle",
+        systemPromptId: input.systemPromptId,
         createdAt: input.now,
         updatedAt: input.now,
       })
@@ -181,6 +184,10 @@ export function createAiConversationRepository(db: AppDatabase) {
           activeGenerationId: input.generationId,
           status: "generating",
           title: history.length === 0 ? input.title : conversation.title,
+          systemPromptId:
+            input.systemPromptId === undefined
+              ? conversation.systemPromptId
+              : input.systemPromptId,
           updatedAt: input.startedAt,
         })
         .where(

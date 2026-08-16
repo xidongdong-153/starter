@@ -35,6 +35,7 @@ import {
   toConversationMessage,
   toConversationSummary,
 } from "./ai-conversation.presenter.js";
+import { appendSkillDescriptions } from "./ai-skill-tools.js";
 
 export const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
@@ -42,6 +43,16 @@ export const MAX_CONTEXT_CHARS = 100_000;
 interface AiConversationModelAccess {
   isAllowed: (model: AiModelRef) => boolean;
   resolve: (userId: string, requestedModel?: AiModelRef) => Promise<AiModelRef>;
+}
+
+export interface AiConversationSystemPromptAccess {
+  assertAvailable: (systemPromptId: string | null) => void;
+  resolveContent: (systemPromptId: string | null) => string | null;
+  getGlobalSystemPromptId: () => string | null;
+}
+
+export interface AiConversationSkillAccess {
+  listDescriptions: () => { name: string; description: string }[];
 }
 
 interface GenerationState {
@@ -66,19 +77,31 @@ export function createAiConversationService(
   invocationRunner?: AiInvocationRunner,
   requestTimeoutMs = 120_000,
   toolOrchestrator?: AiToolOrchestrator,
+  systemPromptAccess?: AiConversationSystemPromptAccess,
+  skillAccess?: AiConversationSkillAccess,
 ) {
   const controllers = new Map<string, PreparedGenerationInternal>();
   repository.recoverInterrupted(new Date());
+
+  function resolveSystemPrompt(
+    systemPromptId: string | null,
+  ): string | undefined {
+    const effectiveId =
+      systemPromptId ?? systemPromptAccess?.getGlobalSystemPromptId() ?? null;
+    return systemPromptAccess?.resolveContent(effectiveId) ?? undefined;
+  }
 
   function createConversation(
     ownerId: string,
     input: CreateAiConversationInput,
   ): AiConversationSummary {
     const now = new Date();
+    systemPromptAccess?.assertAvailable(input.systemPromptId ?? null);
     const record = repository.createConversation({
       id: generateId(),
       ownerId,
       title: input.title ?? "新会话",
+      systemPromptId: input.systemPromptId ?? null,
       now,
     });
     return toConversationSummary(record);
@@ -127,6 +150,12 @@ export function createAiConversationService(
   ): Promise<PreparedGenerationInternal> {
     const conversation = requireConversation(conversationId, ownerId);
     ensureNoActiveGeneration(conversation.activeGenerationId);
+    systemPromptAccess?.assertAvailable(input.systemPromptId ?? null);
+    const systemPrompt = resolveSystemPrompt(
+      input.systemPromptId === undefined
+        ? conversation.systemPromptId
+        : input.systemPromptId,
+    );
     const model = await modelAccess.resolve(ownerId, input.model);
     const history = repository.listOwnedMessages(conversationId, ownerId);
     const turnIndex = history.filter(
@@ -147,6 +176,7 @@ export function createAiConversationService(
       generationId: generateId(),
       model,
       ownerId,
+      systemPrompt,
       gatewayMessages: contextMessages,
       retryOfGenerationId: null,
       title: makeConversationTitle(input.text),
@@ -163,6 +193,7 @@ export function createAiConversationService(
         model,
         ownerId,
         startedAt: prepared.startedAt,
+        systemPromptId: input.systemPromptId,
         title: prepared.title,
         userContentJson: serializeContentBlocks(userBlocks),
         userMessageId: prepared.userMessageId,
@@ -231,6 +262,7 @@ export function createAiConversationService(
       generationId: generateId(),
       model,
       ownerId,
+      systemPrompt: resolveSystemPrompt(conversation.systemPromptId),
       gatewayMessages: contextMessages,
       retryOfGenerationId: source.id,
       title: conversation.title,
@@ -324,6 +356,10 @@ export function createAiConversationService(
         model: prepared.model,
         messages: prepared.gatewayMessages,
         sessionId: prepared.conversationId,
+        systemPrompt: appendSkillDescriptions(
+          prepared.systemPrompt,
+          skillAccess?.listDescriptions() ?? [],
+        ),
         turnIndex: prepared.turnIndex,
         timeoutMs: requestTimeoutMs,
         signal: prepared.controller.signal,
@@ -332,6 +368,10 @@ export function createAiConversationService(
         ? toolOrchestrator.stream({
             model: prepared.model,
             messages: prepared.gatewayMessages,
+            systemPrompt: appendSkillDescriptions(
+              prepared.systemPrompt,
+              skillAccess?.listDescriptions() ?? [],
+            ),
             userId: prepared.ownerId,
             requestId,
             conversationId: prepared.conversationId,
@@ -491,6 +531,7 @@ export function createAiConversationService(
     ownerId: string;
     retryOfGenerationId: string | null;
     startedAt?: Date;
+    systemPrompt?: string;
     title: string;
     turnIndex?: number;
     userBlocks: Extract<AiConversationContentBlock, { type: "text" }>[];
@@ -591,6 +632,7 @@ interface PreparedGenerationInternal {
   retryOfGenerationId: string | null;
   startedAt: Date;
   state: GenerationState;
+  systemPrompt?: string;
   title: string;
   turnIndex: number;
   userBlocks: Extract<AiConversationContentBlock, { type: "text" }>[];

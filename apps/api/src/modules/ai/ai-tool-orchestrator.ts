@@ -34,6 +34,7 @@ const MAX_SAFE_SUMMARY_CHARS = 1000;
 export interface AiToolOrchestratorInput {
   model: { providerId: string; modelId: string };
   messages: AiModelMessage[];
+  systemPrompt?: string;
   userId: string;
   requestId: string;
   conversationId: string;
@@ -111,6 +112,7 @@ export function createAiToolOrchestrator(deps: AiToolOrchestratorDeps) {
               {
                 model: input.model,
                 messages,
+                systemPrompt: input.systemPrompt,
                 tools: deps.registry.list().map((tool) => ({
                   name: tool.name,
                   description: tool.description,

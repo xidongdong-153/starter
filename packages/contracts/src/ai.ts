@@ -270,8 +270,111 @@ export type AiConversationStopReason = z.infer<typeof aiConversationStopReasonSc
 
 export const aiConversationTitleSchema = z.string().trim().min(1).max(120)
 
+export const aiPromptNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/u, '只允许小写字母、数字与连字符（不能以连字符开头/结尾或连续连字符）')
+
+export const aiPromptContentSchema = z.string().trim().min(1).max(8000)
+
+export const systemPromptSchema = z.object({
+  id: uuidSchema,
+  name: aiPromptNameSchema,
+  content: aiPromptContentSchema,
+  enabled: z.boolean(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+export type SystemPrompt = z.infer<typeof systemPromptSchema>
+
+export const createSystemPromptSchema = z.object({
+  name: aiPromptNameSchema,
+  content: aiPromptContentSchema,
+  enabled: z.boolean().optional(),
+})
+export type CreateSystemPromptInput = z.infer<typeof createSystemPromptSchema>
+
+export const updateSystemPromptSchema = z.object({
+  name: aiPromptNameSchema.optional(),
+  content: aiPromptContentSchema.optional(),
+  enabled: z.boolean().optional(),
+})
+export type UpdateSystemPromptInput = z.infer<typeof updateSystemPromptSchema>
+
+export const updateGlobalSystemPromptSchema = z.object({
+  systemPromptId: uuidSchema.nullable(),
+})
+export type UpdateGlobalSystemPromptInput = z.infer<typeof updateGlobalSystemPromptSchema>
+
+export const promptTemplateSchema = z.object({
+  id: uuidSchema,
+  name: aiPromptNameSchema,
+  description: z.string().max(200).default(''),
+  content: aiPromptContentSchema,
+  enabled: z.boolean(),
+  sortOrder: z.number().int().min(0).max(10_000),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+export type PromptTemplate = z.infer<typeof promptTemplateSchema>
+
+export const createPromptTemplateSchema = z.object({
+  name: aiPromptNameSchema,
+  description: z.string().max(200).optional(),
+  content: aiPromptContentSchema,
+  enabled: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+})
+export type CreatePromptTemplateInput = z.infer<typeof createPromptTemplateSchema>
+
+export const updatePromptTemplateSchema = z.object({
+  name: aiPromptNameSchema.optional(),
+  description: z.string().max(200).optional(),
+  content: aiPromptContentSchema.optional(),
+  enabled: z.boolean().optional(),
+  sortOrder: z.number().int().min(0).max(10_000).optional(),
+})
+export type UpdatePromptTemplateInput = z.infer<typeof updatePromptTemplateSchema>
+
+export const aiSkillDescriptionSchema = z.string().trim().min(1).max(1024)
+export const aiSkillContentSchema = z.string().trim().min(1).max(32_000)
+
+export const aiSkillSummarySchema = z.object({
+  id: uuidSchema,
+  name: aiPromptNameSchema,
+  description: aiSkillDescriptionSchema,
+  enabled: z.boolean(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+export type AiSkillSummary = z.infer<typeof aiSkillSummarySchema>
+
+export const aiSkillSchema = aiSkillSummarySchema.extend({
+  content: aiSkillContentSchema,
+})
+export type AiSkill = z.infer<typeof aiSkillSchema>
+
+export const createAiSkillSchema = z.object({
+  name: aiPromptNameSchema,
+  description: aiSkillDescriptionSchema,
+  content: aiSkillContentSchema,
+  enabled: z.boolean().optional(),
+})
+export type CreateAiSkillInput = z.infer<typeof createAiSkillSchema>
+
+export const updateAiSkillSchema = z.object({
+  name: aiPromptNameSchema.optional(),
+  description: aiSkillDescriptionSchema.optional(),
+  content: aiSkillContentSchema.optional(),
+  enabled: z.boolean().optional(),
+})
+export type UpdateAiSkillInput = z.infer<typeof updateAiSkillSchema>
+
 export const createAiConversationSchema = z.object({
   title: aiConversationTitleSchema.optional(),
+  systemPromptId: uuidSchema.optional(),
 })
 export type CreateAiConversationInput = z.infer<typeof createAiConversationSchema>
 
@@ -292,6 +395,7 @@ export const aiConversationGenerationParamsSchema = aiConversationParamsSchema.e
 export const sendAiConversationMessageSchema = z.object({
   text: z.string().trim().min(1).max(100_000),
   model: aiModelRefSchema.optional(),
+  systemPromptId: uuidSchema.nullable().optional(),
 })
 export type SendAiConversationMessageInput = z.infer<typeof sendAiConversationMessageSchema>
 

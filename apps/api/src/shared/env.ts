@@ -31,6 +31,7 @@ const envSchema = z.object({
     .min(1_000)
     .max(300_000)
     .default(60_000),
+  AI_TEST_TOOLS_ENABLED: z.stringbool().default(false),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.url().default("http://localhost:7788"),
   CORS_ORIGINS: z
