@@ -12,7 +12,7 @@ import {
   aiProviderConfigs,
   aiSettings,
   userAiPreferences,
-} from "./ai.schema.js";
+} from "../ai.schema.js";
 
 export class AiProviderConfigConflictError extends Error {
   constructor() {

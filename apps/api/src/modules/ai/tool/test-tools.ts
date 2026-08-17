@@ -1,7 +1,7 @@
 import { PermissionKeys } from "@starter/contracts";
 import { z } from "zod";
 
-import { defineAiTool, type RegisteredAiTool } from "./ai-tool-registry.js";
+import { defineAiTool, type RegisteredAiTool } from "./tool-registry.js";
 
 /**
  * 仅用于测试/验证的 AI 工具集。

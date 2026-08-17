@@ -15,12 +15,12 @@ import type {
 import { AiGatewayError } from "@api/infra/ai/index.js";
 import { AppError } from "@api/shared/app-error.js";
 
-import type { AiToolRegistry } from "./ai-tool-registry.js";
+import type { AiToolRegistry } from "./tool-registry.js";
 import type {
   AiInvocationRunner,
   AiUsageAuditService,
-} from "./ai-usage-audit.service.js";
-import { resolveToolExecutionTimeout } from "./ai-usage-audit.service.js";
+} from "../usage-audit/usage-audit.service.js";
+import { resolveToolExecutionTimeout } from "../usage-audit/usage-audit.service.js";
 
 const MAX_TOOL_ROUNDS = 4;
 const MAX_TOOL_CALLS_PER_ROUND = 8;

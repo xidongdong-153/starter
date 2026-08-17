@@ -1,7 +1,7 @@
 import type { AiAuthInteraction, AiAuthPrompt } from "@api/infra/ai/index.js";
 import { createAiCrypto, createAiRuntime } from "@api/infra/ai/index.js";
 import { createDatabase } from "@api/infra/db/client.js";
-import { createAiRepository } from "@api/modules/ai/ai.repository.js";
+import { createAiRepository } from "@api/modules/ai/configuration/configuration.repository.js";
 import { parseEnv } from "@api/shared/env.js";
 import { createInterface } from "node:readline/promises";
 import { resolve } from "node:path";

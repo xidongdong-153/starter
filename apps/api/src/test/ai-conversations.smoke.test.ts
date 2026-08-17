@@ -20,8 +20,8 @@ import {
   aiProviderConfigs,
   user,
 } from "@api/infra/db/schema/index.js";
-import { createAiConversationRepository } from "@api/modules/ai/ai-conversation.repository.js";
-import { createAiConversationService } from "@api/modules/ai/ai-conversation.service.js";
+import { createAiConversationRepository } from "@api/modules/ai/conversation/conversation.repository.js";
+import { createAiConversationService } from "@api/modules/ai/conversation/conversation.service.js";
 import { generateId } from "@api/shared/id.js";
 
 import {

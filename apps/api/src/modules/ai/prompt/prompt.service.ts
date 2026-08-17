@@ -14,7 +14,7 @@ import { generateId } from "@api/shared/id.js";
 import type {
   AiPromptRepository,
   AiSystemPromptRecord,
-} from "./ai-prompt.repository.js";
+} from "./prompt.repository.js";
 
 export interface AiPromptService {
   listSystemPrompts: () => SystemPrompt[];

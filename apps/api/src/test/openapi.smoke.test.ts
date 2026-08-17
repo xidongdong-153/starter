@@ -103,6 +103,13 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(
       document.paths["/api/users/{userId}"]?.get?.responses?.["404"],
     ).toBeDefined();
+    expect(document.paths["/api/ai/admin/providers"]?.get).toBeDefined();
+    expect(document.paths["/api/ai/usage/calls"]?.get).toBeDefined();
+    expect(
+      document.paths["/api/ai/conversations/{conversationId}"]?.get,
+    ).toBeDefined();
+    expect(document.paths["/api/ai/system-prompts/{id}"]?.put).toBeDefined();
+    expect(document.paths["/api/ai/skills/{id}"]?.put).toBeDefined();
     expect(document.components?.securitySchemes?.cookieAuth).toBeDefined();
 
     const reference = await app.request("/reference");

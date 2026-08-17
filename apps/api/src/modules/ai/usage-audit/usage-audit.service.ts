@@ -17,8 +17,8 @@ import { generateId } from "@api/shared/id.js";
 import {
   toAiModelCallAudit,
   toAiModelCallAuditDetail,
-} from "./ai-usage-audit.presenter.js";
-import type { AiUsageAuditRepository } from "./ai-usage-audit.repository.js";
+} from "./usage-audit.presenter.js";
+import type { AiUsageAuditRepository } from "./usage-audit.repository.js";
 
 const DEFAULT_UNKNOWN_TOOL_TIMEOUT_MS = 5000;
 

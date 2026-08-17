@@ -1,0 +1,37 @@
+%%{init: {"theme": "dark"}}%%
+flowchart TD
+  Routes["routes/index.ts"] --> Root["ai.route.ts<br/>公共依赖装配 + 显式组合子路由"]
+
+  Root --> ConfigRoute["configuration.route.ts"]
+  Root --> ConversationRoute["conversation.route.ts"]
+  Root --> PromptRoute["prompt.route.ts"]
+  Root --> SkillRoute["skill.route.ts"]
+  Root --> UsageRoute["usage-audit.route.ts"]
+
+  ConfigRoute --> ConfigService["configuration.service.ts"]
+  ConversationRoute --> ConversationService["conversation.service.ts"]
+  PromptRoute --> PromptService["prompt.service.ts"]
+  SkillRoute --> SkillService["skill.service.ts"]
+  UsageRoute --> UsageService["usage-audit.service.ts"]
+
+  ConfigService --> ConfigRepo["configuration.repository.ts"]
+  ConversationService --> ConversationRepo["conversation.repository.ts"]
+  PromptService --> PromptRepo["prompt.repository.ts"]
+  SkillService --> SkillRepo["skill.repository.ts"]
+  UsageService --> UsageRepo["usage-audit.repository.ts"]
+
+  ConfigRepo --> Schema["ai.schema.ts"]
+  ConversationRepo --> Schema
+  PromptRepo --> Schema
+  SkillRepo --> Schema
+  UsageRepo --> Schema
+
+  ConversationService -. "model access" .-> ConfigService
+  ConversationService -. "prompt access" .-> PromptService
+  ConversationService -. "skill access" .-> SkillService
+  ConversationService --> ToolOrchestrator["tool-orchestrator.ts"]
+  ConfigService --> InvocationRunner["AiInvocationRunner"]
+  ToolOrchestrator --> InvocationRunner
+  ToolOrchestrator --> ToolRegistry["tool-registry.ts"]
+  SkillRepo -. "read_skill" .-> ToolRegistry
+  InvocationRunner --> Gateway["infra/ai AiGateway"]

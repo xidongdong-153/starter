@@ -1,7 +1,7 @@
 import { z } from "zod";
 
-import { defineAiTool, type RegisteredAiTool } from "./ai-tool-registry.js";
-import type { AiSkillRepository } from "./ai-skill.repository.js";
+import { defineAiTool, type RegisteredAiTool } from "../tool/tool-registry.js";
+import type { AiSkillRepository } from "./skill.repository.js";
 
 /**
  * read_skill 基础工具：模型按需加载启用中技能的完整内容。

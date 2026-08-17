@@ -18,7 +18,7 @@ import type {
   AiConversationMessageRecord,
   AiConversationRecord,
   AiGenerationRecord,
-} from "./ai-conversation.repository.js";
+} from "./conversation.repository.js";
 
 export function toConversationSummary(
   record: AiConversationRecord,

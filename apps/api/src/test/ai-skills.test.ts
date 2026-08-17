@@ -11,11 +11,11 @@ import {
   roles,
   userRoles,
 } from "@api/infra/db/schema/index.js";
-import { createAiSkillRepository } from "@api/modules/ai/ai-skill.repository.js";
+import { createAiSkillRepository } from "@api/modules/ai/skill/skill.repository.js";
 import {
   appendSkillDescriptions,
   createReadSkillTool,
-} from "@api/modules/ai/ai-skill-tools.js";
+} from "@api/modules/ai/skill/skill-tools.js";
 
 import { createTestApp, readSuccess, register } from "./helpers.js";
 

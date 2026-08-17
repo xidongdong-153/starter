@@ -8,7 +8,7 @@ import {
 } from "@starter/contracts";
 import { describe, expect, it } from "vitest";
 
-import { serializeContentBlocks } from "@api/modules/ai/ai-conversation.presenter.js";
+import { serializeContentBlocks } from "@api/modules/ai/conversation/conversation.presenter.js";
 
 describe("ai message contracts", () => {
   it("会话 ID 契约只接受 UUIDv7", () => {

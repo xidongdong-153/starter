@@ -4,9 +4,9 @@ import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
 import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
-import type { AiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
-import { createAiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
-import { createTestAiTools } from "@api/modules/ai/test-tools.js";
+import type { AiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import { createTestAiTools } from "@api/modules/ai/tool/test-tools.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
 import {
   createAiCrypto,

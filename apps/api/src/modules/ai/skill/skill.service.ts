@@ -13,7 +13,7 @@ import type {
   AiSkillDescription,
   AiSkillRecord,
   AiSkillRepository,
-} from "./ai-skill.repository.js";
+} from "./skill.repository.js";
 
 export interface AiSkillService {
   listSkills: () => AiSkillSummary[];

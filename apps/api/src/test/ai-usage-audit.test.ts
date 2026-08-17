@@ -1,14 +1,14 @@
-import type { AiUsageAuditRepository } from "@api/modules/ai/ai-usage-audit.repository.js";
+import type { AiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
 import type { AiGateway } from "@api/infra/ai/index.js";
 import { expect, it, vi } from "vitest";
 
-import { createAiUsageAuditRepository } from "@api/modules/ai/ai-usage-audit.repository.js";
+import { createAiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
 import {
   createAiInvocationRunner,
   createAiUsageAuditService,
   resolveModelCallTimeout,
   resolveToolExecutionTimeout,
-} from "@api/modules/ai/ai-usage-audit.service.js";
+} from "@api/modules/ai/usage-audit/usage-audit.service.js";
 
 import { createTestApp } from "./helpers.js";
 

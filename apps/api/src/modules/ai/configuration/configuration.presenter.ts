@@ -11,7 +11,7 @@ import type {
   AiRuntimeModel,
 } from "@api/infra/ai/index.js";
 
-import type { AiProviderConfigRecord } from "./ai.repository.js";
+import type { AiProviderConfigRecord } from "./configuration.repository.js";
 
 export function toAdminAiProvider(input: {
   definition: AiProviderDefinition;

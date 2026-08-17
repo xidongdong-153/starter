@@ -20,19 +20,19 @@ import type {
 import { AiGatewayError, AiRuntimeError } from "@api/infra/ai/index.js";
 import { AppError } from "@api/shared/app-error.js";
 
-import type { AiInvocationRunner } from "./ai-usage-audit.service.js";
-import type { AiProviderConfigRecord } from "./ai.repository.js";
-import { AiProviderConfigConflictError } from "./ai.repository.js";
+import type { AiInvocationRunner } from "../usage-audit/usage-audit.service.js";
+import type { AiProviderConfigRecord } from "./configuration.repository.js";
+import { AiProviderConfigConflictError } from "./configuration.repository.js";
 import {
   toAdminAiModel,
   toAdminAiProvider,
   toAiUserModel,
   toMissingAdminAiModel,
-} from "./ai.presenter.js";
+} from "./configuration.presenter.js";
 
 export function createAiService(
   repository: ReturnType<
-    typeof import("./ai.repository.js").createAiRepository
+    typeof import("./configuration.repository.js").createAiRepository
   >,
   runtime: AiRuntime,
   gateway: AiGateway,

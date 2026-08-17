@@ -9,7 +9,7 @@ import type {
 import type {
   AiModelCallRecord,
   AiToolExecutionRecord,
-} from "./ai-usage-audit.repository.js";
+} from "./usage-audit.repository.js";
 
 export function toAiModelCallAudit(
   record: AiModelCallRecord,

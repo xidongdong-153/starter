@@ -8,7 +8,7 @@ import type {
 import type { AppDatabase } from "@api/infra/db/client.js";
 import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
 
-import { aiModelCalls, aiToolExecutions } from "./ai.schema.js";
+import { aiModelCalls, aiToolExecutions } from "../ai.schema.js";
 
 export type AiModelCallRecord = typeof aiModelCalls.$inferSelect;
 export type AiToolExecutionRecord = typeof aiToolExecutions.$inferSelect;

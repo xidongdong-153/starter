@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"约束 API 业务模块、route/service/repository/presenter 的目录和依赖职责。"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"固定 AI Provider、会话、工具、审计、SSE、安全和必跑测试契约。"}
+{"file":".trellis/spec/api/frontend/type-safety.md","reason":"约束 Hono RPC AppType、OpenAPI schema 和 Admin/Web 客户端类型边界。"}
+{"file":".trellis/tasks/08-17-refactor-api-ai-module-structure/research/current-structure.md","reason":"记录当前文件规模、业务子域、外部 import 和兼容基线。"}

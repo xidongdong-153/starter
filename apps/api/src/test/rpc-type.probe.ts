@@ -169,7 +169,57 @@ type _h14 = Assert<
     : false
 >;
 
-// ---- 3. 特殊接口保持原样：不伪造 JSON schema ----
+// ---- 3. AI 子域路由和具体类型保留 ----
+type AiProvidersData = InferResponseType<
+  C["api"]["ai"]["admin"]["providers"]["$get"],
+  200
+>["data"];
+type _ai1 = Assert<Eq<AiProvidersData[number]["providerId"], string>>;
+
+type AiUsageReq = InferRequestType<C["api"]["ai"]["usage"]["calls"]["$get"]>;
+type _ai2 = Assert<Eq<keyof AiUsageReq["query"] & "page", "page">>;
+type AiUsageData = InferResponseType<
+  C["api"]["ai"]["usage"]["calls"]["$get"],
+  200
+>["data"];
+type _ai3 = Assert<
+  "succeeded" extends AiUsageData["items"][number]["result"] ? true : false
+>;
+
+type AiConversationReq = InferRequestType<
+  C["api"]["ai"]["conversations"][":conversationId"]["$get"]
+>;
+type _ai4 = Assert<Eq<AiConversationReq["param"], { conversationId: string }>>;
+type AiConversationData = InferResponseType<
+  C["api"]["ai"]["conversations"][":conversationId"]["$get"],
+  200
+>["data"];
+type _ai5 = Assert<
+  "assistant" extends AiConversationData["messages"][number]["role"]
+    ? true
+    : false
+>;
+
+type SystemPromptReq = InferRequestType<
+  C["api"]["ai"]["system-prompts"][":id"]["$put"]
+>;
+type _ai6 = Assert<Eq<SystemPromptReq["param"], { id: string }>>;
+type SystemPromptData = InferResponseType<
+  C["api"]["ai"]["system-prompts"][":id"]["$put"],
+  200
+>["data"];
+type _ai7 = Assert<Eq<SystemPromptData["content"], string>>;
+
+type AiSkillReq = InferRequestType<C["api"]["ai"]["skills"][":id"]["$put"]>;
+type _ai8 = Assert<Eq<AiSkillReq["param"], { id: string }>>;
+type _ai9 = Assert<Eq<keyof AiSkillReq["json"] & "enabled", "enabled">>;
+type AiSkillData = InferResponseType<
+  C["api"]["ai"]["skills"][":id"]["$put"],
+  200
+>["data"];
+type _ai10 = Assert<Eq<AiSkillData["content"], string>>;
+
+// ---- 4. 特殊接口保持原样：不伪造 JSON schema ----
 // POST /api/files 在 AppType 中（createRoute），但 form 是 File 任意对象
 type UploadReq = InferRequestType<C["api"]["files"]["$post"]>;
 type _s1 = Assert<Eq<keyof UploadReq["form"] & "file", "file">>;
@@ -218,5 +268,15 @@ export type RpcTypeProbePass = [
   _h12,
   _h13,
   _h14,
+  _ai1,
+  _ai2,
+  _ai3,
+  _ai4,
+  _ai5,
+  _ai6,
+  _ai7,
+  _ai8,
+  _ai9,
+  _ai10,
   _s1,
 ];

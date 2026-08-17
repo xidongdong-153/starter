@@ -1,0 +1,18 @@
+%%{init: {"theme": "dark"}}%%
+flowchart LR
+  Config["createAiConfigurationRoute"] --> Root["createAiRoute<br/>显式链式 .route()"]
+  Conversation["createAiConversationRoute"] --> Root
+  Prompt["createAiPromptRoute"] --> Root
+  Skill["createAiSkillRoute"] --> Root
+  Usage["createAiUsageAuditRoute"] --> Root
+
+  Root --> Merge["Hono MergeSchemaPath"]
+  Merge --> Routes["ReturnType createRoutes"]
+  Routes --> Rpc["ApiRpcType / AppType"]
+  Rpc --> Admin["Admin hc AppType"]
+
+  OpenAPI["现有 createRoute 定义"] --> Config
+  OpenAPI --> Conversation
+  OpenAPI --> Prompt
+  OpenAPI --> Skill
+  OpenAPI --> Usage

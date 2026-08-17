@@ -24,6 +24,24 @@ apps/api/src/modules/profile/
 └── profile.service.ts
 ```
 
+复杂业务模块可以在一级模块目录内按业务子域分目录。子目录使用单数业务名称，文件使用 `<subdomain>.<layer>.ts`；每个有数据访问的子域继续按 `route -> service -> repository` 组织，需要 DTO 转换时保留同子域 presenter。不要建立跨子域的 `services/`、`repositories/` 或 `presenters/` 横向目录。一级模块根路由负责共享依赖装配，并用显式链式 `.route()` 组合子路由；子路由不自行创建 runtime。模块公共 schema 可以留在根目录，避免跨子域 relations 引入循环依赖。
+
+AI 模块采用以下子域目录：
+
+```text
+apps/api/src/modules/ai/
+├── ai.route.ts
+├── ai.schema.ts
+├── configuration/
+├── conversation/
+├── prompt/
+├── skill/
+├── tool/
+└── usage-audit/
+```
+
+`routes/index.ts` 仍只挂载 `createAiRoute(runtime)`。AI 根路由显式组合 configuration、usage-audit、conversation、prompt 和 skill 子路由；tool 目录只放工具注册、编排和测试工具。
+
 业务模块通过 `routes/index.ts` 注册，不要在 `create-app.ts` 里直接写业务 handler。`profile` 和 `files` 的 route 在创建 service 时注入 runtime 依赖，便于测试替换数据库和文件目录。
 
 ## 导入和边界

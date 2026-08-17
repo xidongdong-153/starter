@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 route、middleware、响应、测试和仓库质量命令。"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"逐项检查 AI API、SSE、会话、工具、审计和数据库行为没有变化。"}
+{"file":".trellis/spec/api/frontend/type-safety.md","reason":"检查拆分子路由后 Hono RPC 与客户端 AppType 仍完整。"}
+{"file":".trellis/tasks/08-17-refactor-api-ai-module-structure/research/current-structure.md","reason":"对照重构前文件、operation 和 import 基线检查遗漏。"}

@@ -12,14 +12,14 @@ import {
   aiProviderConfigs,
   aiToolExecutions,
 } from "@api/infra/db/schema/index.js";
-import { createAiToolOrchestrator } from "@api/modules/ai/ai-tool-orchestrator.js";
-import { createAiToolRegistry } from "@api/modules/ai/ai-tool-registry.js";
-import { createTestAiTools } from "@api/modules/ai/test-tools.js";
-import { createAiUsageAuditRepository } from "@api/modules/ai/ai-usage-audit.repository.js";
+import { createAiToolOrchestrator } from "@api/modules/ai/tool/tool-orchestrator.js";
+import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import { createTestAiTools } from "@api/modules/ai/tool/test-tools.js";
+import { createAiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
 import {
   createAiInvocationRunner,
   createAiUsageAuditService,
-} from "@api/modules/ai/ai-usage-audit.service.js";
+} from "@api/modules/ai/usage-audit/usage-audit.service.js";
 
 import { createTestApp, readSuccess, register } from "./helpers.js";
 

@@ -21,21 +21,21 @@ import { AiGatewayError } from "@api/infra/ai/index.js";
 import { generateId } from "@api/shared/id.js";
 import { AppError } from "@api/shared/app-error.js";
 
-import type { AiInvocationRunner } from "./ai-usage-audit.service.js";
-import type { AiToolOrchestrator } from "./ai-tool-orchestrator.js";
+import type { AiInvocationRunner } from "../usage-audit/usage-audit.service.js";
+import type { AiToolOrchestrator } from "../tool/tool-orchestrator.js";
 import type {
   AiConversationMessageRecord,
   AiGenerationRecord,
   createAiConversationRepository,
-} from "./ai-conversation.repository.js";
+} from "./conversation.repository.js";
 import {
   serializeContentBlocks,
   toConversationDetail,
   toConversationGeneration,
   toConversationMessage,
   toConversationSummary,
-} from "./ai-conversation.presenter.js";
-import { appendSkillDescriptions } from "./ai-skill-tools.js";
+} from "./conversation.presenter.js";
+import { appendSkillDescriptions } from "../skill/skill-tools.js";
 
 export const MAX_CONTEXT_MESSAGES = 50;
 export const MAX_CONTEXT_CHARS = 100_000;
