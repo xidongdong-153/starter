@@ -1,0 +1,10 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "检查 API 测试、RPC、OpenAPI、SSE 和质量门"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "复核 Pi 接入、审计、取消和事件行为"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "复核双数据库归属、migration 和测试隔离"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "复核 Admin 与用户资源隔离"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "复核公开 schema、DTO 和类型边界"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "复核端到端 Run、恢复和错误链"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "核对实现没有依赖 Pi 未完成的 AgentHarness"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "复核 Admin 页面、交互测试和质量门"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "复核旧 Conversation 类型已删除且新 contracts 完整接入"}
