@@ -1,7 +1,20 @@
 import type { PromptTemplate } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
-import { App, Button, Form, Input, InputNumber, Modal, Popconfirm, Space, Switch, Table, Typography } from 'antd'
+import {
+  App,
+  Button,
+  Form,
+  Input,
+  InputNumber,
+  Modal,
+  Popconfirm,
+  Space,
+  Switch,
+  Table,
+  Tooltip,
+  Typography,
+} from 'antd'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -69,7 +82,7 @@ export function PromptTemplates() {
       }
       setModalOpen(false)
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t('common.saveFailed'))
+      message.error(error instanceof Error ? error.message : t('ai.promptTemplates.saveFailed'))
     }
   }
 
@@ -78,7 +91,7 @@ export function PromptTemplates() {
       await deleteTemplate.mutateAsync(template.id)
       message.success(t('ai.promptTemplates.deleteSuccess'))
     } catch (error) {
-      message.error(error instanceof Error ? error.message : t('common.deleteFailed'))
+      message.error(error instanceof Error ? error.message : t('ai.promptTemplates.deleteFailed'))
     }
   }
 
@@ -86,12 +99,13 @@ export function PromptTemplates() {
     {
       title: t('ai.promptTemplates.sortOrder'),
       dataIndex: 'sortOrder',
-      width: 90,
+      width: 80,
       render: (sortOrder: number) => <Typography.Text type="secondary">{sortOrder}</Typography.Text>,
     },
     {
       title: t('ai.promptTemplates.name'),
       dataIndex: 'name',
+      width: 180,
       render: (name: string) => <Typography.Text strong>{name}</Typography.Text>,
     },
     {
@@ -109,12 +123,12 @@ export function PromptTemplates() {
     {
       title: t('ai.promptTemplates.enabled'),
       dataIndex: 'enabled',
-      width: 80,
+      width: 90,
       render: (enabled: boolean, record) => (
         <Switch
           checked={enabled}
-          checkedChildren={t('common.on')}
-          unCheckedChildren={t('common.off')}
+          checkedChildren={t('ai.promptTemplates.on')}
+          unCheckedChildren={t('ai.promptTemplates.off')}
           onChange={(checked) => {
             void updateTemplate.mutateAsync({ id: record.id, values: { enabled: checked } })
           }}
@@ -122,21 +136,29 @@ export function PromptTemplates() {
       ),
     },
     {
-      title: t('common.actions'),
+      title: t('ai.promptTemplates.actions'),
       key: 'actions',
-      width: 120,
+      width: 130,
+      fixed: 'right',
       render: (_, record) => (
         <Space size="small">
           <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => openEdit(record)}>
-            {t('common.edit')}
+            {t('ai.promptTemplates.edit')}
           </Button>
           <Popconfirm
             title={t('ai.promptTemplates.deleteConfirm')}
             onConfirm={() => remove(record)}
-            okText={t('common.confirm')}
-            cancelText={t('common.cancel')}
+            okText={t('ai.promptTemplates.confirm')}
+            cancelText={t('ai.promptTemplates.cancel')}
           >
-            <Button size="small" danger icon={<Trash2 className="size-3.5" />} />
+            <Tooltip title={t('ai.promptTemplates.delete')}>
+              <Button
+                size="small"
+                danger
+                aria-label={t('ai.promptTemplates.delete')}
+                icon={<Trash2 className="size-3.5" />}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -147,7 +169,7 @@ export function PromptTemplates() {
     <div className="space-y-4">
       <AdminPageHeader
         title={t('menu.aiPromptTemplates')}
-        description={t('ai.promptTemplates.description')}
+        description={t('ai.promptTemplates.pageDescription')}
         actions={
           <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
             {t('ai.promptTemplates.create')}
@@ -160,14 +182,16 @@ export function PromptTemplates() {
         dataSource={templates}
         loading={templatesQuery.isLoading}
         pagination={false}
+        scroll={{ x: 800 }}
       />
       <Modal
         title={editing ? t('ai.promptTemplates.edit') : t('ai.promptTemplates.create')}
         open={modalOpen}
         onOk={submit}
+        confirmLoading={createTemplate.isPending || updateTemplate.isPending}
         onCancel={() => setModalOpen(false)}
-        okText={t('common.save')}
-        cancelText={t('common.cancel')}
+        okText={t('ai.promptTemplates.save')}
+        cancelText={t('ai.promptTemplates.cancel')}
         destroyOnHidden
       >
         <Form form={form} layout="vertical" initialValues={{ enabled: true, sortOrder: 0 }}>
