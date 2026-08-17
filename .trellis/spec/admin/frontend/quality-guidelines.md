@@ -53,6 +53,15 @@ pnpm --filter @starter/admin test
 - 图标按钮要有 `aria-label` 或 Tooltip；移动菜单打开时锁定 body 滚动、聚焦首个链接并支持 Escape 关闭，参见 `layout/atoms/MobileMenuButton.tsx` 和 `layout/components/mobile-drawer/MobileDrawer.tsx`。
 - 主题和语言切换不能只改变视觉状态，还要更新 `data-theme`、Ant Design locale 或 i18n 实例。
 
+## AI 管理页面验证规则
+
+- 页面说明、表格列标题和表单字段标签使用不同的 i18n key；页面说明不能复用为“描述”“名称”等字段标题。
+- 新增 `t('...')` key 后，在 `zh.ts` 和 `en.ts` 中分别检查真实 key；提交空表单时不能显示原始 key。
+- 图标按钮必须有 `aria-label` 或 `Tooltip`；仅有垃圾桶、复制或关闭图标的按钮不能依赖图标猜测用途。
+- 表格行通过 `onClick` 打开详情时，同时提供可聚焦的按钮或键盘操作；只设置 `cursor-pointer` 不算键盘可用。
+- 切换语言时同时更新 `document.documentElement.lang`，并检查页面可见文案和 HTML 语言属性一致。
+- 发送消息的键盘操作和点击按钮必须有相同结果；发送后输入值、字数统计和焦点状态都要重新检查。
+
 ## 变更后的检查重点
 
 新增 API query 时确认 query key 唯一、mutation 成功后的 cache 更新正确；新增路由时确认登录守卫、标签栏元数据和移动端导航都能得到该路由；新增表单时确认提交值经过 schema 对应的转换。
