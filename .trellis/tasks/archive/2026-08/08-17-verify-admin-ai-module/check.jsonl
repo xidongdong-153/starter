@@ -1,0 +1,6 @@
+{"file":".trellis/spec/admin/frontend/index.md","reason":"检查真实浏览器验证覆盖页面 loading、empty、error、mutation pending、路由权限和响应式布局。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"检查 API 请求路径、状态码、错误 code、权限边界、SSE 和现有测试结果。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"检查前后端 DTO、统一响应 envelope、RPC 客户端和 SSE 消费是否一致。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"检查 Admin 页面展示的数据字段和客户端使用的共享契约是否一致。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查页面操作到 API、服务、数据库和 Provider 的数据路径。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查验证中发现的重复请求、重复文案或状态处理是否属于现有约定。"}

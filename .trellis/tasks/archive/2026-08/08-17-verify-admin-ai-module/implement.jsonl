@@ -1,0 +1,6 @@
+{"file":".trellis/spec/admin/frontend/index.md","reason":"验证 Admin AI 页面、路由、请求层和交互状态时使用的前端规范入口。"}
+{"file":".trellis/spec/api/backend/index.md","reason":"核对 AI API 路由、权限、错误响应、SSE 和 smoke test 的后端验证边界。"}
+{"file":".trellis/spec/api/frontend/index.md","reason":"核对 API 对 Admin 的 JSON DTO、RPC 和客户端消费边界。"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"核对浏览器使用 AI DTO、错误 code 和运行时契约的检查范围。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"本任务同时观察页面、客户端请求、API 服务和数据库，使用跨层检查清单。"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"验证页面和请求层是否存在重复调用或不一致处理时使用共用代码检查清单。"}
