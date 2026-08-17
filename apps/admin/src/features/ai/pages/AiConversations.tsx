@@ -741,7 +741,7 @@ export function AiConversations() {
   const handleInputKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
       event.preventDefault()
-      sendMessage()
+      sendMessage(event.currentTarget.value)
     }
   }
 

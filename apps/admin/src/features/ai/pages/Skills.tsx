@@ -1,7 +1,7 @@
 import type { AiSkillSummary } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
-import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Typography } from 'antd'
+import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tooltip, Typography } from 'antd'
 import { Pencil, Plus, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -100,7 +100,7 @@ export function Skills() {
       render: (name: string) => <Typography.Text strong>{name}</Typography.Text>,
     },
     {
-      title: t('ai.skills.description'),
+      title: t('ai.skills.descriptionLabel'),
       dataIndex: 'description',
       ellipsis: true,
       render: (description: string) => <Typography.Text type="secondary">{description}</Typography.Text>,
@@ -135,7 +135,9 @@ export function Skills() {
             okText={t('ai.skills.confirm')}
             cancelText={t('ai.skills.cancel')}
           >
-            <Button size="small" danger icon={<Trash2 className="size-3.5" />} />
+            <Tooltip title={t('ai.skills.delete')}>
+              <Button size="small" danger aria-label={t('ai.skills.delete')} icon={<Trash2 className="size-3.5" />} />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),
@@ -179,7 +181,7 @@ export function Skills() {
           </Form.Item>
           <Form.Item
             name="description"
-            label={t('ai.skills.description')}
+            label={t('ai.skills.descriptionLabel')}
             rules={[{ required: true, message: t('ai.skills.descriptionRequired') }]}
           >
             <Input maxLength={1024} showCount />

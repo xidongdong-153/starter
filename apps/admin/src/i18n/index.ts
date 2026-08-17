@@ -6,6 +6,12 @@ import zh from './locales/zh'
 
 const LANGUAGE_STORAGE_KEY = 'i18n-language'
 
+function updateDocumentLanguage(language: string) {
+  if (typeof document !== 'undefined') {
+    document.documentElement.lang = language === 'en' ? 'en' : 'zh-CN'
+  }
+}
+
 /**
  * 取初始语言：先看 localStorage，再看浏览器语言
  */
@@ -24,13 +30,15 @@ function getInitialLanguage(): string {
   return 'zh'
 }
 
+const initialLanguage = getInitialLanguage()
+
 void i18n.use(initReactI18next).init({
   debug: import.meta.env.DEV,
   fallbackLng: 'zh',
   interpolation: {
     escapeValue: false,
   },
-  lng: getInitialLanguage(),
+  lng: initialLanguage,
   resources: {
     en: {
       translation: en,
@@ -41,10 +49,13 @@ void i18n.use(initReactI18next).init({
   },
 })
 
+updateDocumentLanguage(initialLanguage)
+
 i18n.on('languageChanged', (lng) => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(LANGUAGE_STORAGE_KEY, lng)
   }
+  updateDocumentLanguage(lng)
 })
 
 export default i18n

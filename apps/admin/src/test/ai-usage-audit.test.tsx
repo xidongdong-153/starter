@@ -122,7 +122,7 @@ describe('ai usage audit page', () => {
     mocks.useAiUsageCallQuery.mockReturnValue({ data: detail, isLoading: false, error: null, refetch: vi.fn() })
     renderPage()
 
-    fireEvent.click(screen.getByText('gpt-4o'))
+    fireEvent.click(screen.getByRole('button', { name: '查看详情: request-1' }))
     await waitFor(() => expect(screen.getByText('模型调用详情')).toBeTruthy())
     expect(screen.getByText('lookup')).toBeTruthy()
   })

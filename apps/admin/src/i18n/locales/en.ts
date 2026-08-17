@@ -224,6 +224,7 @@ export default {
         tools: 'Tool executions',
         noTools: 'No tool executions',
       },
+      viewDetail: 'View detail',
     },
     preference: {
       clear: 'Clear personal default',
@@ -342,6 +343,7 @@ export default {
       create: 'New system prompt',
       createSuccess: 'System prompt created',
       deleteConfirm: 'Delete this system prompt?',
+      delete: 'Delete',
       deleteFailed: 'Delete failed',
       deleteSuccess: 'System prompt deleted',
       description:
@@ -394,10 +396,13 @@ export default {
       create: 'New skill',
       createSuccess: 'Skill created',
       deleteConfirm: 'Delete this skill?',
+      delete: 'Delete',
       deleteFailed: 'Delete failed',
       deleteSuccess: 'Skill deleted',
       description:
         'Manage skills available to the model. Name and description are injected into the system prompt; full content is loaded on demand via the read_skill tool.',
+      descriptionLabel: 'Description',
+      descriptionRequired: 'Enter a skill description',
       edit: 'Edit',
       enabled: 'Enabled',
       name: 'Name',

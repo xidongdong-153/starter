@@ -115,6 +115,39 @@ describe('ai conversations page state', () => {
     expect(document.querySelector('.ant-spin')).toBeTruthy()
   })
 
+  it('快捷模板按 Enter 发送当前内容并清空输入框', async () => {
+    setConversationQueries({ ...summary, messages: [] })
+    const prompt = '请检查这段代码的边界条件'
+    mocks.usePromptTemplatesQuery.mockReturnValue({
+      data: [{ id: 'template-1', name: '代码审查', description: '检查代码', content: prompt, enabled: true }],
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    })
+    mocks.streamAiConversation.mockResolvedValue(undefined)
+
+    renderPage()
+
+    const input = await screen.findByRole('textbox')
+    fireEvent.click(screen.getByRole('button', { name: /代码审查/ }))
+    expect((input as HTMLTextAreaElement).value).toBe(prompt)
+
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: true })
+    expect(mocks.streamAiConversation).not.toHaveBeenCalled()
+    expect((input as HTMLTextAreaElement).value).toBe(prompt)
+
+    fireEvent.keyDown(input, { key: 'Enter', shiftKey: false })
+
+    await waitFor(() =>
+      expect(mocks.streamAiConversation).toHaveBeenCalledWith(
+        expect.objectContaining({ text: prompt }),
+        expect.any(AbortSignal),
+        expect.any(Function),
+      ),
+    )
+    await waitFor(() => expect((input as HTMLTextAreaElement).value).toBe(''))
+  })
+
   it('会话列表失败时显示错误和重试入口', () => {
     mocks.useAiConversationsQuery.mockReturnValue({
       data: undefined,

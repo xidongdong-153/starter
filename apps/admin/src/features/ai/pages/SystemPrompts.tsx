@@ -1,7 +1,7 @@
 import type { SystemPrompt } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
-import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Typography } from 'antd'
+import { App, Button, Form, Input, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, Typography } from 'antd'
 import { Globe, Pencil, Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -148,7 +148,14 @@ export function SystemPrompts() {
             okText={t('common.confirm')}
             cancelText={t('common.cancel')}
           >
-            <Button size="small" danger icon={<Trash2 className="size-3.5" />} />
+            <Tooltip title={t('ai.systemPrompts.delete')}>
+              <Button
+                size="small"
+                danger
+                aria-label={t('ai.systemPrompts.delete')}
+                icon={<Trash2 className="size-3.5" />}
+              />
+            </Tooltip>
           </Popconfirm>
         </Space>
       ),

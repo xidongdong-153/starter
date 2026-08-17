@@ -2,8 +2,8 @@ import type { AiModelCallAudit, AiModelCallAuditDetail, AiModelCallAuditQuery } 
 import type { TableProps } from 'antd'
 import type { Dayjs } from 'dayjs'
 
-import { Alert, Button, DatePicker, Drawer, Form, Input, Select, Table, Tag, Typography } from 'antd'
-import { RotateCcw, Search } from 'lucide-react'
+import { Alert, Button, DatePicker, Drawer, Form, Input, Select, Table, Tag, Tooltip, Typography } from 'antd'
+import { Eye, RotateCcw, Search } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -96,6 +96,23 @@ export function AiUsageAudit() {
         <Typography.Text copyable ellipsis className="max-w-52 text-xs">
           {item.requestId}
         </Typography.Text>
+      ),
+    },
+    {
+      key: 'actions',
+      title: t('common.actions'),
+      width: 72,
+      fixed: 'right',
+      render: (_, item) => (
+        <Tooltip title={t('ai.usage.viewDetail')}>
+          <Button
+            type="text"
+            size="small"
+            aria-label={`${t('ai.usage.viewDetail')}: ${item.requestId}`}
+            icon={<Eye className="size-4" />}
+            onClick={() => setSelectedCallId(item.id)}
+          />
+        </Tooltip>
       ),
     },
   ]
