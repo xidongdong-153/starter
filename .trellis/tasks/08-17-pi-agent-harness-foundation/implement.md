@@ -3,12 +3,13 @@
 ## 当前状态
 
 - 父任务处于 `planning`。
-- 当前进度为 `3/8 done`。
+- 当前进度为 `5/8 done`。
 - S1 `08-18-pi-session-storage-foundation` 已完成并归档。
 - S2 `08-18-agent-harness-contracts-schema` 已完成并归档。
 - S3 `08-18-agent-definition-management` 已完成并归档。
 - S4 `08-18-pi-agent-execution-core` 已完成、检查并归档，提交为 `f72c2e3`。
-- S5 至 S8 仍处于 `planning`，均未启动。
+- S5 `08-18-agent-session-api` 已完成、检查并归档，提交为 `81ce2fb`（实现）/ `164daff`（归档）。
+- S6 至 S8 仍处于 `planning`，均未启动。
 - 旧 Conversation runtime 继续临时保留。
 
 ## 父任务职责
@@ -43,10 +44,12 @@ S4 实现提交为 `7d8b9fe`，归档提交为 `f72c2e3`。
 
 ### 3. 完成 Session 与 Run API
 
-- [ ] 评审并批准 S5 `08-18-agent-session-api`。
-- [ ] 启动、实施、检查并归档 S5。
-- [ ] 评审并批准 S6 `08-18-agent-run-api`。
+- [x] 评审并批准 S5 `08-18-agent-session-api`。
+- [x] 启动、实施、检查并归档 S5。
+- [x] 评审并批准 S6 `08-18-agent-run-api`。
 - [ ] 启动、实施、检查并归档 S6。
+
+S5 实现提交为 `81ce2fb`，归档提交为 `164daff`。S5 的 transcript runId 挂载约定已写入 S6 的 `prd.md` 备注。
 
 检查点：新 Harness API 可以独立完成 Session 创建、Run、transcript、abort 和恢复；旧 Conversation API 仍通过原测试。
 
