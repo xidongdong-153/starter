@@ -1,7 +1,9 @@
+import { agentDefinitionConfigSchema } from "@starter/contracts";
 import { asc, desc, eq } from "drizzle-orm";
 
 import type { AppDatabase } from "@api/infra/db/client.js";
 import {
+  aiAgentDefinitions,
   aiConversations,
   aiPromptTemplates,
   aiSettings,
@@ -137,7 +139,24 @@ export function createAiPromptRepository(db: AppDatabase): AiPromptRepository {
         .where(eq(aiConversations.systemPromptId, id))
         .limit(1)
         .get();
-      return Boolean(conversationRef);
+      if (conversationRef) return true;
+
+      const agentDefinitions = db
+        .select({ configJson: aiAgentDefinitions.configJson })
+        .from(aiAgentDefinitions)
+        .all();
+      for (const agent of agentDefinitions) {
+        let configValue: unknown;
+        try {
+          configValue = JSON.parse(agent.configJson) as unknown;
+        } catch {
+          return true;
+        }
+        const config = agentDefinitionConfigSchema.safeParse(configValue);
+        if (!config.success) return true;
+        if (config.data.systemPromptId === id) return true;
+      }
+      return false;
     },
     setGlobalSystemPrompt(systemPromptId, actorId, now) {
       const values = {

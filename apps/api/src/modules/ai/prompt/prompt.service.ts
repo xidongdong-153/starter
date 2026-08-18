@@ -107,7 +107,7 @@ export function createAiPromptService(
       if (repository.isSystemPromptReferenced(id)) {
         throw new AppError(
           ApiErrorCodes.AI_PROMPT_REFERENCED,
-          "系统提示词已被全局默认或会话引用，不能删除",
+          "系统提示词已被全局默认、会话或 Agent 引用，不能删除",
           409,
         );
       }

@@ -9,6 +9,11 @@ import {
   createRequirePermission,
 } from "@api/modules/authorization/index.js";
 
+import {
+  createAiAgentDefinitionRepository,
+  createAiAgentDefinitionRoute,
+  createAiAgentDefinitionService,
+} from "./agent/index.js";
 import { createAiConfigurationRoute } from "./configuration/configuration.route.js";
 import { createAiRepository } from "./configuration/configuration.repository.js";
 import { createAiService } from "./configuration/configuration.service.js";
@@ -55,12 +60,13 @@ export function createAiRoute(runtime: AppRuntime) {
   );
   const authorizationRepository = createAuthorizationRepository(runtime.db);
   const skillRepository = createAiSkillRepository(runtime.db);
+  const toolRegistry = createAiToolRegistry([
+    ...runtime.aiTools.list(),
+    createReadSkillTool(skillRepository),
+  ]);
   const toolOrchestrator = createAiToolOrchestrator({
     invocationRunner,
-    registry: createAiToolRegistry([
-      ...runtime.aiTools.list(),
-      createReadSkillTool(skillRepository),
-    ]),
+    registry: toolRegistry,
     audit: usageAuditService,
     hasPermission: authorizationRepository.hasPermission,
     logger: runtime.logger.child({ module: "ai-tool-orchestrator" }),
@@ -76,6 +82,13 @@ export function createAiRoute(runtime: AppRuntime) {
     createAiPromptRepository(runtime.db),
   );
   const skillService = createAiSkillService(skillRepository);
+  const agentDefinitionService = createAiAgentDefinitionService({
+    repository: createAiAgentDefinitionRepository(runtime.db),
+    resolveModel: configurationService.resolveAgentModel,
+    promptService,
+    skillRepository,
+    toolRegistry,
+  });
   const conversationService = createAiConversationService(
     createAiConversationRepository(runtime.db),
     runtime.aiGateway,
@@ -95,6 +108,15 @@ export function createAiRoute(runtime: AppRuntime) {
   );
 
   return new OpenAPIHono<HonoEnv>()
+    .route(
+      "/",
+      createAiAgentDefinitionRoute({
+        service: agentDefinitionService,
+        requireAuth,
+        requireRead,
+        requireManage,
+      }),
+    )
     .route(
       "/",
       createAiConfigurationRoute({

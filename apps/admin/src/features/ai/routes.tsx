@@ -15,6 +15,16 @@ export const aiRoutes: AdminRouteRecord[] = [
     title: 'menu.aiChat',
   },
   {
+    component: lazyRouteComponent(() => import('./pages/Agents'), 'Agents'),
+    icon: Bot,
+    id: 'ai.agents',
+    layout: { contentWidth: 'full' },
+    menu: { group: 'ai', order: 6 },
+    path: '/ai/agents',
+    permission: PermissionKeys.AI_CONFIG_READ,
+    title: 'menu.aiAgents',
+  },
+  {
     component: lazyRouteComponent(() => import('./pages/SystemPrompts'), 'SystemPrompts'),
     icon: ScrollText,
     id: 'ai.systemPrompts',

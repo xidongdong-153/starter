@@ -356,6 +356,12 @@ export const aiSkillSchema = aiSkillSummarySchema.extend({
 })
 export type AiSkill = z.infer<typeof aiSkillSchema>
 
+export const aiToolSummarySchema = z.strictObject({
+  name: z.string().trim().min(1).max(64),
+  description: z.string().min(1).max(1000),
+})
+export type AiToolSummary = z.infer<typeof aiToolSummarySchema>
+
 export const createAiSkillSchema = z.object({
   name: aiPromptNameSchema,
   description: aiSkillDescriptionSchema,

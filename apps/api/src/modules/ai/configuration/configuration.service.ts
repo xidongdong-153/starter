@@ -596,12 +596,18 @@ export function createAiService(
       : selectModelForUser(userId);
   }
 
+  async function resolveAgentModel(model: AiModelRef): Promise<AiModelRef> {
+    await runtime.ensureReady();
+    return requireExplicitModel(model);
+  }
+
   function isConversationModelAllowed(model: AiModelRef): boolean {
     return isModelAllowed(model);
   }
 
   return {
     resolveConversationModel,
+    resolveAgentModel,
     isConversationModelAllowed,
     listProviders,
     updateProviderConfig,

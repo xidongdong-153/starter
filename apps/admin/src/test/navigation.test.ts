@@ -59,6 +59,7 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).toContain('/ai/chat')
     expect(keys).toContain('/ai/settings')
     expect(keys).toContain('/ai/providers')
+    expect(keys).toContain('/ai/agents')
     expect(keys).not.toContain('/settings/authorization')
   })
 

@@ -3,7 +3,7 @@
   "name": "agent-definition-management",
   "title": "AgentDefinition 管理",
   "description": "实现 AgentDefinition 的配置解析、权限、API、Admin 管理页面和测试",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api,contracts,admin",
   "package": "api",

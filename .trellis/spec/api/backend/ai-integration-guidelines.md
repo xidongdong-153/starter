@@ -364,3 +364,85 @@ if (event.type === 'done' && event.reason === 'toolUse') emitVerifiedCalls(event
 错误写法先按裸 conversation/message ID 查询，再在 service 判断 owner，或 stop 202 后立刻中断原 SSE 并自行标记 aborted。
 
 正确写法把 owner 条件下沉到 repository，通过 active generation CAS 和条件终态更新保护并发；Admin 使用 generation token 隔离旧流，并让原 SSE 接收服务端唯一终态。
+
+## 8. AgentDefinition 管理
+
+### 8.1 Scope / Trigger
+
+修改 `apps/api/src/modules/ai/agent/`、Agent 管理接口、Agent 配置解析、System Prompt 引用检查或 Admin Agent 页面时，按本节执行。AgentDefinition 只保存资源引用和执行参数，不启动 AgentRun。
+
+### 8.2 Signatures
+
+```text
+GET   /api/ai/agents?page=1&pageSize=20
+GET   /api/ai/agents/{agentId}
+GET   /api/ai/admin/agents?page=1&pageSize=20
+GET   /api/ai/admin/agents/{agentId}
+POST  /api/ai/admin/agents
+PATCH /api/ai/admin/agents/{agentId}
+PATCH /api/ai/admin/agents/{agentId}/status
+GET   /api/ai/admin/tools
+```
+
+公开接口只使用 `requireAuth`，只查询 `enabled` Agent 并返回 `AgentDefinitionSummary`。Admin 读接口需要 `ai:config:read`，写接口需要 `ai:config:manage`。Agent 子域按 `route -> service -> repository -> presenter` 组织，根 AI Route 显式装配共享模型、Prompt、Skill 和 Tool Registry。
+
+### 8.3 Contracts
+
+- Config 使用 `agentDefinitionConfigSchema` 的固定字段：`schemaVersion`、`model`、`systemPromptId`、`skillIds`、`toolNames`、`thinkingLevel`、`maxTurns`。
+- Admin 返回 `AgentDefinitionDetail`，公开返回 `AgentDefinitionSummary`；两者都不包含 `createdBy`、`updatedBy`、Provider credential、Prompt/Skill 内容、Tool schema 或 handler。
+- `ai_agent_definitions.config_json` 写入前必须经过 schema 解析。比较执行配置时按结构比较，并把 `skillIds`、`toolNames` 当作 allowlist 规范化排序；不能用原始 JSON 字符串比较。
+- 创建时 `revision=1`。模型、System Prompt、Skill、Tool、thinking level 或 max turns 变化使 revision 加 1；只改 name/description 或 status 不加 revision。status 变化只更新 `updatedAt`。
+- Agent 更新同时按当前 `revision` 和 `status` 条件写入；检测到并发变化时重新读取并重新校验，避免状态变化覆盖执行配置。
+- `/api/ai/admin/tools` 只返回 `{ name, description }`，不能把 `inputSchema` 或执行函数带到客户端。
+
+### 8.4 Validation & Error Matrix
+
+| 条件 | 结果 |
+| --- | --- |
+| Agent 名称重复 | 409 `AI.AGENT_NAME_CONFLICT` |
+| Admin 引用未知、停用或未允许的模型 | 400 `AI.AGENT_CONFIG_INVALID` |
+| System Prompt 不存在或未启用 | 400 `AI.AGENT_CONFIG_INVALID` |
+| Skill 不存在或未启用 | 400 `AI.AGENT_CONFIG_INVALID` |
+| Tool name 不在 Registry | 400 `AI.AGENT_CONFIG_INVALID` |
+| draft 缺少 model 或 systemPrompt | 可以保存；启用时返回 400 `AI.AGENT_CONFIG_INVALID` |
+| 普通用户读取 draft/disabled Agent | 404 `COMMON.NOT_FOUND`，列表不返回 |
+| 无 session | 401 `AUTH.UNAUTHENTICATED` |
+| 已登录但缺少 `ai:config:read` 或 `ai:config:manage` | 403 `AUTH.FORBIDDEN` |
+| Admin 读取损坏的 config JSON | 500 `SYSTEM.INTERNAL_ERROR`，不返回原始 JSON |
+| 删除被 AgentDefinition 引用的 System Prompt | 409 `AI.PROMPT_REFERENCED`；检查必须同时覆盖 global、Conversation 和 Agent config |
+
+引用检查读取 Agent config 后用 `agentDefinitionConfigSchema.safeParse()` 判断 `systemPromptId`，不能使用 SQL `LIKE` 搜索 UUID。解析失败时禁止删除，避免损坏配置绕过引用保护。
+
+### 8.5 Good / Base / Bad Cases
+
+- Good：Service 用现有 configuration service 的用户无关模型策略解析模型，使用现有 Prompt/Skill repository 和 Tool Registry，不复制资源内容。
+- Good：Admin Agent 页面使用独立 `agentQueryKeys`，模型、Prompt、Skill 和 Tool 选项来自查询结果；表单只提交引用和执行参数。
+- Base：draft 可以先保存默认空配置；启用前再次校验所有资源当前仍可用。
+- Bad：把 Provider secret、Prompt content、Skill content 或 Tool schema 序列化进 Agent config 或响应。
+- Bad：只在 Agent 创建时校验引用，后续 Run/resolve 不再次检查当前 Provider、Prompt、Skill 和 Tool 状态。
+
+### 8.6 Tests Required
+
+- API smoke test 覆盖 Agent CRUD、分页、重复名称、revision 规则、状态变化、公开/Admin DTO 字段和 secret marker 过滤。
+- API smoke test 覆盖模型、Prompt、Skill、Tool 无效或停用引用，以及启用 draft 的失败分支。
+- API smoke test 覆盖 `ai:config:read` 和 `ai:config:manage` 的 401、403、2xx 分支。
+- Prompt smoke test 覆盖旧 Conversation 和 AgentDefinition 两种引用都阻止删除；损坏 Agent config 不能绕过保护。
+- Admin 页面测试覆盖列表 loading/empty/error、资源选项失败重试、创建/编辑提交、status pending 和缺少 manage 权限时隐藏写操作。
+- 运行 `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build` 和 `pnpm --filter @starter/api db:check`。
+
+### 8.7 Wrong vs Correct
+
+错误写法把 Agent config 当成资源快照，并用字符串搜索 Prompt 引用：
+
+```ts
+configJson: JSON.stringify({ systemPrompt: prompt.content, apiKey: provider.secret })
+const referenced = db.select().where(sql`config_json LIKE ${promptId}`)
+```
+
+正确写法只保存引用，读取时解析固定 schema，并通过现有资源边界做当前状态校验：
+
+```ts
+const config = agentDefinitionConfigSchema.parse(JSON.parse(record.configJson))
+if (config.model) await modelService.resolveAgentModel(config.model)
+if (config.systemPromptId) promptService.assertSystemPromptAvailable(config.systemPromptId)
+```

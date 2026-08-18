@@ -104,6 +104,15 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
       document.paths["/api/users/{userId}"]?.get?.responses?.["404"],
     ).toBeDefined();
     expect(document.paths["/api/ai/admin/providers"]?.get).toBeDefined();
+    expect(document.paths["/api/ai/admin/agents"]?.get).toBeDefined();
+    expect(document.paths["/api/ai/admin/agents"]?.post).toBeDefined();
+    expect(
+      document.paths["/api/ai/admin/agents/{agentId}"]?.patch?.responses?.[
+        "409"
+      ],
+    ).toBeDefined();
+    expect(document.paths["/api/ai/agents"]?.get).toBeDefined();
+    expect(document.paths["/api/ai/admin/tools"]?.get).toBeDefined();
     expect(document.paths["/api/ai/usage/calls"]?.get).toBeDefined();
     expect(
       document.paths["/api/ai/conversations/{conversationId}"]?.get,
