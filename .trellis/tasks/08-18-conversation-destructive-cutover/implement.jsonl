@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "删除 Conversation/generation 规则并改写为已验证的 Harness 规则"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "删除旧模块装配并保留新 agent/session/run 子域"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "执行 destructive migration 与数据核对"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "删除旧 contracts 并复核公开类型"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "删除旧页面并复核最终 Admin"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "复核 API、数据库和 Admin 最终切换"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核最终代码保留共享 Harness 契约和运行所有权"}

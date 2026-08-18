@@ -1,0 +1,9 @@
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "只复用 Provider、Gateway、Tool、secret、审计和取消规则；Conversation/generation 状态机不适用于新 Harness"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "实现 run route-service-repository 和 bootstrap 恢复边界"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "实现 Session 和 Run 归属"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "实现条件终态更新和跨库恢复"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "定义 busy、not active 和 interrupted 错误"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "直接使用 S2 的 Run、控制输入和 HarnessEvent schema"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查事件到持久化的完整链路"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "核对 writer lease、Session entries 和 Pi Agent controls 的公开能力"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "实现 Run Service 所有权、terminal 顺序、starter.run.v1 和恢复"}

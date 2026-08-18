@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核 OpenAPI、RPC 和 smoke tests"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "复核用户与 Admin 权限"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "复核管理页状态和测试"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "复核 contracts 到页面的类型边界"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "复核 Admin 路由、导航和操作权限"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核 Agent 字段、严格配置和无 secret DTO"}

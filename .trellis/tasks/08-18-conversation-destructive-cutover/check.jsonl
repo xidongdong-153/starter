@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核删除检查、测试和构建"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "复核数据删除范围与保留数据"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "复核旧类型清理和新协议"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "复核 Admin 不再引用旧 DTO"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "确认最终 runtime 仍使用已完成的 Pi 能力"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "复核规范已经删除旧 Conversation/generation 运行规则"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核最终 DTO、事件、terminal entry 和数据结构没有旧协议残留"}

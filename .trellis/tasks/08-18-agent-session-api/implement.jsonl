@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "实现 session route-service-repository-presenter 子域"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "实现双数据库补偿和测试隔离"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "实现 Session owner 访问控制"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "实现 OpenAPI、RPC 和 smoke tests"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "直接使用 S2 的 Session、transcript、lane 和 cursor schema"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 Pi transcript 到 DTO 的数据流"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "实现 transcript union、cursor 顺序和内部 entry 过滤"}

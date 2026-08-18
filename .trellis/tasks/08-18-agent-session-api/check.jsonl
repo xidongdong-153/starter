@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核 Session Route 和测试"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "复核补偿、orphan 和双数据库隔离"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "复核资源归属与 404 行为"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "复核 transcript DTO 使用共享 schema"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核四种 transcript item、cursor 和 starter.run.v1 过滤"}

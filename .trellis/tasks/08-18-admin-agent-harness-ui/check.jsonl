@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "复核页面、交互测试和质量门"}
+{"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "复核 transcript 与流式状态没有错误持久化"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "复核事件和 API 类型"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "复核路由和按钮权限"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核 reducer 覆盖全部事件分支且只使用公开 DTO"}

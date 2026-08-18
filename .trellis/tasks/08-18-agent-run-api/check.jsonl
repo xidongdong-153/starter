@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核 OpenAPI、RPC、SSE 和 smoke tests"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "只复核 Provider、Gateway、Tool、审计和取消规则，不套用 Conversation/generation 状态机"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "复核唯一终态和恢复"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "复核 Run owner 隔离"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "复核 SSE 和控制接口使用共享 schema"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "复核 writer lease、Session entries 和 controls 没有依赖未完成 API"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核 reserve、terminal entry、主库终态、event、release 的固定顺序"}

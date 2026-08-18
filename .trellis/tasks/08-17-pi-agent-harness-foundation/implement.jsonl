@@ -1,4 +1,3 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
 {"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "约束 Pi Gateway、Provider、Tool、SSE 和审计接入"}
 {"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "约束 Drizzle 主库、migration、JSON 字段和临时测试数据库"}
 {"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "约束 AI 子域、route-service-repository 和 infra 边界"}
@@ -8,6 +7,7 @@
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 contracts、route、service、adapter、持久化完整数据流"}
 {"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "优先复用 Pi 和现有 AI 模块，避免复制状态机"}
 {"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "Pi 可用能力、未完成 Harness、SQLite backend 和版本依据"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "S1-S7 共用 DTO、事件、terminal entry、所有权、错误码和数据库结构"}
 {"file": ".trellis/spec/admin/frontend/directory-structure.md", "reason": "约束 Admin AI API、query 和页面目录切换"}
 {"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "约束 Session、Run SSE 与 TanStack Query/UI 状态归属"}
 {"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "约束 Admin 使用新 Harness contracts 和 RPC 类型"}

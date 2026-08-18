@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "按 contracts 单入口和导出规则放置新 schema"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "新增跨端 Zod schema 与 DTO"}
+{"file": ".trellis/spec/contracts/backend/error-handling.md", "reason": "新增稳定 Harness 错误码"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "读取 API schema、migration 和跨层字段的开发前入口"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "按 AI schema 与模块目录规则增加 Drizzle 表"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "生成并验证增量 Drizzle migration"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查新旧协议并存期间的调用边界"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "逐字段实现 Harness DTO、事件、错误码和数据库结构"}

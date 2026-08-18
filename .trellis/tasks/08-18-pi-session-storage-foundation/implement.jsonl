@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "只复用 Provider、Gateway、secret、日志和审计规则；Conversation/generation 规则不适用于新 Harness"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "遵守 SQLite 初始化、关闭和测试隔离规则"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "按已核对的 Pi Session 公开能力实现"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "实现 starter.run.v1 CustomEntry 写入和查询接口"}

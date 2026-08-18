@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "复核 schema 测试和类型边界"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "复核 migration 数据保留与外键"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核 OpenAPI、RPC 和旧接口回归"}
+{"file": ".trellis/spec/contracts/backend/error-handling.md", "reason": "复核新错误码与统一失败响应兼容"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "逐项复核公开字段、union、终态约束和数据库定义"}

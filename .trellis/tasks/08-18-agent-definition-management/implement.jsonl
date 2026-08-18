@@ -1,0 +1,10 @@
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "只复用模型、Prompt、Skill、Tool、secret 和审计规则；Conversation/generation 规则不适用于新 Harness"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "实现 agent route-service-repository-presenter 子域"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "实现公开只读与 Admin 管理权限"}
+{"file": ".trellis/spec/contracts/backend/directory-structure.md", "reason": "直接使用 S2 导出的 Agent config 和 DTO"}
+{"file": ".trellis/spec/admin/frontend/component-guidelines.md", "reason": "实现 Agent 管理页和表单"}
+{"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "使用 TanStack Query 保存服务端状态"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "实现路由、导航和操作权限"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "表单和 API client 复用 contracts 类型"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 contracts、API 和 Admin 数据流"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "使用固定 Agent config、Summary/Detail DTO 和 revision 字段"}

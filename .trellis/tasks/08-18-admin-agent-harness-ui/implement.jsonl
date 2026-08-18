@@ -1,0 +1,7 @@
+{"file": ".trellis/spec/admin/frontend/component-guidelines.md", "reason": "实现 Agent Sessions 页面和交互控件"}
+{"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "划分 Query 状态、流式状态和局部 UI 状态"}
+{"file": ".trellis/spec/admin/frontend/hook-guidelines.md", "reason": "实现 Session 和 Run query hooks"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "只使用 contracts 的 HarnessEvent"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "实现 Agent Session 路由、导航和操作权限"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查 SSE、Run 状态和 transcript 恢复"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "按固定 event data、messageId、toolCallId 和 transcript union 实现 UI"}

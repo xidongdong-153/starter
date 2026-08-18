@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "复核 executor 与回归测试"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "复核模型、Tool、审计和取消"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "确认未复制 Pi 能力或调用未完成方法"}
+{"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "复核 Executor 不 reserve/release、不写 terminal entry 或 terminal event"}
