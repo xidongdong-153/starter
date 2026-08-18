@@ -14,6 +14,11 @@ import {
   createAiAgentDefinitionRoute,
   createAiAgentDefinitionService,
 } from "./agent/index.js";
+import {
+  createAiAgentSessionRepository,
+  createAiAgentSessionRoute,
+  createAiAgentSessionService,
+} from "./session/index.js";
 import { createAiConfigurationRoute } from "./configuration/configuration.route.js";
 import { createAiRepository } from "./configuration/configuration.repository.js";
 import { createAiService } from "./configuration/configuration.service.js";
@@ -89,6 +94,29 @@ export function createAiRoute(runtime: AppRuntime) {
     skillRepository,
     toolRegistry,
   });
+  const sessionService = createAiAgentSessionService({
+    repository: createAiAgentSessionRepository(runtime.db),
+    sessionStore: runtime.agentSessionStore,
+    logger: runtime.logger.child({ module: "ai-session" }),
+  });
+  void sessionService
+    .checkConsistency()
+    .then((report) => {
+      const orphanCount =
+        report.missingInPi.length + report.missingInMain.length;
+      if (orphanCount > 0) {
+        runtime.logger.warn(
+          {
+            missingInPiCount: report.missingInPi.length,
+            missingInMainCount: report.missingInMain.length,
+          },
+          "Agent Session 一致性检查发现孤儿记录",
+        );
+      }
+    })
+    .catch((error: unknown) => {
+      runtime.logger.error({ err: error }, "Agent Session 一致性检查失败");
+    });
   const conversationService = createAiConversationService(
     createAiConversationRepository(runtime.db),
     runtime.aiGateway,
@@ -108,6 +136,13 @@ export function createAiRoute(runtime: AppRuntime) {
   );
 
   return new OpenAPIHono<HonoEnv>()
+    .route(
+      "/",
+      createAiAgentSessionRoute({
+        service: sessionService,
+        requireAuth,
+      }),
+    )
     .route(
       "/",
       createAiAgentDefinitionRoute({

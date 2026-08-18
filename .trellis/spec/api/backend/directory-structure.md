@@ -36,6 +36,7 @@ apps/api/src/modules/ai/
 ├── configuration/
 ├── conversation/
 ├── prompt/
+├── session/
 ├── skill/
 ├── tool/
 └── usage-audit/

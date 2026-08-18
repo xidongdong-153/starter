@@ -68,6 +68,17 @@
 - [ ] 旧 Conversation 和 Tool runtime 保持通过。
 - [ ] 全仓质量门、测试、构建和数据库检查全部通过。
 
+## 备注：S5 转录 runId 挂载约定（S5 已定稿，S6 需落实写入侧）
+
+S5（`08-18-agent-session-api`）的 transcript item 中 `user_message`、`assistant_message`、`tool_activity` 的 `runId` 是 S2 契约必填 UUID，但 Pi 标准 message entry 没有 runId 槽位。已确认 Pi SQLite backend 对 message entry 做原样 JSON 持久化（`entryPayload` 剔除基础字段后全量 `stringify`，读回完整还原），因此 S6 在写入侧为 message 附加字段即可承载 runId，S5 不改 S2 契约。
+
+写入侧约定（本任务 S6 落实）：
+
+- assistant / user message：持久化时在 message 对象上附加 `runId` 字段（运行时多余字段，不影响 Pi 的 `buildSessionContext` / `convertToLlm`）。
+- toolResult message：在 `details`（`PiToolResultDetails`）中附加可选 `runId`，或同时在 message 上附加；S5 读取规则对两路都兼容。
+
+S5 读取规则（已实现，本任务不修改）：`message.runId`（UUID 校验）优先，其次 `message.details.runId`；两者都缺失时该 item 不投影并记录结构化日志（entry type + entry id + requestId）。因此 S6 写入的 message 不带可识别 runId 时，该 message 不会出现在 transcript 中。
+
 ## Out of Scope
 
 - 多进程 queue、Event broker 和跨节点 active Run 控制。

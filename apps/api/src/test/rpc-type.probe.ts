@@ -219,6 +219,19 @@ type AiSkillData = InferResponseType<
 >["data"];
 type _ai10 = Assert<Eq<AiSkillData["content"], string>>;
 
+type AiSessionCreateData = InferResponseType<
+  C["api"]["ai"]["sessions"]["$post"],
+  200
+>["data"];
+type _ai11 = Assert<Eq<AiSessionCreateData["title"], string>>;
+type _ai12 = Assert<Eq<AiSessionCreateData["defaultAgentId"], string | null>>;
+type AiSessionListReq = InferRequestType<C["api"]["ai"]["sessions"]["$get"]>;
+type _ai13 = Assert<Eq<keyof AiSessionListReq["query"] & "page", "page">>;
+type AiTranscriptReq = InferRequestType<
+  C["api"]["ai"]["sessions"][":sessionId"]["transcript"]["$get"]
+>;
+type _ai14 = Assert<Eq<AiTranscriptReq["param"], { sessionId: string }>>;
+
 // ---- 4. 特殊接口保持原样：不伪造 JSON schema ----
 // POST /api/files 在 AppType 中（createRoute），但 form 是 File 任意对象
 type UploadReq = InferRequestType<C["api"]["files"]["$post"]>;
@@ -278,5 +291,9 @@ export type RpcTypeProbePass = [
   _ai8,
   _ai9,
   _ai10,
+  _ai11,
+  _ai12,
+  _ai13,
+  _ai14,
   _s1,
 ];

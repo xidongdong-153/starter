@@ -3,7 +3,7 @@
   "name": "agent-session-api",
   "title": "AgentSession API",
   "description": "实现 AgentSession 业务索引、Pi Session 协调、transcript API、归属校验和恢复检查",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api,contracts",
   "package": "api",

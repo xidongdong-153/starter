@@ -10,31 +10,31 @@
 
 ### 1. Repository 与 Presenter
 
-- [ ] 实现按 owner 创建、列表、详情、更新和归档。
-- [ ] 默认排除 archived record。
-- [ ] 按共享契约实现 Pi transcript 到四分支公开 DTO 的中性投影，过滤 `starter.run.v1` 和未知 entry。
+- [x] 实现按 owner 创建、列表、详情、更新和归档。
+- [x] 默认排除 archived record。
+- [x] 按共享契约实现 Pi transcript 到四分支公开 DTO 的中性投影，过滤 `starter.run.v1` 和未知 entry。
 
 ### 2. Service
 
-- [ ] 验证 defaultAgentId。
-- [ ] 实现 Pi create -> 主库 insert -> 失败补偿。
-- [ ] 实现 owner 范围内的读取、修改和归档。
-- [ ] 实现 transcript lane 和 cursor 参数。
-- [ ] 实现只读 orphan 检查。
+- [x] 验证 defaultAgentId。
+- [x] 实现 Pi create -> 主库 insert -> 失败补偿。
+- [x] 实现 owner 范围内的读取、修改和归档。
+- [x] 实现 transcript lane 和 cursor 参数。
+- [x] 实现只读 orphan 检查。
 
 ### 3. Route
 
-- [ ] 增加六个 Session endpoint 和 OpenAPI schema。
-- [ ] 接入 Better Auth，用户 id 只来自 session。
-- [ ] 挂载到根 AI Route，更新 RPC type probe。
+- [x] 增加六个 Session endpoint 和 OpenAPI schema。
+- [x] 接入 Better Auth，用户 id 只来自 session。
+- [x] 挂载到根 AI Route，更新 RPC type probe。
 
 ### 4. 测试
 
-- [ ] 覆盖创建成功、主库失败补偿和补偿失败日志。
-- [ ] 覆盖 owner 隔离、404、分页、更新和幂等归档。
-- [ ] 覆盖 transcript lane、升序 cursor、limit、四种 item、`starter.run.v1`/未知 entry 过滤和内部字段过滤。
-- [ ] 覆盖两类 orphan 的只读报告。
-- [ ] 确认所有测试使用临时双数据库。
+- [x] 覆盖创建成功、主库失败补偿和补偿失败日志。
+- [x] 覆盖 owner 隔离、404、分页、更新和幂等归档。
+- [x] 覆盖 transcript lane、升序 cursor、limit、四种 item、`starter.run.v1`/未知 entry 过滤和内部字段过滤。
+- [x] 覆盖两类 orphan 的只读报告。
+- [x] 确认所有测试使用临时双数据库（`createTestApp` 同时建临时 `app.db` 和 `agent-sessions.db`）。
 
 ### 5. 共存回归与质量门
 

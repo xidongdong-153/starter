@@ -16,6 +16,7 @@ export interface AgentSessionStore {
   createSession: (options?: { id?: string }) => Promise<AgentSessionHandle>;
   openSession: (sessionId: string) => Promise<AgentSessionHandle>;
   deleteSession: (sessionId: string) => Promise<void>;
+  listSessions: () => Promise<string[]>;
   createLane: (options: {
     sessionId: string;
     lane: string;
@@ -147,6 +148,12 @@ export function createPiSessionStore(
 
     async deleteSession(sessionId) {
       await repository.delete(await metadataFor(sessionId));
+    },
+
+    async listSessions() {
+      return (await repository.list({ cwd: options.cwd })).map(
+        (item) => item.id,
+      );
     },
 
     async createLane({ sessionId, lane, at = null }) {

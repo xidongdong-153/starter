@@ -40,9 +40,18 @@ DELETE 写 `archivedAt`。默认列表排除已归档 Session；GET、PATCH 和 
 
 Presenter 接收 adapter 返回的中性 entry projection，不直接接收 `SessionEntry`。公开 union 固定区分 user message、assistant message、Tool activity 和 compaction system item；`starter.run.v1` 必须过滤，不投影为 transcript。S5 负责安全投影，S6 负责 Run identity entry 的写入和恢复测试。
 
+### 4.1 runId 读取规则（S5 定稿，S6 落实写入侧）
+
+S2 契约中 user/assistant/tool item 的 `runId` 为必填 UUID，但 Pi 标准 user/assistant message entry 没有 runId 槽位。已确认 Pi SQLite backend 对 message entry 做原样 JSON 持久化（`entryPayload` 剔除基础字段后全量 `stringify`），因此 S6 可在写入时给 message 附加字段承载 runId。
+
+- S5 投影读取顺序固定为：`message.runId`（UUID 校验）优先，其次 `message.details.runId`（toolResult 双通道兜底）。
+- 两者都缺失时，该 item 不投影并记录结构化日志（entry type、entry id、requestId），与契约 3.2「未识别 entry 跳过」同一范式；不输出 null、不编造 Run 归属。
+- compaction system item 的 `runId` 契约允许 null，直接 `null`。
+- S6 写入侧约定已写入 `08-18-agent-run-api/prd.md` 备注：assistant/user message 附加 `runId` 字段，toolResult 在 `details` 中附加可选 `runId`（两路 S5 都兼容）。
+
 ## 5. 一致性检查
 
-检查器分别列出主库 active Session ids 和 Pi repository metadata ids，计算：
+检查器分别列出主库全部 Session ids（含已归档，因为归档只写主库 `archivedAt`，Pi history 仍保留）和 Pi repository metadata ids，计算：
 
 - `missingInPi`
 - `missingInMain`
