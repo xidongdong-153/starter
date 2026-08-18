@@ -23,6 +23,7 @@ const envSchema = z.object({
   LOGS_DIR: z.string().optional(),
   PORT: z.coerce.number().int().positive().default(7788),
   DATABASE_PATH: z.string().default("./data/app.db"),
+  AGENT_SESSION_DATABASE_PATH: z.string().default("./data/agent-sessions.db"),
   FILES_DIR: z.string().default("./data/files"),
   AI_CREDENTIAL_ENCRYPTION_KEY: encryptionKeySchema,
   AI_REQUEST_TIMEOUT_MS: z.coerce

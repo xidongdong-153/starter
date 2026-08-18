@@ -23,7 +23,10 @@ function shutdown() {
   if (closing) return;
   closing = true;
   server.close((error) => {
-    runtime.database.sqlite.close();
+    void runtime.close().catch((closeError: unknown) => {
+      logger.error({ err: closeError }, "API 依赖关闭失败");
+      process.exitCode = 1;
+    });
     if (error) {
       logger.error({ err: error }, "API 关闭失败");
       process.exitCode = 1;

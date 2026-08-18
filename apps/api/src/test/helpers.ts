@@ -22,6 +22,7 @@ export function createTestApp(
       APP_ENV: "test",
       PORT: "7788",
       DATABASE_PATH: join(testDir, "app.db"),
+      AGENT_SESSION_DATABASE_PATH: join(testDir, "agent-sessions.db"),
       FILES_DIR: join(testDir, "files"),
       AI_CREDENTIAL_ENCRYPTION_KEY:
         "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
@@ -47,8 +48,12 @@ export function createTestApp(
     cleanup() {
       if (closed) return;
       closed = true;
-      runtime.database.sqlite.close();
-      rmSync(testDir, { recursive: true, force: true });
+      void runtime
+        .close()
+        .catch(() => undefined)
+        .finally(() => {
+          rmSync(testDir, { recursive: true, force: true });
+        });
     },
   };
 }

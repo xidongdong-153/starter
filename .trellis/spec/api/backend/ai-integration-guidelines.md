@@ -6,9 +6,12 @@
 
 - 修改 `apps/api/src/modules/ai/` 的 Provider、模型白名单、默认模型、用户偏好或模型测试接口。
 - 修改 `apps/api/src/infra/ai/` 的 `pi-ai` 适配、凭据加密、CredentialStore、ModelsStore 或 Gateway。
+- 修改 `apps/api/src/infra/agent/` 的 Pi Session repository、lane transcript 或 runtime 生命周期。
 - 修改 AI 数据表、`AI_CREDENTIAL_ENCRYPTION_KEY`、`AI_REQUEST_TIMEOUT_MS` 或 Admin 的 SSE 客户端。
 
 `@earendil-works/pi-ai` 只能在 `apps/api/src/infra/ai/` 中导入。`packages/contracts`、业务模块、数据库 schema、Admin 和 Web 只使用项目自己的 DTO、错误码和 stream event。
+
+Pi Session 类型和 SQLite backend 只能在 `apps/api/src/infra/agent/` 与对应测试中导入。业务 Service 通过 `AgentSessionStore` 调用，不直接读 Pi 表。
 
 ## 2. 接口与存储签名
 
@@ -145,6 +148,96 @@ API 环境变量：
 - `AI_REQUEST_TIMEOUT_MS`：模型测试超时，范围为 1000 到 300000 毫秒，默认 60000。
 
 API Key、OAuth token、云凭据、prompt、response、主机路径和原始上游错误不能进入客户端响应或日志。数据库凭据使用 AES-256-GCM，IV 每次随机生成 12 字节。
+
+## Pi Session 独立存储
+
+### 1. 适用范围
+
+修改 `apps/api/src/infra/agent/pi-session-store.ts`、`AGENT_SESSION_DATABASE_PATH` 或 API 关闭流程时，按本节检查。Starter 主库不保存 Pi transcript、lane、tree、record 或 compaction 数据。
+
+### 2. 签名
+
+```ts
+interface AgentSessionStore {
+  createSession: (options?: { id?: string }) => Promise<AgentSessionHandle>
+  openSession: (sessionId: string) => Promise<AgentSessionHandle>
+  deleteSession: (sessionId: string) => Promise<void>
+  createLane: (options: { sessionId: string; lane: string; at?: string | null }) => Promise<void>
+  readTranscript: (options: { sessionId: string; lane: string; cursor?: number; limit?: number }) => Promise<Entry[]>
+  appendMessage: (options: { sessionId: string; lane: string; message: AgentMessage }) => Promise<MessageEntry>
+  appendRunTerminalEntry: (options: { sessionId: string; lane: string; data: unknown }) => Promise<CustomEntry>
+  findRunTerminalEntries: (options: { sessionId: string; lane?: string; runId: string }) => Promise<CustomEntry[]>
+  close: () => Promise<void>
+}
+```
+
+`createPiSessionStore` 只在 bootstrap 和基础设施测试中接收 `databasePath` 与 `cwd`。业务调用方不能传 storage path、owner ID 或任意 Pi metadata。
+
+### 3. 契约
+
+- `AGENT_SESSION_DATABASE_PATH` 默认是 `./data/agent-sessions.db`。API 测试为每个 runtime 传独立临时路径。
+- `@earendil-works/pi-ai`、`@earendil-works/pi-agent-core` 和 `@earendil-works/pi-session-backend-sqlite-node` 使用同一精确版本。
+- `SqliteSessionRepository` 自己执行 Pi migration。Drizzle 不连接、不迁移该文件。
+- Session create 只写固定 `cwd` 和可选 Session ID，不写用户、Provider secret 或 Agent 配置。
+- lane transcript 先读取 lane leaf，再调用 `findEntriesOnBranch`。不能把 `view(lane).findEntries()` 当作 lane transcript；该方法会返回整棵 Session tree。
+- `starter.run.v1` 使用 Pi `CustomEntry`。S1 只按 `customType` 和 `data.runId` 查找，并原样返回 `data`；schema 校验由后续 Run 恢复逻辑负责。
+- API 关闭时先 `agentSessionStore.close()`，再关闭 Starter SQLite。关闭失败记录原始 `err`，并把第一个错误重新抛给进程退出边界。
+
+### 4. 校验与错误
+
+| 条件 | 结果 |
+| --- | --- |
+| Session ID 不存在 | adapter 拒绝操作，错误包含目标 Session ID |
+| lane 不存在、query 无效或写入冲突 | 保留 Pi `SessionError` 与原始 cause |
+| `starter.run.v1` 的 data 不符合后续 schema，但 `runId` 匹配 | 原样返回 entry，不在存储层决定恢复状态 |
+| Pi migration、SQLite 打开或写入失败 | 保留 backend 原始 cause，不改用 Starter 主库 |
+| Pi repository 关闭失败 | 记录原始 `err`，仍尝试关闭 Starter SQLite，最终抛出 Pi 关闭错误 |
+| Starter SQLite 关闭失败且 Pi 已失败 | 记录两个错误，最终保留第一个 Pi 错误 |
+
+### 5. 用例
+
+- 正常：在临时 `agent-sessions.db` 创建 Session，在两个 lane 写入消息，按各自 branch 重放 transcript。
+- 基础：Session 只有空 main lane 时，`readTranscript` 返回空数组；重复调用 `close()` 不报错。
+- 错误：同一 `runId` 有多个 terminal entry 或 data 缺字段时，adapter 返回所有匹配 entry，不选择最后一条，也不修复数据。
+- 隔离：两个 Session DB 可以使用相同 Session ID，写入互不影响；`app.db` 不出现 Pi 内部表。
+
+### 6. 必须执行的测试
+
+```bash
+pnpm --filter @starter/api exec vitest run src/test/pi-session-store.test.ts --config vitest.config.ts
+pnpm check-types
+pnpm lint
+pnpm format:check
+pnpm test
+pnpm build
+```
+
+`apps/api/src/test/pi-session-store.test.ts` 必须覆盖 create/open、append/replay、lane branch、`starter.run.v1` 原样返回、delete、两个数据库隔离、重复 close 和临时目录删除。
+
+### 7. 错误与正确写法
+
+错误写法把 lane view 的整棵树当成 transcript，或让 Drizzle 管理 Pi 表：
+
+```ts
+const entries = await session.view(lane).findEntries()
+const piTables = drizzle(appDb, { schema: piSchema })
+```
+
+正确写法从 lane leaf 读取 branch，并使用独立 repository：
+
+```ts
+const laneView = session.view(lane)
+const leafId = await laneView.getLeafId()
+const entries = leafId
+  ? await laneView.findEntriesOnBranch({ start: leafId, order: 'oldestFirst' })
+  : []
+
+const repository = new SqliteSessionRepository({
+  env,
+  sqlite: createNodeSqliteFactory(),
+  databasePath: agentSessionDatabasePath,
+})
+```
 
 ## 4. 校验与错误矩阵
 

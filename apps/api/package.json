@@ -36,6 +36,8 @@
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "catalog:",
     "@earendil-works/pi-ai": "catalog:",
+    "@earendil-works/pi-agent-core": "catalog:",
+    "@earendil-works/pi-session-backend-sqlite-node": "catalog:",
     "@hono/node-server": "catalog:",
     "@hono/zod-openapi": "catalog:",
     "@hono/zod-validator": "catalog:",

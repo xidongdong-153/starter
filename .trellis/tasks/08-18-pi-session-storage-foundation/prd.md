@@ -45,13 +45,13 @@ Starter 当前只依赖 `@earendil-works/pi-ai`。后续 Executor 和 Session AP
 
 ## Acceptance Criteria
 
-- [ ] 三个 Pi package 使用同一精确版本，Node engine 满足 package 要求。
-- [ ] API 能在临时路径初始化并关闭 Pi Session repository。
-- [ ] adapter 测试覆盖 create/open、append/replay、lane、`starter.run.v1` 写入与查询、delete 和 close。
-- [ ] 两个临时数据库相互隔离，`app.db` 不出现 Pi 内部表。
-- [ ] 测试结束后没有未关闭的 SQLite handle 或残留临时文件。
-- [ ] 旧 Conversation smoke tests 保持通过。
-- [ ] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test` 和 `pnpm build` 全部通过。
+- [x] 三个 Pi package 使用同一精确版本，Node engine 满足 package 要求。
+- [x] API 能在临时路径初始化并关闭 Pi Session repository。
+- [x] adapter 测试覆盖 create/open、append/replay、lane、`starter.run.v1` 写入与查询、delete 和 close。
+- [x] 两个临时数据库相互隔离，`app.db` 不出现 Pi 内部表。
+- [x] 测试结束后没有未关闭的 SQLite handle 或残留临时文件。
+- [x] 旧 Conversation smoke tests 保持通过。
+- [x] `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test` 和 `pnpm build` 全部通过。
 
 ## Out of Scope
 

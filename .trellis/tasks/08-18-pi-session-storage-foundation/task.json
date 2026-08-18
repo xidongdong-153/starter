@@ -3,7 +3,7 @@
   "name": "pi-session-storage-foundation",
   "title": "Pi Session 存储基础设施",
   "description": "接入 Pi Agent 与 SQLite Session backend，完成独立 Session 数据库、adapter、生命周期和隔离测试",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api",
   "package": "api",
