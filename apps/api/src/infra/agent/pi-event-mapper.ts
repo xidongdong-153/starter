@@ -173,7 +173,7 @@ export class PiEventMapper {
       const messageId = this.activeAssistant?.id ?? generateEntryId();
       const entry = await this.options.session.appendMessage(
         this.options.lane,
-        message,
+        withRunId(message, this.options.runId),
         messageId,
       );
       this.options.onEntryAppended?.(entry);
@@ -203,7 +203,7 @@ export class PiEventMapper {
     this.pendingMessageIds.delete(message);
     const entry = await this.options.session.appendMessage(
       this.options.lane,
-      persistedMessage,
+      withRunId(persistedMessage, this.options.runId),
       entryId,
     );
     this.options.onEntryAppended?.(entry);
@@ -272,8 +272,15 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
   private closed = false;
   private failure: unknown;
 
+  constructor(private readonly maxSize?: number) {}
+
   push(value: T): void {
     if (this.closed) return;
+    if (this.maxSize !== undefined && this.values.length >= this.maxSize) {
+      // 有界缓冲超限：关闭该 transport，不阻塞生产者（Agent loop 不受影响）。
+      this.end();
+      return;
+    }
     const waiter = this.waiters.shift();
     if (waiter) waiter({ done: false, value });
     else this.values.push(value);
@@ -414,6 +421,26 @@ function toHarnessStopReason(
 
 function generateEntryId(): string {
   return generateId();
+}
+
+/**
+ * 写入侧 runId 挂载（S5 契约）：在 message 上附加 runId，toolResult 同时
+ * 附加到 details。Pi SQLite backend 对 message 原样 JSON 持久化，附加字段
+ * 不影响 Pi 的 buildSessionContext / convertToLlm；S5 读取侧优先读
+ * message.runId，其次 message.details.runId。
+ */
+function withRunId(message: AgentMessage, runId: string): AgentMessage {
+  if (message.role === "toolResult") {
+    const details = isRecord(message.details)
+      ? { ...message.details, runId }
+      : { runId };
+    return {
+      ...message,
+      runId,
+      details,
+    } as unknown as AgentMessage;
+  }
+  return { ...message, runId } as unknown as AgentMessage;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

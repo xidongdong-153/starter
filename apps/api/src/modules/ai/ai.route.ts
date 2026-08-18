@@ -14,6 +14,12 @@ import {
   createAiAgentDefinitionRoute,
   createAiAgentDefinitionService,
 } from "./agent/index.js";
+import { createPiAgentExecutor } from "@api/infra/agent/index.js";
+import {
+  createAiAgentRunRepository,
+  createAiAgentRunRoute,
+  createAiAgentRunService,
+} from "./run/index.js";
 import {
   createAiAgentSessionRepository,
   createAiAgentSessionRoute,
@@ -134,6 +140,37 @@ export function createAiRoute(runtime: AppRuntime) {
     },
     { listDescriptions: skillService.listEnabledDescriptions },
   );
+  const runExecutor =
+    runtime.piAgentExecutor ??
+    createPiAgentExecutor({
+      sessionStore: runtime.agentSessionStore,
+      models: runtime.ai.getModelsCollection(),
+      tools: toolRegistry,
+      hasPermission: authorizationRepository.hasPermission,
+      getProviderRequestEnv: runtime.ai.getProviderRequestEnv,
+      audit: usageAuditService.createAgentModelCallAudit(),
+      toolAudit: usageAuditService.createAgentToolExecutionAudit(),
+      requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
+    });
+  const runService = createAiAgentRunService({
+    repository: createAiAgentRunRepository(runtime.db),
+    sessionRepository: createAiAgentSessionRepository(runtime.db),
+    sessionStore: runtime.agentSessionStore,
+    agentService: agentDefinitionService,
+    registry: runtime.activeRunRegistry,
+    executor: runExecutor,
+    logger: runtime.logger.child({ module: "ai-run" }),
+  });
+  void runService
+    .recoverInterrupted()
+    .then((report) => {
+      if (report.scanned > 0) {
+        runtime.logger.info({ report }, "Agent Run 启动恢复扫描完成");
+      }
+    })
+    .catch((error: unknown) => {
+      runtime.logger.error({ err: error }, "Agent Run 启动恢复扫描失败");
+    });
 
   return new OpenAPIHono<HonoEnv>()
     .route(
@@ -167,6 +204,13 @@ export function createAiRoute(runtime: AppRuntime) {
         service: usageAuditService,
         requireAuth,
         requireUsageRead,
+      }),
+    )
+    .route(
+      "/",
+      createAiAgentRunRoute({
+        service: runService,
+        requireAuth,
       }),
     )
     .route(

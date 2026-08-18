@@ -3,7 +3,7 @@
   "name": "agent-run-api",
   "title": "AgentRun API",
   "description": "实现 AgentRun 生命周期、SSE、abort、steer、follow-up、并发控制和中断恢复",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api,contracts",
   "package": "api",

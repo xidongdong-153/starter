@@ -4,6 +4,11 @@ import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
 import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AgentSessionStore } from "@api/infra/agent/pi-session-store.js";
+import type {
+  ActiveRunRegistry,
+  PiAgentExecutor,
+} from "@api/infra/agent/index.js";
+import { createActiveRunRegistry } from "@api/infra/agent/index.js";
 import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
 import type { AiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
 import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
@@ -27,6 +32,9 @@ export interface AppRuntime {
   aiGateway: AiGateway;
   aiTools: AiToolRegistry;
   agentSessionStore: AgentSessionStore;
+  activeRunRegistry: ActiveRunRegistry;
+  /** Run 模块可注入的 executor；未注入时由 ai.route 层创建。 */
+  piAgentExecutor?: PiAgentExecutor;
   auth: AppAuth;
   database: DatabaseBundle;
   db: AppDatabase;
@@ -43,6 +51,10 @@ export interface RuntimeDeps {
   aiGateway?: AiGateway;
   aiTools?: AiToolRegistry;
   agentSessionStore?: AgentSessionStore;
+  /** 测试时替换 active Run registry，隔离 lane 冲突。 */
+  activeRunRegistry?: ActiveRunRegistry;
+  /** 测试时注入 fake executor，控制模型/工具行为。 */
+  piAgentExecutor?: PiAgentExecutor;
 }
 
 export function createRuntime(
@@ -89,6 +101,7 @@ export function createRuntime(
   const aiTools =
     deps.aiTools ??
     createAiToolRegistry(env.AI_TEST_TOOLS_ENABLED ? createTestAiTools() : []);
+  const activeRunRegistry = deps.activeRunRegistry ?? createActiveRunRegistry();
   const auth = createAuth(
     database.db,
     env,
@@ -120,6 +133,8 @@ export function createRuntime(
     aiGateway,
     aiTools,
     agentSessionStore,
+    activeRunRegistry,
+    piAgentExecutor: deps.piAgentExecutor,
     auth,
     database,
     db: database.db,

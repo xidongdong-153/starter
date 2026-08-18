@@ -232,6 +232,46 @@ type AiTranscriptReq = InferRequestType<
 >;
 type _ai14 = Assert<Eq<AiTranscriptReq["param"], { sessionId: string }>>;
 
+type AiStartRunReq = InferRequestType<
+  C["api"]["ai"]["sessions"][":sessionId"]["runs"]["$post"]
+>;
+type _ai15 = Assert<Eq<AiStartRunReq["param"], { sessionId: string }>>;
+type _ai16 = Assert<Eq<keyof AiStartRunReq["json"] & "input", "input">>;
+type AiRunParams = InferRequestType<
+  C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["$get"]
+>["param"];
+type _ai17 = Assert<Eq<AiRunParams, { sessionId: string; runId: string }>>;
+type AiRunData = InferResponseType<
+  C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["$get"],
+  200
+>["data"];
+type _ai18 = Assert<Eq<keyof AiRunData & "status", "status">>;
+type _ai19 = Assert<
+  Eq<
+    keyof C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["abort"] &
+      "$post",
+    "$post"
+  >
+>;
+type _ai20 = Assert<
+  Eq<
+    keyof C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["steer"] &
+      "$post",
+    "$post"
+  >
+>;
+type AiSteerReq = InferRequestType<
+  C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["steer"]["$post"]
+>;
+type _ai21 = Assert<Eq<keyof AiSteerReq["json"] & "text", "text">>;
+type _ai22 = Assert<
+  Eq<
+    keyof C["api"]["ai"]["sessions"][":sessionId"]["runs"][":runId"]["follow-ups"] &
+      "$post",
+    "$post"
+  >
+>;
+
 // ---- 4. 特殊接口保持原样：不伪造 JSON schema ----
 // POST /api/files 在 AppType 中（createRoute），但 form 是 File 任意对象
 type UploadReq = InferRequestType<C["api"]["files"]["$post"]>;
@@ -295,5 +335,13 @@ export type RpcTypeProbePass = [
   _ai12,
   _ai13,
   _ai14,
+  _ai15,
+  _ai16,
+  _ai17,
+  _ai18,
+  _ai19,
+  _ai20,
+  _ai21,
+  _ai22,
   _s1,
 ];
