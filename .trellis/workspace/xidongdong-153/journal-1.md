@@ -509,3 +509,41 @@ Web/Admin 各建薄 Hono RPC adapter，26 个普通 JSON operation 迁移到 hc<
   6. 审计脱敏：ai_tool_executions 列结构本身无 args/结果字段；ai_model_calls 无 prompt/messages 字段；记录状态正确
 - 浏览器 UI 验证受限：ego-browser 隔离环境拦截跨端口 fetch（2333→7788），登录失败；页面导航正常。建议真实浏览器验证 UI
 - 遗留：验证数据（verify-* 资源、verify-user 用户、3 个会话）待清理或保留，问用户
+
+
+## Session 7: 拆分 Pi Agent Harness 父子任务
+
+**Date**: 2026-08-18
+**Task**: 拆分 Pi Agent Harness 父子任务
+**Package**: api
+**Branch**: `main`
+
+### Summary
+
+将原单体任务拆为父任务和八个可独立验收的子任务，补齐共享 Harness 契约、运行所有权、上下文清单和验证记录；所有任务保持 planning。
+
+### Main Changes
+
+- 创建 S1-S8 子任务及各自 prd/design/implement/context 文件
+- 新增共享 Harness DTO、事件、terminal entry、错误码和数据库结构契约
+- 固定 RunService、Executor 和 SSE transport 的唯一职责
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4486d9c` | (see git log) |
+
+### Testing
+
+- [OK] 九个任务 task.py validate 全部通过
+- [OK] pnpm format:check 通过
+- [OK] 十三张 Mermaid 图使用 mmdc 渲染通过
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 新会话评审并单独批准 S1 后运行 task.py start 08-18-pi-session-storage-foundation
