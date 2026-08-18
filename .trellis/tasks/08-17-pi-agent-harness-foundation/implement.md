@@ -7,7 +7,8 @@
 - S1 `08-18-pi-session-storage-foundation` 已完成并归档。
 - S2 `08-18-agent-harness-contracts-schema` 已完成并归档。
 - S3 `08-18-agent-definition-management` 已完成并归档。
-- S4 至 S8 仍处于 `planning`，均未启动。
+- S4 `08-18-pi-agent-execution-core` 已完成、检查并归档，提交为 `f72c2e3`。
+- S5 至 S8 仍处于 `planning`，均未启动。
 - 旧 Conversation runtime 继续临时保留。
 
 ## 父任务职责
@@ -27,14 +28,16 @@ S2 实现提交为 `00b7ae4`，归档提交为 `7d95a05`。
 
 S3 实现提交为 `b19a7a7`，归档提交为 `ab1b906`。
 
+S4 实现提交为 `7d8b9fe`，归档提交为 `f72c2e3`。
+
 检查点：旧 Conversation 功能仍通过测试；Pi Session DB、AgentDefinition 与新增业务表已可独立使用。
 
 ### 2. 完成配置与执行能力
 
 - [x] 评审并批准 S3 `08-18-agent-definition-management`。
 - [x] 启动、实施、检查并归档 S3。
-- [ ] 评审并批准 S4 `08-18-pi-agent-execution-core`。
-- [ ] 启动、实施、检查并归档 S4。
+- [x] 评审并批准 S4 `08-18-pi-agent-execution-core`。
+- [x] 启动、实施、检查并归档 S4。
 
 检查点：AgentDefinition 可管理；Executor 可以通过直接测试完成 Agent loop 和 Tool loop，但尚未由公开 Run API 调用。
 
