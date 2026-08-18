@@ -37,6 +37,8 @@ cp apps/admin/.env.example apps/admin/.env.development
 
 至少把 `apps/api/.env.development` 中的 `BETTER_AUTH_SECRET` 改为 32 个字符以上的随机值。`DATABASE_PATH` 和 `FILES_DIR` 分别控制 SQLite 文件和上传目录。GitHub 或 Google 的 client ID 与 secret 必须成对填写；留空时 API 仍可启动，前端不会显示对应按钮。
 
+`apps/api/.env.development` 里的 `NODE_OPTIONS=--conditions=development` 让 Node 以 development 条件解析 `@starter/api`，开发时直接加载 `src/` 源码而不需要先构建。它由脚本里的 dotenv 读取，不要改成命令行内联写法，Windows 的 cmd 和 PowerShell 不支持。
+
 邮件发送支持验证邮箱和密码重置。不配置 SMTP 时邮件内容打印到 API 日志，适合本地开发；配置后走真实发送：
 
 ```bash
@@ -104,6 +106,8 @@ pnpm dev:api
 ```
 
 打开 `http://localhost:4399` 使用 Web，打开 `http://localhost:2333` 使用 Admin。API 健康检查地址是 `http://localhost:7788/health`。
+
+Windows 用户请用 Windows Terminal、VS Code 终端或 PowerShell 7 运行命令；旧版 cmd 中文可能乱码，先执行 `chcp 65001` 切换为 UTF-8。
 
 ## 检查
 
