@@ -1,0 +1,564 @@
+import type {
+  AgentTool,
+  AfterToolCallContext,
+  AfterToolCallResult,
+  AgentToolResult,
+} from "@earendil-works/pi-agent-core";
+import type { TSchema } from "@earendil-works/pi-ai";
+import type {
+  AiToolExecutionAuditStatus,
+  AgentToolStatus,
+  ApiErrorCode,
+  Permission,
+} from "@starter/contracts";
+import { ApiErrorCodes } from "@starter/contracts";
+import { z } from "zod";
+
+import type { RegisteredAiTool } from "@api/modules/ai/tool/tool-registry.js";
+
+export interface PiToolResultDetails {
+  status: AgentToolStatus;
+  errorCode: ApiErrorCode | null;
+  safeSummary: string | null;
+  modelText: string;
+  terminate: boolean;
+}
+
+export interface PiToolExecutionAuditHandle {
+  readonly id: string;
+  readonly startedAt: Date;
+  readonly requestId?: string;
+}
+
+export interface PiToolExecutionAudit {
+  beginToolExecution: (input: {
+    modelCallId: string | null;
+    requestId?: string;
+    toolName: string;
+    timeoutMs: number;
+  }) => PiToolExecutionAuditHandle | null;
+  finalizeToolExecution: (
+    handle: PiToolExecutionAuditHandle | null,
+    status: Exclude<AiToolExecutionAuditStatus, "running" | "interrupted">,
+    errorCode: string | null,
+  ) => void;
+}
+
+export interface PiToolAdapterOptions {
+  userId: string;
+  requestId: string;
+  hasPermission: (userId: string, permission: Permission) => Promise<boolean>;
+  getModelCallId: () => string | null;
+  getRemainingRunMs?: () => number | undefined;
+  audit?: PiToolExecutionAudit;
+  onTerminalFailure?: (reason: "timed_out" | "cancelled") => void;
+}
+
+interface PendingFailure {
+  details: PiToolResultDetails;
+}
+
+interface PendingToolAudit {
+  tool: RegisteredAiTool | undefined;
+  args: unknown;
+  handle: PiToolExecutionAuditHandle | null;
+  signal?: AbortSignal;
+  finalized: boolean;
+  status?: Exclude<AgentToolStatus, "interrupted">;
+  errorCode?: ApiErrorCode | null;
+}
+
+export interface PiToolAdapter {
+  readonly tools: readonly AgentTool[];
+  readonly onToolExecutionStart: (input: {
+    toolCallId: string;
+    toolName: string;
+    args: unknown;
+    signal?: AbortSignal;
+  }) => void;
+  readonly onToolExecutionEnd: (input: {
+    toolCallId: string;
+    toolName: string;
+    result: unknown;
+    isError: boolean;
+  }) => PiToolResultDetails | null;
+  readonly afterToolCall: (
+    context: AfterToolCallContext,
+    signal?: AbortSignal,
+  ) => Promise<AfterToolCallResult | undefined>;
+}
+
+export function createPiToolAdapter(
+  tools: readonly RegisteredAiTool[],
+  options: PiToolAdapterOptions,
+): PiToolAdapter {
+  const pendingFailures = new Map<string, PendingFailure>();
+  const pendingAudits = new Map<string, PendingToolAudit>();
+  const agentTools = tools.map((tool) =>
+    createAgentTool(tool, options, pendingFailures, pendingAudits),
+  );
+
+  return {
+    tools: agentTools,
+    onToolExecutionStart(input) {
+      const tool = tools.find((candidate) => candidate.name === input.toolName);
+      const timeoutMs = effectiveTimeoutMs(
+        tool?.timeoutMs ?? 5000,
+        options.getRemainingRunMs?.(),
+      );
+      pendingAudits.set(input.toolCallId, {
+        tool,
+        args: input.args,
+        signal: input.signal,
+        handle: beginToolAudit(options.audit, {
+          modelCallId: options.getModelCallId(),
+          requestId: options.requestId,
+          toolName: input.toolName,
+          timeoutMs,
+        }),
+        finalized: false,
+      });
+    },
+    onToolExecutionEnd(input) {
+      const pending = pendingAudits.get(input.toolCallId);
+      if (!pending) return readToolResultDetails(input.result);
+      pendingAudits.delete(input.toolCallId);
+      const details = readToolResultDetails(input.result);
+      if (pending.finalized) {
+        return (
+          details ??
+          toolResultDetails(
+            pending.status ?? "failed",
+            pending.errorCode ?? ApiErrorCodes.AI_TOOL_FAILED,
+          )
+        );
+      }
+
+      const outcome = preflightToolFailure(pending);
+      const outcomeStatus = outcome.status as Exclude<
+        AgentToolStatus,
+        "interrupted"
+      >;
+      pending.finalized = true;
+      pending.status = outcomeStatus;
+      pending.errorCode = outcome.errorCode;
+      finalizeToolAudit(
+        options.audit,
+        pending.handle,
+        outcomeStatus,
+        outcome.errorCode,
+      );
+      return details ?? outcome;
+    },
+    async afterToolCall(context) {
+      const failure = pendingFailures.get(context.toolCall.id);
+      if (!failure) return undefined;
+      pendingFailures.delete(context.toolCall.id);
+      return {
+        content: [{ type: "text", text: failure.details.modelText }],
+        details: failure.details,
+        isError: true,
+        terminate: failure.details.terminate,
+      };
+    },
+  };
+}
+
+function createAgentTool(
+  tool: RegisteredAiTool,
+  options: PiToolAdapterOptions,
+  pendingFailures: Map<string, PendingFailure>,
+  pendingAudits: Map<string, PendingToolAudit>,
+): AgentTool<TSchema, PiToolResultDetails> {
+  return {
+    name: tool.name,
+    label: tool.name,
+    description: tool.description,
+    parameters: z.toJSONSchema(tool.inputSchema, {
+      target: "draft-7",
+    }) as TSchema,
+    execute: async (toolCallId, params, _signal) => {
+      const signal = _signal ?? new AbortController().signal;
+      const remaining = options.getRemainingRunMs?.();
+      const timeoutMs = effectiveTimeoutMs(tool.timeoutMs, remaining);
+      const pendingAudit = pendingAudits.get(toolCallId);
+      const auditHandle =
+        pendingAudit?.handle ??
+        beginToolAudit(options.audit, {
+          modelCallId: options.getModelCallId(),
+          requestId: options.requestId,
+          toolName: tool.name,
+          timeoutMs,
+        });
+      let finalized = false;
+      const finalizeAudit = (
+        status: Exclude<AiToolExecutionAuditStatus, "running" | "interrupted">,
+        errorCode: ApiErrorCode | null,
+      ) => {
+        if (finalized) return;
+        finalized = true;
+        if (pendingAudit) {
+          pendingAudit.finalized = true;
+          pendingAudit.status = status as Exclude<
+            AgentToolStatus,
+            "interrupted"
+          >;
+          pendingAudit.errorCode = errorCode;
+        }
+        finalizeToolAudit(options.audit, auditHandle, status, errorCode);
+      };
+
+      if (remaining !== undefined && remaining <= 0) {
+        finalizeAudit("timed_out", ApiErrorCodes.AI_TOOL_TIMED_OUT);
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "timed_out",
+          ApiErrorCodes.AI_TOOL_TIMED_OUT,
+          "The tool timed out.",
+          true,
+          options,
+          signal,
+        );
+      }
+
+      if (signal.aborted) {
+        finalizeAudit("cancelled", ApiErrorCodes.AI_TOOL_CANCELLED);
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "cancelled",
+          ApiErrorCodes.AI_TOOL_CANCELLED,
+          "The tool was cancelled.",
+          true,
+          options,
+          signal,
+        );
+      }
+
+      let parsed: unknown;
+      try {
+        parsed = tool.inputSchema.parse(params);
+      } catch {
+        finalizeAudit(
+          "invalid_arguments",
+          ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+        );
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "invalid_arguments",
+          ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+          "The tool arguments are invalid.",
+          false,
+          options,
+          signal,
+        );
+      }
+
+      if (tool.requiredPermission) {
+        let allowed = false;
+        try {
+          allowed = await options.hasPermission(
+            options.userId,
+            tool.requiredPermission,
+          );
+        } catch {
+          allowed = false;
+        }
+        if (!allowed) {
+          finalizeAudit("forbidden", ApiErrorCodes.AI_TOOL_FORBIDDEN);
+          return failWithoutAudit(
+            toolCallId,
+            pendingFailures,
+            "forbidden",
+            ApiErrorCodes.AI_TOOL_FORBIDDEN,
+            "Permission denied for this tool.",
+            false,
+            options,
+            signal,
+          );
+        }
+      }
+
+      const timeoutController = new AbortController();
+      let timedOut = false;
+      const timer = setTimeout(() => {
+        timedOut = true;
+        timeoutController.abort();
+      }, timeoutMs);
+      const toolSignal = AbortSignal.any([signal, timeoutController.signal]);
+
+      try {
+        const result = await executeWithAbort(
+          Promise.resolve().then(() =>
+            tool.execute(
+              {
+                userId: options.userId,
+                requestId: options.requestId,
+                signal: toolSignal,
+              },
+              parsed,
+            ),
+          ),
+          toolSignal,
+        );
+        if (
+          typeof result.modelText !== "string" ||
+          result.modelText.length > 16_000 ||
+          (result.safeSummary !== null &&
+            (typeof result.safeSummary !== "string" ||
+              result.safeSummary.length > 1000))
+        ) {
+          finalizeAudit("failed", ApiErrorCodes.AI_TOOL_FAILED);
+          return failWithoutAudit(
+            toolCallId,
+            pendingFailures,
+            "failed",
+            ApiErrorCodes.AI_TOOL_FAILED,
+            "The tool returned an invalid result.",
+            false,
+            options,
+            signal,
+          );
+        }
+        finalizeAudit("succeeded", null);
+        return {
+          content: [{ type: "text", text: result.modelText }],
+          details: {
+            status: "succeeded",
+            errorCode: null,
+            safeSummary: result.safeSummary,
+            modelText: result.modelText,
+            terminate: false,
+          },
+        } satisfies AgentToolResult<PiToolResultDetails>;
+      } catch {
+        if (timedOut) {
+          finalizeAudit("timed_out", ApiErrorCodes.AI_TOOL_TIMED_OUT);
+          return failWithoutAudit(
+            toolCallId,
+            pendingFailures,
+            "timed_out",
+            ApiErrorCodes.AI_TOOL_TIMED_OUT,
+            "The tool timed out.",
+            true,
+            options,
+            signal,
+          );
+        }
+        if (signal.aborted || toolSignal.aborted) {
+          finalizeAudit("cancelled", ApiErrorCodes.AI_TOOL_CANCELLED);
+          return failWithoutAudit(
+            toolCallId,
+            pendingFailures,
+            "cancelled",
+            ApiErrorCodes.AI_TOOL_CANCELLED,
+            "The tool was cancelled.",
+            true,
+            options,
+            signal,
+          );
+        }
+        finalizeAudit("failed", ApiErrorCodes.AI_TOOL_FAILED);
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "failed",
+          ApiErrorCodes.AI_TOOL_FAILED,
+          "The tool failed.",
+          false,
+          options,
+          signal,
+        );
+      } finally {
+        clearTimeout(timer);
+      }
+    },
+  };
+}
+
+function preflightToolFailure(pending: PendingToolAudit): PiToolResultDetails {
+  if (pending.signal?.aborted) {
+    return toolResultDetails(
+      "cancelled",
+      ApiErrorCodes.AI_TOOL_CANCELLED,
+      "The tool was cancelled.",
+    );
+  }
+  if (!pending.tool) {
+    return toolResultDetails(
+      "not_found",
+      ApiErrorCodes.AI_TOOL_NOT_FOUND,
+      "The requested tool is not available.",
+    );
+  }
+  try {
+    if (!pending.tool.inputSchema.safeParse(pending.args).success) {
+      return toolResultDetails(
+        "invalid_arguments",
+        ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+        "The tool arguments are invalid.",
+      );
+    }
+  } catch {
+    return toolResultDetails(
+      "invalid_arguments",
+      ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+      "The tool arguments are invalid.",
+    );
+  }
+  return toolResultDetails(
+    "failed",
+    ApiErrorCodes.AI_TOOL_FAILED,
+    "The tool failed.",
+  );
+}
+
+function readToolResultDetails(value: unknown): PiToolResultDetails | null {
+  if (!isRecord(value)) return null;
+  const details = isRecord(value.details) ? value.details : value;
+  const status = details.status;
+  if (
+    status !== "succeeded" &&
+    status !== "not_found" &&
+    status !== "invalid_arguments" &&
+    status !== "forbidden" &&
+    status !== "failed" &&
+    status !== "timed_out" &&
+    status !== "cancelled" &&
+    status !== "interrupted"
+  ) {
+    return null;
+  }
+  const errorCode =
+    typeof details.errorCode === "string" &&
+    Object.values(ApiErrorCodes).includes(details.errorCode as ApiErrorCode)
+      ? (details.errorCode as ApiErrorCode)
+      : null;
+  return {
+    status,
+    errorCode,
+    safeSummary:
+      typeof details.safeSummary === "string"
+        ? details.safeSummary.slice(0, 1000)
+        : null,
+    modelText: typeof details.modelText === "string" ? details.modelText : "",
+    terminate: value.terminate === true || details.terminate === true,
+  };
+}
+
+function toolResultDetails(
+  status: Exclude<AgentToolStatus, "interrupted">,
+  errorCode: ApiErrorCode | null,
+  modelText = "The tool failed.",
+): PiToolResultDetails {
+  return {
+    status,
+    errorCode,
+    safeSummary: null,
+    modelText,
+    terminate: status === "timed_out" || status === "cancelled",
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function beginToolAudit(
+  audit: PiToolExecutionAudit | undefined,
+  input: {
+    modelCallId: string | null;
+    requestId?: string;
+    toolName: string;
+    timeoutMs: number;
+  },
+): PiToolExecutionAuditHandle | null {
+  if (!audit) return null;
+  try {
+    return audit.beginToolExecution(input);
+  } catch {
+    return null;
+  }
+}
+
+function finalizeToolAudit(
+  audit: PiToolExecutionAudit | undefined,
+  handle: PiToolExecutionAuditHandle | null,
+  status: Exclude<AiToolExecutionAuditStatus, "running" | "interrupted">,
+  errorCode: string | null,
+): void {
+  if (!audit) return;
+  try {
+    audit.finalizeToolExecution(handle, status, errorCode);
+  } catch {
+    // 审计是 best-effort，不能改变 AgentTool 的安全结果。
+  }
+}
+
+function failWithoutAudit(
+  toolCallId: string,
+  pendingFailures: Map<string, PendingFailure>,
+  status: AgentToolStatus,
+  errorCode: ApiErrorCode,
+  modelText: string,
+  terminate: boolean,
+  options: PiToolAdapterOptions,
+  _signal: AbortSignal,
+): Promise<never> {
+  const details: PiToolResultDetails = {
+    status,
+    errorCode,
+    safeSummary: null,
+    modelText,
+    terminate,
+  };
+  pendingFailures.set(toolCallId, { details });
+  if (status === "timed_out" || status === "cancelled") {
+    options.onTerminalFailure?.(status);
+  }
+  return Promise.reject(new PiToolExecutionError(modelText));
+}
+
+export class PiToolExecutionError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "PiToolExecutionError";
+  }
+}
+
+function effectiveTimeoutMs(
+  toolTimeoutMs: number,
+  remainingRunMs: number | undefined,
+): number {
+  return Math.max(1, Math.min(toolTimeoutMs, remainingRunMs ?? toolTimeoutMs));
+}
+
+function executeWithAbort<T>(
+  promise: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const onAbort = () => {
+      signal.removeEventListener("abort", onAbort);
+      reject(new Error("aborted"));
+    };
+    const cleanup = () => signal.removeEventListener("abort", onAbort);
+    if (signal.aborted) {
+      onAbort();
+      return;
+    }
+    signal.addEventListener("abort", onAbort, { once: true });
+    promise.then(
+      (value) => {
+        cleanup();
+        resolve(value);
+      },
+      (error: unknown) => {
+        cleanup();
+        reject(error);
+      },
+    );
+  });
+}

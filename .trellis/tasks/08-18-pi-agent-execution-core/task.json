@@ -3,7 +3,7 @@
   "name": "pi-agent-execution-core",
   "title": "Pi Agent 执行核心",
   "description": "实现 Pi Agent executor、事件映射、运行控制、Tool adapter 和 Run 用量审计",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api",
   "package": "api",

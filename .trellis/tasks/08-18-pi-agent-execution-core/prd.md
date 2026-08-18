@@ -8,7 +8,7 @@
 
 ## Background
 
-父任务：`08-17-pi-agent-harness-foundation`。本任务是 S4，前置任务是 S1 `08-18-pi-session-storage-foundation` 和 S2 `08-18-agent-harness-contracts-schema`。
+父任务：`08-17-pi-agent-harness-foundation`。本任务是 S4，执行依赖已完成并归档的 S1 `08-18-pi-session-storage-foundation` 和 S2 `08-18-agent-harness-contracts-schema`。S3 `08-18-agent-definition-management` 也已完成并归档，但 S4 通过已解析配置 fixture 直接测试，AgentDefinition 与 Executor 的正式装配留给 S6。
 
 旧 `tool-orchestrator.ts` 继续只服务 Conversation runtime。新 executor 不调用它，也不复制它的模型循环。
 

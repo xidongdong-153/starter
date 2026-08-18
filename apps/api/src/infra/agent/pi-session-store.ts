@@ -1,5 +1,6 @@
 import type {
   AgentMessage,
+  CompactionEntry,
   CustomEntry,
   Entry,
   Session,
@@ -30,7 +31,13 @@ export interface AgentSessionStore {
     sessionId: string;
     lane: string;
     message: AgentMessage;
+    id?: string;
   }) => Promise<Extract<Entry, { type: "message" }>>;
+  appendCompaction: (options: {
+    sessionId: string;
+    lane: string;
+    entry: Omit<CompactionEntry, "parentId" | "seq" | "timestamp">;
+  }) => Promise<CompactionEntry>;
   appendRunTerminalEntry: (options: {
     sessionId: string;
     lane: string;
@@ -55,7 +62,12 @@ export interface AgentSessionHandle {
   appendMessage: (
     lane: string,
     message: AgentMessage,
+    id?: string,
   ) => Promise<Extract<Entry, { type: "message" }>>;
+  appendCompaction: (
+    lane: string,
+    entry: Omit<CompactionEntry, "parentId" | "seq" | "timestamp">,
+  ) => Promise<CompactionEntry>;
   appendRunTerminalEntry: (lane: string, data: unknown) => Promise<CustomEntry>;
   createLane: (lane: string, at?: string | null) => Promise<void>;
   findRunTerminalEntries: (options: {
@@ -107,8 +119,10 @@ export function createPiSessionStore(
       metadata,
       readTranscript: (readOptions = {}) =>
         readTranscriptFromSession(session, readOptions),
-      appendMessage: async (lane, message) =>
-        appendMessageToSession(session, lane, message),
+      appendMessage: async (lane, message, id) =>
+        appendMessageToSession(session, lane, message, id),
+      appendCompaction: async (lane, entry) =>
+        appendCompactionToSession(session, lane, entry),
       appendRunTerminalEntry: async (lane, data) =>
         appendTerminalToSession(session, lane, data),
       createLane: (lane, at = null) => session.createLane(lane, at),
@@ -145,9 +159,14 @@ export function createPiSessionStore(
       return readTranscriptFromSession(session, { lane, cursor, limit });
     },
 
-    appendMessage: async ({ sessionId, lane, message }) => {
+    appendMessage: async ({ sessionId, lane, message, id }) => {
       const session = await open(sessionId);
-      return appendMessageToSession(session, lane, message);
+      return appendMessageToSession(session, lane, message, id);
+    },
+
+    appendCompaction: async ({ sessionId, lane, entry }) => {
+      const session = await open(sessionId);
+      return appendCompactionToSession(session, lane, entry);
     },
 
     appendRunTerminalEntry: async ({ sessionId, lane, data }) => {
@@ -191,13 +210,25 @@ async function appendMessageToSession(
   session: Session<SqliteSessionMetadata>,
   lane: string,
   message: AgentMessage,
+  id?: string,
 ): Promise<Extract<Entry, { type: "message" }>> {
-  const id = await session.view(lane).appendMessage(message);
-  const entry = await session.getEntry(id);
+  const entryId = id ?? (await session.view(lane).appendMessage(message));
+  if (id !== undefined) {
+    await session.appendEntry({ type: "message", id, message }, lane);
+  }
+  const entry = await session.getEntry(entryId);
   if (!entry || entry.type !== "message") {
-    throw new Error(`Pi Session message entry 写入后无法读取: ${id}`);
+    throw new Error(`Pi Session message entry 写入后无法读取: ${entryId}`);
   }
   return entry;
+}
+
+async function appendCompactionToSession(
+  session: Session<SqliteSessionMetadata>,
+  lane: string,
+  entry: Omit<CompactionEntry, "parentId" | "seq" | "timestamp">,
+): Promise<CompactionEntry> {
+  return session.appendEntry(entry, lane);
 }
 
 async function appendTerminalToSession(

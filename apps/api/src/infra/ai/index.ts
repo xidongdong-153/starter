@@ -31,3 +31,12 @@ export type {
   AiRuntimeModel,
   AiStoredPayloadColumns,
 } from "./ai-runtime.js";
+export {
+  createNativePiStreamFn,
+  createPiNativeStreamFn,
+} from "./pi-native-stream.js";
+export type {
+  PiModelCallAudit,
+  PiNativeStreamOptions,
+  PiStreamFailure,
+} from "./pi-native-stream.js";

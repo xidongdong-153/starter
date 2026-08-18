@@ -3,9 +3,11 @@
 ## 当前状态
 
 - 父任务处于 `planning`。
-- 当前进度为 `1/8 done`。
+- 当前进度为 `3/8 done`。
 - S1 `08-18-pi-session-storage-foundation` 已完成并归档。
-- S2 至 S8 仍处于 `planning`，均未启动。
+- S2 `08-18-agent-harness-contracts-schema` 已完成并归档。
+- S3 `08-18-agent-definition-management` 已完成并归档。
+- S4 至 S8 仍处于 `planning`，均未启动。
 - 旧 Conversation runtime 继续临时保留。
 
 ## 父任务职责
@@ -18,15 +20,19 @@
 
 - [x] 评审并批准 S1 `08-18-pi-session-storage-foundation`。
 - [x] 启动、实施、检查并归档 S1。
-- [ ] 评审并批准 S2 `08-18-agent-harness-contracts-schema`。
-- [ ] 启动、实施、检查并归档 S2。
+- [x] 评审并批准 S2 `08-18-agent-harness-contracts-schema`。
+- [x] 启动、实施、检查并归档 S2。
 
-检查点：旧 Conversation 功能仍通过测试；Pi Session DB 与新增业务表已可独立使用。
+S2 实现提交为 `00b7ae4`，归档提交为 `7d95a05`。
+
+S3 实现提交为 `b19a7a7`，归档提交为 `ab1b906`。
+
+检查点：旧 Conversation 功能仍通过测试；Pi Session DB、AgentDefinition 与新增业务表已可独立使用。
 
 ### 2. 完成配置与执行能力
 
-- [ ] 评审并批准 S3 `08-18-agent-definition-management`。
-- [ ] 启动、实施、检查并归档 S3。
+- [x] 评审并批准 S3 `08-18-agent-definition-management`。
+- [x] 启动、实施、检查并归档 S3。
 - [ ] 评审并批准 S4 `08-18-pi-agent-execution-core`。
 - [ ] 启动、实施、检查并归档 S4。
 

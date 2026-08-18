@@ -1,6 +1,6 @@
 import type { AiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
 import type { AiGateway } from "@api/infra/ai/index.js";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createAiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
 import {
@@ -349,4 +349,68 @@ it("审计 begin 和 finalize 失败都不改变 Gateway 事件流", async () =>
   } finally {
     cleanup();
   }
+});
+
+describe("agent run audit ports", () => {
+  it("只写 runId，不混入旧 conversation/generation 关联，并保持 Tool 审计接口一次 finalize", () => {
+    const { cleanup, runtime } = createTestApp();
+    try {
+      const repository = {
+        recoverInterrupted: vi.fn(),
+        beginModelCall: vi.fn(),
+        finalizeModelCall: vi.fn(),
+        beginToolExecution: vi.fn(),
+        finalizeToolExecution: vi.fn(),
+        findModelCall: vi.fn(),
+        listModelCalls: vi.fn(() => ({ items: [], total: 0 })),
+        listToolExecutions: vi.fn(() => []),
+      } as unknown as AiUsageAuditRepository;
+      const audit = createAiUsageAuditService(repository, runtime.logger);
+      const modelPort = audit.createAgentModelCallAudit();
+      const startedAt = new Date();
+      const modelCallId = modelPort.beginModelCall({
+        runId: "run-1",
+        userId: "user-1",
+        requestId: "request-1",
+        model: { providerId: "openai", modelId: "gpt-test" },
+        timeoutMs: 1000,
+        startedAt,
+      });
+      expect(modelCallId).toBeTruthy();
+      expect(repository.beginModelCall).toHaveBeenCalledWith(
+        expect.objectContaining({
+          scenario: "agent_run",
+          runId: "run-1",
+          conversationId: null,
+          generationId: null,
+        }),
+      );
+      modelPort.finalizeModelCall({
+        id: modelCallId ?? "missing",
+        requestId: "request-1",
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + 1),
+        result: "succeeded",
+        stopReason: "stop",
+        errorCode: null,
+        usage,
+        cost: null,
+      });
+      expect(repository.finalizeModelCall).toHaveBeenCalledOnce();
+
+      const toolPort = audit.createAgentToolExecutionAudit();
+      const toolHandle = toolPort.beginToolExecution({
+        modelCallId,
+        toolName: "lookup",
+        timeoutMs: 100,
+      });
+      toolPort.finalizeToolExecution(toolHandle, "succeeded", null);
+      expect(repository.beginToolExecution).toHaveBeenCalledWith(
+        expect.objectContaining({ aiCallId: modelCallId, toolName: "lookup" }),
+      );
+      expect(repository.finalizeToolExecution).toHaveBeenCalledOnce();
+    } finally {
+      cleanup();
+    }
+  });
 });

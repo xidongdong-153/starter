@@ -1,6 +1,8 @@
 {"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "只复用 Provider、Gateway、Tool Registry、secret、审计和取消规则；旧 Tool loop 不适用于新 Harness"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "实现 Pi Agent executor、原生 StreamFn、Tool adapter、Session entry、compaction、registry 和 run 审计边界"}
 {"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "保持 infra adapter 与 AI module 边界"}
 {"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "写 Session 和用量审计"}
 {"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/pi-capability-matrix.md", "reason": "按 Pi Agent 与 Session 公开 API 实现"}
 {"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "检查事件、持久化和失败链"}
 {"file": ".trellis/tasks/08-17-pi-agent-harness-foundation/research/harness-contracts.md", "reason": "实现 message/tool 事件、EventSequencer 和 Executor/Run Service 所有权"}
+{"file": ".trellis/tasks/08-18-pi-agent-execution-core/research/pi-agent-native-adapter.md", "reason": "核对 Pi Agent、原生 StreamFn、Session entry ID、compaction 和 Tool adapter 边界"}

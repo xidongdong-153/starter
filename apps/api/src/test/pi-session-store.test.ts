@@ -161,3 +161,32 @@ it("删除 Session 后不可打开，close 可重复调用且临时目录可清�
     await expect(readFile(fixture.databasePath)).rejects.toThrow();
   }
 });
+
+it("支持调用方预置 message ID，并写入 Pi compaction entry", async () => {
+  const fixture = await createFixture();
+  try {
+    const session = await fixture.store.createSession({ id: "session-1" });
+    const messageEntry = await session.appendMessage(
+      "main",
+      message,
+      "message-entry-1",
+    );
+    const compaction = await session.appendCompaction("main", {
+      type: "compaction",
+      id: "compaction-entry-1",
+      summary: "summary",
+      retainedTail: [message],
+      tokensBefore: 10,
+    });
+
+    expect(messageEntry.id).toBe("message-entry-1");
+    expect(compaction.id).toBe("compaction-entry-1");
+    expect(await session.readTranscript()).toMatchObject([
+      { type: "message", id: "message-entry-1" },
+      { type: "compaction", id: "compaction-entry-1" },
+    ]);
+  } finally {
+    await fixture.store.close();
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});

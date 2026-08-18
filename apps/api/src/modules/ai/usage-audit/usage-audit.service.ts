@@ -10,6 +10,8 @@ import type {
   AiGatewayInput,
 } from "@api/infra/ai/index.js";
 import { AiGatewayError } from "@api/infra/ai/index.js";
+import type { PiModelCallAudit } from "@api/infra/ai/pi-native-stream.js";
+import type { PiToolExecutionAudit } from "@api/infra/agent/pi-tool-adapter.js";
 import { ApiErrorCodes } from "@starter/contracts";
 
 import { generateId } from "@api/shared/id.js";
@@ -67,6 +69,7 @@ export interface AiModelCallAuditContext {
 export interface AiToolExecutionAuditHandle {
   id: string;
   startedAt: Date;
+  requestId?: string;
 }
 
 export function createAiUsageAuditService(
@@ -128,11 +131,16 @@ export function createAiUsageAuditService(
 
   function beginToolExecution(input: {
     modelCallId: string | null;
+    requestId?: string;
     toolName: string;
     timeoutMs: number;
   }): AiToolExecutionAuditHandle | null {
     if (!input.modelCallId) return null;
-    const handle = { id: generateId(), startedAt: new Date() };
+    const handle = {
+      id: generateId(),
+      startedAt: new Date(),
+      requestId: input.requestId,
+    };
     try {
       repository.beginToolExecution({
         id: handle.id,
@@ -143,9 +151,72 @@ export function createAiUsageAuditService(
       });
       return handle;
     } catch {
-      logFailure(logger, "begin_tool_execution", undefined, input.modelCallId);
+      logFailure(
+        logger,
+        "begin_tool_execution",
+        input.requestId,
+        input.modelCallId,
+      );
       return null;
     }
+  }
+
+  function beginAgentModelCall(
+    input: Parameters<PiModelCallAudit["beginModelCall"]>[0],
+  ): string | null {
+    const id = generateId();
+    try {
+      repository.beginModelCall({
+        id,
+        requestId: input.requestId,
+        userId: input.userId,
+        scenario: "agent_run",
+        conversationId: null,
+        generationId: null,
+        runId: input.runId,
+        providerId: input.model.providerId,
+        modelId: input.model.modelId,
+        startedAt: input.startedAt,
+        timeoutMs: input.timeoutMs,
+      });
+      return id;
+    } catch {
+      logFailure(logger, "begin_agent_model_call", input.requestId, id);
+      return null;
+    }
+  }
+
+  function finalizeAgentModelCall(
+    input: Parameters<PiModelCallAudit["finalizeModelCall"]>[0],
+  ): void {
+    finalizeModelCall(
+      input.id,
+      input.startedAt,
+      {
+        finishedAt: input.finishedAt,
+        result: input.result,
+        stopReason: input.stopReason,
+        errorCode: input.errorCode,
+        usage: input.usage,
+        cost: input.cost,
+      },
+      input.requestId,
+    );
+  }
+
+  function createAgentModelCallAudit(): PiModelCallAudit {
+    return {
+      beginModelCall: beginAgentModelCall,
+      finalizeModelCall: finalizeAgentModelCall,
+    };
+  }
+
+  function createAgentToolExecutionAudit(): PiToolExecutionAudit {
+    return {
+      beginToolExecution,
+      finalizeToolExecution: (handle, status, errorCode) =>
+        finalizeToolExecution(handle, status, errorCode),
+    };
   }
 
   function finalizeToolExecution(
@@ -163,7 +234,12 @@ export function createAiUsageAuditService(
         errorCode,
       });
     } catch {
-      logFailure(logger, "finalize_tool_execution", undefined, handle.id);
+      logFailure(
+        logger,
+        "finalize_tool_execution",
+        handle.requestId,
+        handle.id,
+      );
     }
   }
 
@@ -188,7 +264,11 @@ export function createAiUsageAuditService(
 
   return {
     beginModelCall,
+    beginAgentModelCall,
+    finalizeAgentModelCall,
+    createAgentModelCallAudit,
     beginToolExecution,
+    createAgentToolExecutionAudit,
     finalizeModelCall,
     finalizeToolExecution,
     getModelCall,
