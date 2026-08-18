@@ -215,6 +215,124 @@ export const userAiPreferencesRelations = relations(
   }),
 );
 
+export const aiAgentDefinitions = sqliteTable(
+  "ai_agent_definitions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull().default("draft"),
+    revision: integer("revision").notNull().default(1),
+    configJson: text("config_json").notNull(),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_agent_definitions_status_updated_idx").on(
+      table.status,
+      table.updatedAt,
+      table.id,
+    ),
+    check(
+      "ai_agent_definitions_status_check",
+      sql`${table.status} IN ('draft', 'enabled', 'disabled')`,
+    ),
+    check("ai_agent_definitions_revision_check", sql`${table.revision} >= 1`),
+    check(
+      "ai_agent_definitions_config_json_check",
+      sql`json_valid(${table.configJson})`,
+    ),
+  ],
+);
+
+export const aiAgentSessions = sqliteTable(
+  "ai_agent_sessions",
+  {
+    id: text("id").primaryKey(),
+    ownerId: text("owner_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    title: text("title").notNull(),
+    defaultAgentId: text("default_agent_id").references(
+      () => aiAgentDefinitions.id,
+      { onDelete: "set null" },
+    ),
+    archivedAt: timestamp("archived_at"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_agent_sessions_owner_archived_updated_idx").on(
+      table.ownerId,
+      table.archivedAt,
+      table.updatedAt,
+      table.id,
+    ),
+    index("ai_agent_sessions_default_agent_idx").on(table.defaultAgentId),
+  ],
+);
+
+export const aiAgentRuns = sqliteTable(
+  "ai_agent_runs",
+  {
+    id: text("id").primaryKey(),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => aiAgentSessions.id, { onDelete: "cascade" }),
+    agentId: text("agent_id")
+      .notNull()
+      .references(() => aiAgentDefinitions.id, { onDelete: "restrict" }),
+    lane: text("lane").notNull(),
+    status: text("status").notNull(),
+    agentRevision: integer("agent_revision").notNull(),
+    snapshotJson: text("snapshot_json").notNull(),
+    requestId: text("request_id").notNull(),
+    finalEntryId: text("final_entry_id"),
+    errorCode: text("error_code"),
+    createdAt: timestamp("created_at").notNull(),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+  },
+  (table) => [
+    index("ai_agent_runs_session_created_idx").on(
+      table.sessionId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_agent_runs_session_lane_status_idx").on(
+      table.sessionId,
+      table.lane,
+      table.status,
+    ),
+    index("ai_agent_runs_agent_created_idx").on(
+      table.agentId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_agent_runs_status_created_idx").on(
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_agent_runs_request_idx").on(table.requestId),
+    check(
+      "ai_agent_runs_status_check",
+      sql`${table.status} IN ('starting', 'running', 'completed', 'failed', 'aborted', 'interrupted')`,
+    ),
+    check("ai_agent_runs_revision_check", sql`${table.agentRevision} >= 1`),
+    check(
+      "ai_agent_runs_snapshot_json_check",
+      sql`json_valid(${table.snapshotJson})`,
+    ),
+  ],
+);
+
 export const aiModelCalls = sqliteTable(
   "ai_model_calls",
   {
@@ -236,6 +354,9 @@ export const aiModelCalls = sqliteTable(
         onDelete: "set null",
       },
     ),
+    runId: text("run_id").references(() => aiAgentRuns.id, {
+      onDelete: "set null",
+    }),
     providerId: text("provider_id").notNull(),
     modelId: text("model_id").notNull(),
     startedAt: timestamp("started_at").notNull(),
@@ -274,6 +395,19 @@ export const aiModelCalls = sqliteTable(
     index("ai_model_calls_request_started_idx").on(
       table.requestId,
       table.startedAt,
+    ),
+    index("ai_model_calls_run_started_idx").on(
+      table.runId,
+      table.startedAt,
+      table.id,
+    ),
+    check(
+      "ai_model_calls_scenario_check",
+      sql`${table.scenario} IN ('model_test', 'conversation', 'agent_run')`,
+    ),
+    check(
+      "ai_model_calls_run_association_check",
+      sql`${table.runId} IS NULL OR (${table.conversationId} IS NULL AND ${table.generationId} IS NULL)`,
     ),
   ],
 );
@@ -408,6 +542,51 @@ export const aiGenerations = sqliteTable(
   ],
 );
 
+export const aiAgentDefinitionsRelations = relations(
+  aiAgentDefinitions,
+  ({ one, many }) => ({
+    creator: one(user, {
+      fields: [aiAgentDefinitions.createdBy],
+      references: [user.id],
+      relationName: "agent_definition_creator",
+    }),
+    updater: one(user, {
+      fields: [aiAgentDefinitions.updatedBy],
+      references: [user.id],
+      relationName: "agent_definition_updater",
+    }),
+    sessions: many(aiAgentSessions),
+    runs: many(aiAgentRuns),
+  }),
+);
+
+export const aiAgentSessionsRelations = relations(
+  aiAgentSessions,
+  ({ one, many }) => ({
+    owner: one(user, {
+      fields: [aiAgentSessions.ownerId],
+      references: [user.id],
+    }),
+    defaultAgent: one(aiAgentDefinitions, {
+      fields: [aiAgentSessions.defaultAgentId],
+      references: [aiAgentDefinitions.id],
+    }),
+    runs: many(aiAgentRuns),
+  }),
+);
+
+export const aiAgentRunsRelations = relations(aiAgentRuns, ({ one, many }) => ({
+  session: one(aiAgentSessions, {
+    fields: [aiAgentRuns.sessionId],
+    references: [aiAgentSessions.id],
+  }),
+  agent: one(aiAgentDefinitions, {
+    fields: [aiAgentRuns.agentId],
+    references: [aiAgentDefinitions.id],
+  }),
+  modelCalls: many(aiModelCalls),
+}));
+
 export const aiModelCallsRelations = relations(
   aiModelCalls,
   ({ one, many }) => ({
@@ -418,6 +597,10 @@ export const aiModelCallsRelations = relations(
     generation: one(aiGenerations, {
       fields: [aiModelCalls.generationId],
       references: [aiGenerations.id],
+    }),
+    run: one(aiAgentRuns, {
+      fields: [aiModelCalls.runId],
+      references: [aiAgentRuns.id],
     }),
     toolExecutions: many(aiToolExecutions),
   }),

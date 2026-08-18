@@ -17,9 +17,10 @@ export interface BeginAiModelCallInput {
   id: string;
   requestId: string;
   userId: string;
-  scenario: "model_test" | "conversation";
+  scenario: "model_test" | "conversation" | "agent_run";
   conversationId: string | null;
   generationId: string | null;
+  runId: string | null;
   providerId: string;
   modelId: string;
   startedAt: Date;

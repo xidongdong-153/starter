@@ -3,7 +3,7 @@
   "name": "agent-harness-contracts-schema",
   "title": "Harness 契约与增量数据库结构",
   "description": "在保留旧 Conversation 契约和表的前提下，新增 Agent、Session、Run、Event 契约与主库索引表",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api,contracts",
   "package": "contracts",

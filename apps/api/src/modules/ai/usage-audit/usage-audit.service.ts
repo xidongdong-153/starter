@@ -55,9 +55,10 @@ const EMPTY_USAGE: AiUsage = {
 export interface AiModelCallAuditContext {
   requestId: string;
   userId: string;
-  scenario: "model_test" | "conversation";
+  scenario: "model_test" | "conversation" | "agent_run";
   conversationId?: string;
   generationId?: string;
+  runId?: string;
   timeoutMs: number;
   generationRemainingMs?: number;
   onStarted?: (modelCallId: string | null) => void;
@@ -92,6 +93,7 @@ export function createAiUsageAuditService(
         scenario: context.scenario,
         conversationId: context.conversationId ?? null,
         generationId: context.generationId ?? null,
+        runId: context.runId ?? null,
         providerId: input.model.providerId,
         modelId: input.model.modelId,
         startedAt,

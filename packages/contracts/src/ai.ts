@@ -372,6 +372,512 @@ export const updateAiSkillSchema = z.object({
 })
 export type UpdateAiSkillInput = z.infer<typeof updateAiSkillSchema>
 
+export const agentLaneSchema = z
+  .string()
+  .min(1)
+  .max(64)
+  .regex(/^(?!_)\w[\w.-]*$/u)
+
+export type AgentLane = z.infer<typeof agentLaneSchema>
+
+export const agentThinkingLevelSchema = z.enum(['off', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'])
+export type AgentThinkingLevel = z.infer<typeof agentThinkingLevelSchema>
+
+export const agentDefinitionStatusSchema = z.enum(['draft', 'enabled', 'disabled'])
+export type AgentDefinitionStatus = z.infer<typeof agentDefinitionStatusSchema>
+
+export const agentDefinitionNameSchema = z.string().trim().min(1).max(80)
+export const agentDefinitionDescriptionSchema = z.string().max(500)
+
+const agentSkillIdsSchema = z
+  .array(uuidSchema)
+  .max(64)
+  .superRefine((values, context) => {
+    if (new Set(values).size !== values.length) {
+      context.addIssue({ code: 'custom', message: '技能列表不能包含重复项' })
+    }
+  })
+
+const agentToolNamesSchema = z
+  .array(z.string().trim().min(1).max(240))
+  .max(64)
+  .superRefine((values, context) => {
+    if (new Set(values).size !== values.length) {
+      context.addIssue({ code: 'custom', message: '工具列表不能包含重复项' })
+    }
+  })
+
+const strictAiModelRefSchema = aiModelRefSchema.strict()
+
+export const agentDefinitionConfigSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  model: strictAiModelRefSchema.nullable(),
+  systemPromptId: uuidSchema.nullable(),
+  skillIds: agentSkillIdsSchema,
+  toolNames: agentToolNamesSchema,
+  thinkingLevel: agentThinkingLevelSchema,
+  maxTurns: z.number().int().min(1).max(32),
+})
+
+export type AgentDefinitionConfig = z.infer<typeof agentDefinitionConfigSchema>
+
+export const defaultAgentDefinitionConfig = agentDefinitionConfigSchema.parse({
+  schemaVersion: 1,
+  model: null,
+  systemPromptId: null,
+  skillIds: [],
+  toolNames: [],
+  thinkingLevel: 'off',
+  maxTurns: 8,
+})
+
+export const agentDefinitionSummarySchema = z.strictObject({
+  id: uuidSchema,
+  name: agentDefinitionNameSchema,
+  description: agentDefinitionDescriptionSchema,
+  status: agentDefinitionStatusSchema,
+  revision: z.number().int().min(1),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+
+export type AgentDefinitionSummary = z.infer<typeof agentDefinitionSummarySchema>
+
+export const agentDefinitionDetailSchema = agentDefinitionSummarySchema.extend({
+  config: agentDefinitionConfigSchema,
+})
+
+export type AgentDefinitionDetail = z.infer<typeof agentDefinitionDetailSchema>
+
+export const agentDefinitionListQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export type AgentDefinitionListQuery = z.infer<typeof agentDefinitionListQuerySchema>
+
+export const agentDefinitionSummaryListSchema = z.strictObject({
+  items: z.array(agentDefinitionSummarySchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+
+export type AgentDefinitionSummaryList = z.infer<typeof agentDefinitionSummaryListSchema>
+
+export const agentDefinitionDetailListSchema = z.strictObject({
+  items: z.array(agentDefinitionDetailSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+
+export type AgentDefinitionDetailList = z.infer<typeof agentDefinitionDetailListSchema>
+
+export const createAgentDefinitionSchema = z.strictObject({
+  name: agentDefinitionNameSchema,
+  description: agentDefinitionDescriptionSchema.optional(),
+  config: agentDefinitionConfigSchema.optional(),
+})
+
+export type CreateAgentDefinitionInput = z.infer<typeof createAgentDefinitionSchema>
+
+export const updateAgentDefinitionSchema = z
+  .strictObject({
+    name: agentDefinitionNameSchema.optional(),
+    description: agentDefinitionDescriptionSchema.optional(),
+    config: agentDefinitionConfigSchema.optional(),
+  })
+  .refine((value) => Object.values(value).some((item) => item !== undefined), {
+    message: '至少提供一个要修改的字段',
+  })
+
+export type UpdateAgentDefinitionInput = z.infer<typeof updateAgentDefinitionSchema>
+
+export const updateAgentDefinitionStatusSchema = z.strictObject({
+  status: agentDefinitionStatusSchema,
+})
+
+export type UpdateAgentDefinitionStatusInput = z.infer<typeof updateAgentDefinitionStatusSchema>
+
+export const agentSessionTitleSchema = z.string().trim().min(1).max(120)
+
+export const agentSessionSchema = z.strictObject({
+  id: uuidSchema,
+  title: agentSessionTitleSchema,
+  defaultAgentId: uuidSchema.nullable(),
+  archivedAt: isoDateTimeSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+
+export type AgentSession = z.infer<typeof agentSessionSchema>
+
+export const createAgentSessionSchema = z.strictObject({
+  title: agentSessionTitleSchema.optional(),
+  defaultAgentId: uuidSchema.nullable().optional(),
+})
+
+export type CreateAgentSessionInput = z.infer<typeof createAgentSessionSchema>
+
+export const updateAgentSessionSchema = z
+  .strictObject({
+    title: agentSessionTitleSchema.optional(),
+    defaultAgentId: uuidSchema.nullable().optional(),
+  })
+  .refine((value) => Object.values(value).some((item) => item !== undefined), {
+    message: '至少提供一个要修改的字段',
+  })
+
+export type UpdateAgentSessionInput = z.infer<typeof updateAgentSessionSchema>
+
+export const agentSessionListQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+
+export type AgentSessionListQuery = z.infer<typeof agentSessionListQuerySchema>
+
+export const agentSessionListSchema = z.strictObject({
+  items: z.array(agentSessionSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+
+export type AgentSessionList = z.infer<typeof agentSessionListSchema>
+
+export const agentTranscriptQuerySchema = z.strictObject({
+  lane: agentLaneSchema.default('main'),
+  cursor: z.coerce.number().int().min(0).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50),
+})
+
+export type AgentTranscriptQuery = z.infer<typeof agentTranscriptQuerySchema>
+
+const agentTranscriptItemBaseShape = {
+  id: uuidSchema,
+  sequence: z.number().int().min(1),
+  lane: agentLaneSchema,
+  createdAt: isoDateTimeSchema,
+}
+
+export const agentToolStatusSchema = z.enum([
+  'succeeded',
+  'not_found',
+  'invalid_arguments',
+  'forbidden',
+  'failed',
+  'timed_out',
+  'cancelled',
+  'interrupted',
+])
+
+export type AgentToolStatus = z.infer<typeof agentToolStatusSchema>
+
+export const agentTranscriptUserMessageSchema = z.strictObject({
+  ...agentTranscriptItemBaseShape,
+  type: z.literal('user_message'),
+  runId: uuidSchema,
+  content: z.string(),
+})
+
+export const agentTranscriptAssistantMessageSchema = z.strictObject({
+  ...agentTranscriptItemBaseShape,
+  type: z.literal('assistant_message'),
+  runId: uuidSchema,
+  content: z.string(),
+  status: z.enum(['completed', 'failed', 'aborted', 'interrupted']),
+  model: strictAiModelRefSchema,
+  stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
+  errorCode: apiErrorCodeSchema.nullable(),
+})
+
+export const agentTranscriptToolActivitySchema = z.strictObject({
+  ...agentTranscriptItemBaseShape,
+  type: z.literal('tool_activity'),
+  runId: uuidSchema,
+  toolCallId: z.string().min(1).max(240),
+  name: z.string().min(1).max(240),
+  status: agentToolStatusSchema,
+  errorCode: apiErrorCodeSchema.nullable(),
+  safeSummary: z.string().max(1000).nullable(),
+})
+
+export const agentTranscriptSystemSchema = z.strictObject({
+  ...agentTranscriptItemBaseShape,
+  type: z.literal('system'),
+  runId: uuidSchema.nullable(),
+  kind: z.literal('compaction'),
+  summary: z.string(),
+})
+
+export const agentTranscriptItemSchema = z.discriminatedUnion('type', [
+  agentTranscriptUserMessageSchema,
+  agentTranscriptAssistantMessageSchema,
+  agentTranscriptToolActivitySchema,
+  agentTranscriptSystemSchema,
+])
+
+export type AgentTranscriptItem = z.infer<typeof agentTranscriptItemSchema>
+
+export const agentTranscriptSchema = z.strictObject({
+  items: z.array(agentTranscriptItemSchema),
+  nextCursor: z.number().int().min(1).nullable(),
+})
+
+export type AgentTranscript = z.infer<typeof agentTranscriptSchema>
+
+export const agentRunStatusSchema = z.enum(['starting', 'running', 'completed', 'failed', 'aborted', 'interrupted'])
+export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>
+
+export const agentRunSnapshotSchema = z.strictObject({
+  schemaVersion: z.literal(1),
+  agentId: uuidSchema,
+  agentRevision: z.number().int().min(1),
+  model: strictAiModelRefSchema,
+  systemPromptId: uuidSchema.nullable(),
+  skillIds: agentSkillIdsSchema,
+  toolNames: agentToolNamesSchema,
+  thinkingLevel: agentThinkingLevelSchema,
+  maxTurns: z.number().int().min(1).max(32),
+})
+
+export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>
+
+export const agentRunSchema = z
+  .strictObject({
+    id: uuidSchema,
+    sessionId: uuidSchema,
+    agentId: uuidSchema,
+    agentRevision: z.number().int().min(1),
+    lane: agentLaneSchema,
+    status: agentRunStatusSchema,
+    snapshot: agentRunSnapshotSchema,
+    requestId: z.string().min(1).max(200),
+    finalEntryId: uuidSchema.nullable(),
+    errorCode: apiErrorCodeSchema.nullable(),
+    createdAt: isoDateTimeSchema,
+    startedAt: isoDateTimeSchema.nullable(),
+    finishedAt: isoDateTimeSchema.nullable(),
+  })
+  .superRefine((run, context) => {
+    if (run.snapshot.agentId !== run.agentId) {
+      context.addIssue({
+        code: 'custom',
+        path: ['snapshot', 'agentId'],
+        message: 'Run snapshot 的 Agent 必须与 Run 一致',
+      })
+    }
+    if (run.snapshot.agentRevision !== run.agentRevision) {
+      context.addIssue({
+        code: 'custom',
+        path: ['snapshot', 'agentRevision'],
+        message: 'Run snapshot 的 revision 必须与 Run 一致',
+      })
+    }
+
+    const issue = (path: 'finishedAt' | 'finalEntryId' | 'errorCode', message: string) =>
+      context.addIssue({ code: 'custom', path: [path], message })
+
+    if (run.status === 'starting' || run.status === 'running') {
+      if (run.finishedAt !== null) issue('finishedAt', '非终态 Run 不能包含 finishedAt')
+      if (run.finalEntryId !== null) issue('finalEntryId', '非终态 Run 不能包含 finalEntryId')
+      if (run.errorCode !== null) issue('errorCode', '非终态 Run 不能包含 errorCode')
+      return
+    }
+    if (run.finishedAt === null) issue('finishedAt', '终态 Run 必须包含 finishedAt')
+    if (run.status === 'completed') {
+      if (run.finalEntryId === null) issue('finalEntryId', '完成的 Run 必须包含 finalEntryId')
+      if (run.errorCode !== null) issue('errorCode', '完成的 Run 不能包含 errorCode')
+    }
+    if (run.status === 'failed' && run.errorCode === null) issue('errorCode', '失败的 Run 必须包含 errorCode')
+    if (run.status === 'aborted' && run.errorCode !== 'AI.REQUEST_ABORTED') {
+      issue('errorCode', '已取消的 Run 必须使用 AI.REQUEST_ABORTED')
+    }
+    if (run.status === 'interrupted' && run.errorCode !== 'AI.RUN_INTERRUPTED') {
+      issue('errorCode', '已中断的 Run 必须使用 AI.RUN_INTERRUPTED')
+    }
+  })
+
+export type AgentRun = z.infer<typeof agentRunSchema>
+
+const agentRunInputTextSchema = z.string().trim().min(1).max(100_000)
+
+export const startAgentRunSchema = z.strictObject({
+  agentId: uuidSchema.optional(),
+  lane: agentLaneSchema.optional(),
+  input: agentRunInputTextSchema,
+})
+
+export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>
+
+export const steerAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
+export type SteerAgentRunInput = z.infer<typeof steerAgentRunSchema>
+
+export const followUpAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
+export type FollowUpAgentRunInput = z.infer<typeof followUpAgentRunSchema>
+
+const harnessEventEnvelopeShape = {
+  version: z.literal(1),
+  eventId: uuidSchema,
+  sequence: z.number().int().min(1),
+  sessionId: uuidSchema,
+  runId: uuidSchema,
+  lane: agentLaneSchema,
+  createdAt: isoDateTimeSchema,
+}
+
+export const harnessRunStartedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('run.started'),
+  data: z.strictObject({
+    agentId: uuidSchema,
+    agentRevision: z.number().int().min(1),
+    model: strictAiModelRefSchema,
+  }),
+})
+
+export const harnessMessageStartedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('message.started'),
+  data: z.strictObject({ messageId: uuidSchema, role: z.literal('assistant') }),
+})
+
+export const harnessMessageDeltaEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('message.delta'),
+  data: z.strictObject({ messageId: uuidSchema, delta: z.string() }),
+})
+
+export const harnessMessageCompletedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('message.completed'),
+  data: z.strictObject({
+    messageId: uuidSchema,
+    role: z.literal('assistant'),
+    content: z.string(),
+    stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
+    errorCode: apiErrorCodeSchema.nullable(),
+  }),
+})
+
+export const harnessToolStartedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('tool.started'),
+  data: z.strictObject({
+    toolCallId: z.string().min(1).max(240),
+    name: z.string().min(1).max(240),
+  }),
+})
+
+export const harnessToolProgressEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('tool.progress'),
+  data: z.strictObject({
+    toolCallId: z.string().min(1).max(240),
+    name: z.string().min(1).max(240),
+    safeSummary: z.string().max(1000).nullable(),
+  }),
+})
+
+export const harnessToolCompletedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('tool.completed'),
+  data: z.strictObject({
+    toolCallId: z.string().min(1).max(240),
+    name: z.string().min(1).max(240),
+    status: agentToolStatusSchema,
+    errorCode: apiErrorCodeSchema.nullable(),
+    safeSummary: z.string().max(1000).nullable(),
+    entryId: uuidSchema,
+  }),
+})
+
+export const harnessRunCompletedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('run.completed'),
+  data: z.strictObject({ status: z.literal('completed'), finalEntryId: uuidSchema }),
+})
+
+export const harnessRunFailedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('run.failed'),
+  data: z.strictObject({
+    status: z.literal('failed'),
+    finalEntryId: uuidSchema.nullable(),
+    error: z.strictObject({
+      code: apiErrorCodeSchema,
+      message: z.string().min(1),
+      retryable: z.boolean(),
+    }),
+  }),
+})
+
+export const harnessRunAbortedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('run.aborted'),
+  data: z.strictObject({
+    status: z.literal('aborted'),
+    finalEntryId: uuidSchema.nullable(),
+    errorCode: z.literal('AI.REQUEST_ABORTED'),
+  }),
+})
+
+export const harnessEventSchema = z.discriminatedUnion('type', [
+  harnessRunStartedEventSchema,
+  harnessMessageStartedEventSchema,
+  harnessMessageDeltaEventSchema,
+  harnessMessageCompletedEventSchema,
+  harnessToolStartedEventSchema,
+  harnessToolProgressEventSchema,
+  harnessToolCompletedEventSchema,
+  harnessRunCompletedEventSchema,
+  harnessRunFailedEventSchema,
+  harnessRunAbortedEventSchema,
+])
+
+export type HarnessEvent = z.infer<typeof harnessEventSchema>
+
+export const starterRunDataSchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    runId: uuidSchema,
+    sessionId: uuidSchema,
+    lane: agentLaneSchema,
+    agentId: uuidSchema,
+    agentRevision: z.number().int().min(1),
+    status: z.enum(['completed', 'failed', 'aborted']),
+    finalEntryId: uuidSchema.nullable(),
+    errorCode: apiErrorCodeSchema.nullable(),
+    finishedAt: z.number().int().min(0),
+  })
+  .superRefine((entry, context) => {
+    if (entry.status === 'completed' && entry.finalEntryId === null) {
+      context.addIssue({ code: 'custom', path: ['finalEntryId'], message: '完成的 Run 必须包含 finalEntryId' })
+    }
+    if (entry.status === 'completed' && entry.errorCode !== null) {
+      context.addIssue({ code: 'custom', path: ['errorCode'], message: '完成的 Run 不能包含 errorCode' })
+    }
+    if (entry.status === 'failed' && entry.errorCode === null) {
+      context.addIssue({ code: 'custom', path: ['errorCode'], message: '失败的 Run 必须包含 errorCode' })
+    }
+    if (entry.status === 'aborted' && entry.errorCode !== 'AI.REQUEST_ABORTED') {
+      context.addIssue({ code: 'custom', path: ['errorCode'], message: '已取消的 Run 必须使用 AI.REQUEST_ABORTED' })
+    }
+  })
+
+export type StarterRunData = z.infer<typeof starterRunDataSchema>
+
+export const starterRunEntrySchema = z.strictObject({
+  type: z.literal('custom'),
+  id: uuidSchema,
+  customType: z.literal('starter.run.v1'),
+  data: starterRunDataSchema,
+})
+
+export type StarterRunEntry = z.infer<typeof starterRunEntrySchema>
+
 export const createAiConversationSchema = z.object({
   title: aiConversationTitleSchema.optional(),
   systemPromptId: uuidSchema.optional(),
@@ -521,28 +1027,48 @@ export const aiToolExecutionAuditSummarySchema = z.object({
 })
 export type AiToolExecutionAuditSummary = z.infer<typeof aiToolExecutionAuditSummarySchema>
 
-export const aiModelCallAuditSchema = z.object({
-  id: uuidSchema,
-  requestId: z.string().min(1).max(200),
-  userId: z.string().min(1).max(200),
-  scenario: z.enum(['model_test', 'conversation']),
-  conversationId: uuidSchema.nullable(),
-  generationId: uuidSchema.nullable(),
-  providerId: aiProviderIdSchema,
-  modelId: aiModelIdSchema,
-  startedAt: isoDateTimeSchema,
-  timeoutMs: z.number().int().min(1),
-  finishedAt: isoDateTimeSchema.nullable(),
-  durationMs: z.number().int().min(0).nullable(),
-  result: aiModelCallResultSchema,
-  stopReason: aiModelCallStopReasonSchema.nullable(),
-  errorCode: z.string().max(120).nullable(),
-  usage: aiUsageSchema,
-  cost: aiCostSchema.nullable(),
-})
+export const aiModelCallAuditSchema = z
+  .object({
+    id: uuidSchema,
+    requestId: z.string().min(1).max(200),
+    userId: z.string().min(1).max(200),
+    scenario: z.enum(['model_test', 'conversation', 'agent_run']),
+    conversationId: uuidSchema.nullable(),
+    generationId: uuidSchema.nullable(),
+    runId: uuidSchema.nullable(),
+    providerId: aiProviderIdSchema,
+    modelId: aiModelIdSchema,
+    startedAt: isoDateTimeSchema,
+    timeoutMs: z.number().int().min(1),
+    finishedAt: isoDateTimeSchema.nullable(),
+    durationMs: z.number().int().min(0).nullable(),
+    result: aiModelCallResultSchema,
+    stopReason: aiModelCallStopReasonSchema.nullable(),
+    errorCode: z.string().max(120).nullable(),
+    usage: aiUsageSchema,
+    cost: aiCostSchema.nullable(),
+  })
+  .superRefine((call, context) => {
+    const legacyAssociation = call.conversationId !== null || call.generationId !== null
+    if (call.runId !== null && legacyAssociation) {
+      context.addIssue({ code: 'custom', path: ['runId'], message: 'Run 关联不能与 Conversation 关联同时存在' })
+    }
+    if (call.scenario === 'model_test' && (call.runId !== null || legacyAssociation)) {
+      context.addIssue({ code: 'custom', path: ['scenario'], message: '模型测试不能包含业务关联' })
+    }
+    if (
+      call.scenario === 'conversation' &&
+      (call.runId !== null || call.conversationId === null || call.generationId === null)
+    ) {
+      context.addIssue({ code: 'custom', path: ['scenario'], message: 'Conversation 调用必须包含旧会话关联' })
+    }
+    if (call.scenario === 'agent_run' && (call.runId === null || legacyAssociation)) {
+      context.addIssue({ code: 'custom', path: ['scenario'], message: 'Agent Run 调用必须只包含 runId' })
+    }
+  })
 export type AiModelCallAudit = z.infer<typeof aiModelCallAuditSchema>
 
-export const aiModelCallAuditDetailSchema = aiModelCallAuditSchema.extend({
+export const aiModelCallAuditDetailSchema = aiModelCallAuditSchema.safeExtend({
   toolExecutions: z.array(aiToolExecutionAuditSummarySchema),
 })
 export type AiModelCallAuditDetail = z.infer<typeof aiModelCallAuditDetailSchema>

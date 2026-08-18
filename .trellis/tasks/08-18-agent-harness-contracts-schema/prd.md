@@ -45,15 +45,21 @@
 
 ## Acceptance Criteria
 
-- [ ] 新 schema 对合法 Agent、Session、Run 和所有 HarnessEvent 类型解析成功。
-- [ ] 含 secret、未知字段、非法 lane、非法状态和越界执行参数的输入被拒绝。
-- [ ] 旧 Conversation contracts 和测试保持可用。
-- [ ] migration 后三张新表为空，旧三表和已有记录完整保留。
-- [ ] `ai_model_calls` 同时具有旧关联列和 nullable `run_id`。
-- [ ] 用量审计 DTO 可以区分 model test、旧 Conversation 和新 Agent Run，且关联字段满足互斥规则。
-- [ ] `PRAGMA foreign_key_check` 没有结果。
-- [ ] OpenAPI 与 RPC 类型测试可以继续使用旧协议，并能导入新 DTO。
-- [ ] 全仓类型、Lint、Format、测试、构建和 `db:check` 全部通过。
+- [x] 新 schema 对合法 Agent、Session、Run 和所有 HarnessEvent 类型解析成功。
+- [x] 含 secret、未知字段、非法 lane、非法状态和越界执行参数的输入被拒绝。
+- [x] 旧 Conversation contracts 和测试保持可用。
+- [x] migration 后三张新表为空，旧三表和已有记录完整保留。
+- [x] `ai_model_calls` 同时具有旧关联列和 nullable `run_id`。
+- [x] 用量审计 DTO 可以区分 model test、旧 Conversation 和新 Agent Run，且关联字段满足互斥规则。
+- [x] `PRAGMA foreign_key_check` 没有结果。
+- [x] OpenAPI 与 RPC 类型测试可以继续使用旧协议，并能导入新 DTO。
+- [x] 全仓类型、Lint、Format、测试、构建和 `db:check` 全部通过。
+
+## 验证备注
+
+- 全仓类型、Lint、Format、构建、测试和数据库检查全部通过。
+- `pnpm --filter @starter/api test` 的 28 个测试文件、225 个测试已通过；Admin 全量 17 个测试文件、100 个测试已通过。
+- 根 `pnpm test`（turbo 并行 API + Admin）已通过；此前记录的 Admin 技能页面文案测试超时未复现。
 
 ## Out of Scope
 

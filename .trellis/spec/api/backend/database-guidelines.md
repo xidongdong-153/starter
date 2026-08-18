@@ -56,3 +56,128 @@ status: text("status").notNull().default("active"),
 // 正确：生成干净的 ALTER TABLE ADD COLUMN
 status: text("status").notNull().default("active"),
 ```
+
+## Harness 主库增量迁移
+
+### 1. 适用范围
+
+新增 Agent、Session、Run 业务索引，或给 `ai_model_calls` 增加 Run 关联时，必须保留旧 Conversation 表、列、外键、索引和记录。Pi transcript 不进入 Starter 主库。
+
+### 2. 数据库签名
+
+- `ai_agent_definitions`：`id`、`name`、`description`、`status`、`revision`、`config_json`、创建/更新人和时间。
+- `ai_agent_sessions`：`id`、`owner_id`、`title`、`default_agent_id`、`archived_at` 和时间。
+- `ai_agent_runs`：`id`、`session_id`、`agent_id`、`lane`、`status`、`agent_revision`、`snapshot_json`、`request_id`、终态摘要和时间。
+- `ai_model_calls.run_id`：可空，引用 `ai_agent_runs.id`，索引为 `(run_id, started_at, id)`。
+
+时间列使用 `timestamp_ms`；`final_entry_id` 不建立跨数据库外键。
+
+### 3. 数据契约
+
+`config_json` 和 `snapshot_json` 由 `packages/contracts/src/ai.ts` 的严格 Zod schema 校验，数据库只检查 JSON 语法。旧调用写 `conversation_id`/`generation_id`，新 Run 调用只写 `run_id`，模型测试三列都为空。Run 关联不能和旧 Conversation 关联同时存在。
+
+### 4. 校验与错误矩阵
+
+- `status`、`revision`、`agent_revision` 和 JSON 语法：由表级 CHECK 保证；接口输入继续由 Zod 校验。
+- `run_id` 与旧关联同时存在：数据库拒绝写入。
+- 迁移后外键不完整：`PRAGMA foreign_key_check` 必须返回空结果，否则停止迁移验证。
+- 迁移复制语句缺少旧列或旧值：停止，不在开发库继续执行。
+
+### 5. 正常、基础、错误用例
+
+- 正常：含旧 Conversation 数据的临时库执行新 migration 后，旧记录数和关键字段不变，新三张表为空。
+- 基础：没有 Run 数据时，旧 `ai_model_calls` 的 `run_id` 全部为 `NULL`，旧审计响应增加 `runId: null`。
+- 错误：同时提交 `run_id` 与 `conversation_id` 时写入失败；不能通过删除旧列来绕过约束。
+
+### 6. 必须执行的测试
+
+```bash
+pnpm check
+pnpm --filter @starter/api test
+pnpm build
+pnpm --filter @starter/api db:check
+git diff --check
+```
+
+迁移测试必须先写入 Conversation、message、generation、model call、Provider、Prompt 和 Skill，再执行新 migration，检查旧记录、新表空值、Run 索引和 `foreign_key_check`。
+
+### 7. 错误与正确写法
+
+错误写法只复制部分旧列，或用字符串替换删除旧表关联：
+
+```sql
+INSERT INTO __new_ai_model_calls (id, run_id)
+SELECT id, NULL FROM ai_model_calls;
+```
+
+正确写法逐列复制旧值，只把新增 `run_id` 初始化为 `NULL`，并在最后恢复外键检查：
+
+```sql
+INSERT INTO __new_ai_model_calls (
+  id,
+  request_id,
+  user_id,
+  scenario,
+  conversation_id,
+  generation_id,
+  provider_id,
+  model_id,
+  started_at,
+  timeout_ms,
+  finished_at,
+  duration_ms,
+  result,
+  stop_reason,
+  error_code,
+  input_tokens,
+  output_tokens,
+  cache_read_tokens,
+  cache_write_tokens,
+  cache_write_1h_tokens,
+  reasoning_tokens,
+  total_tokens,
+  cost_input,
+  cost_output,
+  cost_cache_read,
+  cost_cache_write,
+  cost_total,
+  cost_currency,
+  run_id
+)
+SELECT
+  id,
+  request_id,
+  user_id,
+  scenario,
+  conversation_id,
+  generation_id,
+  provider_id,
+  model_id,
+  started_at,
+  timeout_ms,
+  finished_at,
+  duration_ms,
+  result,
+  stop_reason,
+  error_code,
+  input_tokens,
+  output_tokens,
+  cache_read_tokens,
+  cache_write_tokens,
+  cache_write_1h_tokens,
+  reasoning_tokens,
+  total_tokens,
+  cost_input,
+  cost_output,
+  cost_cache_read,
+  cost_cache_write,
+  cost_total,
+  cost_currency,
+  NULL
+FROM ai_model_calls;
+```
+
+```sql
+PRAGMA foreign_keys=ON;
+PRAGMA foreign_key_check;
+```

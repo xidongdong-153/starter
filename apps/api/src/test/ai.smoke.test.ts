@@ -622,6 +622,7 @@ it("配置、模型白名单、用户偏好和 SSE 使用同一套 AI 服务端�
         "providerId",
         "requestId",
         "result",
+        "runId",
         "scenario",
         "startedAt",
         "stopReason",

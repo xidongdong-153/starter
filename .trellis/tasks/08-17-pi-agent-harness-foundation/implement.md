@@ -3,9 +3,10 @@
 ## 当前状态
 
 - 父任务处于 `planning`。
-- 原单任务实施改动已回退，尚未清空开发数据库。
-- 八个子任务已经创建，均处于 `planning`。
-- 用户已批准临时保留旧 Conversation runtime，但未批准启动任何子任务。
+- 当前进度为 `1/8 done`。
+- S1 `08-18-pi-session-storage-foundation` 已完成并归档。
+- S2 至 S8 仍处于 `planning`，均未启动。
+- 旧 Conversation runtime 继续临时保留。
 
 ## 父任务职责
 
@@ -15,8 +16,8 @@
 
 ### 1. 完成基础任务
 
-- [ ] 评审并批准 S1 `08-18-pi-session-storage-foundation`。
-- [ ] 启动、实施、检查并归档 S1。
+- [x] 评审并批准 S1 `08-18-pi-session-storage-foundation`。
+- [x] 启动、实施、检查并归档 S1。
 - [ ] 评审并批准 S2 `08-18-agent-harness-contracts-schema`。
 - [ ] 启动、实施、检查并归档 S2。
 

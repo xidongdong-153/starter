@@ -21,6 +21,7 @@ const call = {
   scenario: 'model_test',
   conversationId: null,
   generationId: null,
+  runId: null,
   providerId: 'openai',
   modelId: 'gpt-4o',
   startedAt: '2025-01-01T00:00:00.000Z',
