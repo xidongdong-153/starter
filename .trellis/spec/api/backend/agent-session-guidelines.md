@@ -43,7 +43,7 @@ GET    /api/ai/sessions/{sessionId}/transcript
 - Session id 与 Pi Session id 是同一个 UUIDv7，由 Starter 生成，创建时传给 `agentSessionStore.createSession({ id })`。
 - 默认列表排除已归档。title 未传时用「新会话」。`defaultAgentId` 非空必须指向已启用的 Agent。
 - transcript 查询参数：lane 默认 `main`，cursor 可选非负整数，limit 默认 50、最大 200，由 `agentTranscriptQuerySchema` 校验。
-- transcript 响应 `{ items, nextCursor }`；没有下一页时 nextCursor 为 null。
+- transcript 响应 `{ items, nextCursor }`；读取时向 Pi Session store 请求 `limit + 1` 条，只有确实读到额外 entry 才返回当前页最后一条 raw entry 的 seq，否则 nextCursor 为 null。
 
 ### 3.1 runId 读取规则
 
@@ -85,7 +85,7 @@ S5 投影读取顺序固定：
 - owner 隔离：他人 GET / PATCH / transcript 返回 404，不能靠 id 探测。
 - `defaultAgentId`：不存在 400、非 enabled 409、enabled 成功。
 - 主库失败补偿删除 Pi Session；补偿失败日志带 sessionId 与 cause（用 fake repository + fake session store 直接测 service）。
-- transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、四种 item、`starter.run.v1`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
+- transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、只有多读到一条 raw entry 时才返回 nextCursor、原始 entry 数量刚好等于 limit 时 nextCursor 为 null、四种 item、`starter.run.v1`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
 - 一致性检查两方向 orphan 且不修改数据。
 
 ## 7. Wrong vs Correct

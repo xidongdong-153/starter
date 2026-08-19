@@ -78,6 +78,7 @@ interface RunContext {
   agentId: string;
   agentRevision: number;
   requestId: string;
+  lease: ActiveRunLease;
   sequencer: EventSequencer;
   events: AsyncEventQueue<HarnessEvent>;
 }
@@ -162,6 +163,7 @@ export function createAiAgentRunService(input: {
       agentId: resolved.id,
       agentRevision: resolved.revision,
       requestId,
+      lease,
       sequencer,
       events,
     };
@@ -359,8 +361,22 @@ export function createAiAgentRunService(input: {
           continue;
         }
         const data = parsed.data;
-        if (data.runId !== runId) {
+        if (
+          data.runId !== runId ||
+          data.sessionId !== run.sessionId ||
+          data.lane !== run.lane ||
+          data.agentId !== run.agentId ||
+          data.agentRevision !== run.agentRevision
+        ) {
           report.corrupted += 1;
+          logger.error(
+            {
+              runId,
+              sessionId: run.sessionId,
+              requestId: run.requestId,
+            },
+            "Run terminal entry 身份字段不匹配，标记 interrupted",
+          );
           markInterrupted(run);
           continue;
         }
@@ -493,7 +509,7 @@ export function createAiAgentRunService(input: {
         );
       }
       events.end();
-      release(registry, runId);
+      release(registry, runId, context.lease);
       return;
     }
 
@@ -513,7 +529,7 @@ export function createAiAgentRunService(input: {
       );
     }
     events.end();
-    release(registry, runId);
+    release(registry, runId, context.lease);
   }
 
   function requireActiveSession(ownerId: string, sessionId: string) {
@@ -673,9 +689,15 @@ function buildSnapshot(
   };
 }
 
-function release(registry: ActiveRunRegistry, runId: string): void {
+function release(
+  registry: ActiveRunRegistry,
+  runId: string,
+  lease: ActiveRunLease,
+): void {
   try {
     registry.release(runId);
+    // attach 之前没有 runId handle，必须同时释放原始 lane lease。
+    registry.release(lease);
   } catch {
     // release 幂等，失败只记录
   }

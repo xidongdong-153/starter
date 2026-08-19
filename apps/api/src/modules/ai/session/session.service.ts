@@ -215,7 +215,7 @@ export function createAiAgentSessionService(input: {
         sessionId,
         lane: query.lane,
         cursor: query.cursor,
-        limit: query.limit,
+        limit: query.limit + 1,
       });
     } catch (cause) {
       logger.error(
@@ -229,16 +229,17 @@ export function createAiAgentSessionService(input: {
       );
     }
 
-    const items = projectTranscript(entries, query.lane, (info) => {
+    const hasMore = entries.length > query.limit;
+    const visibleEntries = hasMore ? entries.slice(0, query.limit) : entries;
+    const items = projectTranscript(visibleEntries, query.lane, (info) => {
       logger.warn(
         { ...info, sessionId, requestId },
         "Agent transcript 跳过不可投影 entry",
       );
     });
 
-    const last = entries[entries.length - 1];
-    const nextCursor =
-      last !== undefined && entries.length >= query.limit ? last.seq : null;
+    const last = visibleEntries[visibleEntries.length - 1];
+    const nextCursor = hasMore && last !== undefined ? last.seq : null;
     return { items, nextCursor };
   }
 

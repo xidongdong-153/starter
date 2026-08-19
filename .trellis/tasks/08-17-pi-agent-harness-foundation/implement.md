@@ -77,11 +77,11 @@ S6 实现提交为 `a4c58d5`。检查点：文本 Run 唯一 completed/failed �
 
 ### 6. 父任务最终验收
 
-- [ ] 逐项核对父任务 `Cross-Child Acceptance Criteria`。
-- [ ] 确认八个子任务均已归档，父任务没有直接产品改动。
-- [ ] 使用 `trellis-check` 检查最终代码与父任务共同约束。
-- [ ] 使用 `trellis-update-spec` 更新已经验证的 Harness 规则。
-- [ ] 运行最终命令：
+- [x] 逐项核对父任务 `Cross-Child Acceptance Criteria`；发现 S8 执行期间有 2 条历史 Tool 审计因事务内关闭外键无效而被级联删除，无法恢复，因此“保留用量审计数据”未通过。
+- [x] 确认八个子任务均已归档，父任务没有直接产品改动。
+- [x] 使用 `trellis-check` 检查最终代码与父任务共同约束；检查代理补充了 Run lane lease、启动恢复身份校验和 transcript cursor 的修复及回归测试。
+- [x] 使用 `trellis-update-spec` 更新已经验证的 Harness 规则；补充 Run 原始 lease 释放、恢复身份字段校验和 transcript cursor 判定规则。
+- [x] 运行最终命令并全部通过：
 
 ```bash
 pnpm check-types
@@ -94,6 +94,7 @@ git diff --check
 ```
 
 - [ ] 未经用户确认，不提交、不推送、不归档父任务。
+- [ ] 父任务暂不能标记为验收完成：历史 Tool 审计数据已发生不可恢复的 2 条记录丢失。
 
 ## 子任务启动规则
 

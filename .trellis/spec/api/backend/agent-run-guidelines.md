@@ -43,7 +43,9 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - `ai_agent_runs` 存 Run 索引与无 secret snapshot：id、session_id、agent_id、lane、status、agent_revision、snapshot_json、request_id、final_entry_id、error_code、created_at、started_at、finished_at。message 和事件不进主库。
 - snapshot 用 `agentRunSnapshotSchema` 校验后 `JSON.stringify` 保存；读取时再次 parse，失败视为数据损坏（运行时不应发生）。
 - Run Service 是 registry reserve/attach/release、Run row、EventSequencer、`run.started` 和 terminal event 的唯一所有者；Executor 不创建或更新主库 Run。
+- `registry.reserve` 返回的原始 lease 必须保留到 Run 终态。`prepare`、`attach` 或 `markRunning` 失败时可能还没有 runId handle，清理路径必须直接释放原始 lease，不能只按 runId 释放。
 - 终态顺序固定：等待 executor result -> 写 `starter.run.v1` -> 条件更新主库 -> 发布唯一 terminal event -> release registry。
+- 启动恢复读取 `starter.run.v1` 时，必须同时核对 `runId`、`sessionId`、`lane`、`agentId` 和 `agentRevision`；任一字段与主库 Run 不一致都按损坏处理并标记 `AI.RUN_INTERRUPTED`。
 - 事件队列是有界 `AsyncEventQueue`（`MAX_PENDING_EVENTS = 1024`），超限时关闭 transport，不阻塞 Agent loop、不 abort Run。
 - SSE 的 `id` 是 eventId、`event` 是 `HarnessEvent.type`、`data` 是完整事件 JSON；heartbeat 用 comment，不创建 HarnessEvent。
 
@@ -66,7 +68,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 
 ## 5. Good / Base / Bad Cases
 
-- Good：`registry.reserve` 在 Run row 创建前检查，busy 直接 409 不产生 Run；Run row 创建后的失败窗口（prepare/attach/markRunning）持久化 failed 并发布 `run.failed` 作为 sequence 1 的唯一 SSE event，不发送 `run.started`。
+- Good：`registry.reserve` 在 Run row 创建前检查，busy 直接 409 不产生 Run；Run row 创建后的失败窗口（prepare/attach/markRunning）持久化 failed 并发布 `run.failed` 作为 sequence 1 的唯一 SSE event，不发送 `run.started`，并直接释放原始 lane lease。
 - Good：正常路径只在 prepare、attach 和 starting -> running 更新成功后才发布 sequence 1 的 `run.started`；message/tool 事件与 terminal event 共用同一个 EventSequencer。
 - Good：客户端断开只停止向该连接写数据（transport 移除），不调用 abort；Run 继续执行并持久化终态。
 - Base：abort 幂等，正在取消时重复调用返回当前 Run 状态；终态后没有 handle 返回 `AI.RUN_NOT_ACTIVE`。
@@ -80,9 +82,9 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 
 - 文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序正确（`run.started` sequence 1，terminal 事件只发布一次），Pi 侧只有一条 `starter.run.v1`，主库终态完整。
 - 同一 Session lane 并发返回 409 `AI.SESSION_BUSY` 且只创建一条 Run row；不同 lane 可并发。
-- provider 失败映射为稳定 failed 终态；abort 产生 aborted 终态，终态后 steer/follow-up 返回 `AI.RUN_NOT_ACTIVE`。
+- provider 失败映射为稳定 failed 终态；prepare 失败后原始 lane lease 已释放，下一次同 lane Run 可以启动；abort 产生 aborted 终态，终态后 steer/follow-up 返回 `AI.RUN_NOT_ACTIVE`。
 - 他人 Session 或 Run 一律 404（读、abort、steer、follow-up、启动都不暴露存在性）。
-- 启动恢复：无 terminal entry -> interrupted；唯一合法 entry -> 投影终态；重复 entry -> corrupted/interrupted；schema 解析失败 -> corrupted/interrupted。
+- 启动恢复：无 terminal entry -> interrupted；唯一合法且 `runId`、`sessionId`、`lane`、`agentId`、`agentRevision` 全部匹配的 entry -> 投影终态；重复 entry、身份字段不匹配 -> corrupted/interrupted；schema 解析失败 -> corrupted/interrupted。
 - transcript 写入侧挂载 runId（message 顶层字段，S5 读取规则兼容）。
 - 测试通过 `createTestApp({}, { agentSessionStore, piAgentExecutor })` 注入 fake executor，控制 streamFn 行为，不依赖真实模型。
 

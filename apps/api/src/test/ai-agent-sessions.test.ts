@@ -409,6 +409,18 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
     expect(page2.data.items.map((item) => Number(item.sequence))).toEqual([
       3, 4,
     ]);
+    expect(page2.data.nextCursor).toBe(4);
+
+    // 原始 entry 数量刚好等于 limit 时也没有下一页。
+    const exactPage = await readSuccess<{
+      items: Array<Record<string, unknown>>;
+      nextCursor: number | null;
+    }>(
+      await app.request(`/api/ai/sessions/${sessionId}/transcript?limit=7`, {
+        headers: { cookie: user.cookie },
+      }),
+    );
+    expect(exactPage.data.nextCursor).toBeNull();
 
     // 非法 lane 被契约拦截
     const badLane = await app.request(

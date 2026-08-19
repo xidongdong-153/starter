@@ -17,6 +17,7 @@ import { expect, it, vi } from "vitest";
 import {
   createActiveRunRegistry,
   createPiAgentExecutor,
+  type PiAgentExecutor,
 } from "@api/infra/agent/index.js";
 import { createPiSessionStore } from "@api/infra/agent/pi-session-store.js";
 import {
@@ -555,6 +556,59 @@ it("provider 失败映射为稳定 failed 终态", async () => {
   }
 });
 
+it("prepare 失败后释放 lane lease，下一次同 lane Run 可以启动", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "starter-run-prepare-failed-"),
+  );
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const prepare = vi.fn(() => {
+    throw new Error("prepare failed");
+  });
+  const executor = { prepare } as unknown as PiAgentExecutor;
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    { agentSessionStore: store, piAgentExecutor: executor },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-prepare-failed@example.com");
+    const { agentId } = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "prepare-failed-agent",
+    );
+    const { sessionId } = await createSession(
+      app,
+      user.cookie,
+      "prepare failed",
+    );
+
+    const first = await startRun(app, user.cookie, sessionId, {
+      agentId,
+      input: "first",
+    });
+    expect(first.status).toBe(200);
+    const firstEvents = parseSseEvents(await readSse(first));
+    expect(firstEvents.map((event) => event.type)).toEqual(["run.failed"]);
+
+    const second = await startRun(app, user.cookie, sessionId, {
+      agentId,
+      input: "second",
+    });
+    expect(second.status).toBe(200);
+    const secondEvents = parseSseEvents(await readSse(second));
+    expect(secondEvents.map((event) => event.type)).toEqual(["run.failed"]);
+    expect(prepare).toHaveBeenCalledTimes(2);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 it("abort 产生 aborted 终态；终态后 steer/follow-up 返回 AI_RUN_NOT_ACTIVE", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-run-abort-"));
   const store = createPiSessionStore({
@@ -954,6 +1008,30 @@ it("启动恢复：唯一合法 entry 投影终态；重复 entry 标记 interru
       .get();
     expect(corruptedRow?.status).toBe("interrupted");
     expect(corruptedRow?.errorCode).toBe(ApiErrorCodes.AI_RUN_INTERRUPTED);
+
+    // entry 结构合法但身份字段与主库 Run 不一致，同样视为损坏。
+    const mismatchedRunId = await makeRun("running");
+    await session.appendRunTerminalEntry("main", {
+      schemaVersion: 1,
+      runId: mismatchedRunId,
+      sessionId,
+      lane: "main",
+      agentId: generateId(),
+      agentRevision: 1,
+      status: "failed",
+      finalEntryId: null,
+      errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR,
+      finishedAt: Date.now(),
+    });
+    const report3 = await service.recoverInterrupted();
+    expect(report3.corrupted).toBe(1);
+    const mismatchedRow = runtime.db
+      .select()
+      .from(aiAgentRuns)
+      .where(eq(aiAgentRuns.id, mismatchedRunId))
+      .get();
+    expect(mismatchedRow?.status).toBe("interrupted");
+    expect(mismatchedRow?.errorCode).toBe(ApiErrorCodes.AI_RUN_INTERRUPTED);
   } finally {
     cleanup();
   }
