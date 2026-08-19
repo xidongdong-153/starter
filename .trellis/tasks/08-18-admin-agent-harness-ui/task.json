@@ -3,7 +3,7 @@
   "name": "admin-agent-harness-ui",
   "title": "Admin Harness 调试界面",
   "description": "新增 Agent Session 与 Run 调试页面、API hooks、事件 reducer 和前端测试",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "admin,contracts",
   "package": "admin",
