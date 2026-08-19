@@ -11,7 +11,7 @@
 - S5 `08-18-agent-session-api` 已完成、检查并归档，提交为 `81ce2fb`（实现）/ `164daff`（归档）。
 - S6 `08-18-agent-run-api` 已完成、检查并归档，提交为 `a4c58d5`（实现）/ `ba7b3fd`（track）。
 - S7 `08-18-admin-agent-harness-ui` 已完成、检查并归档，提交为 `c96423c`（实现）/ `8aa6bd6`（归档）。
-- S8 `08-18-conversation-destructive-cutover` 已完成、检查并归档，提交为 `22884b3`（api/实现）、`56346b0`（admin/实现）、`32b98f2`（track）。旧 Conversation runtime、contracts、Admin 页面和三张数据表均已删除。
+- S8 `08-18-conversation-destructive-cutover` 已完成、检查并归档，提交为 `22884b3`（api/实现）、`56346b0`（admin/实现），归档提交由 task.py 记录。旧 Conversation runtime、contracts、Admin 页面和三张数据表均已删除。
 - 旧 Conversation runtime 不再保留
 
 ## 父任务职责
