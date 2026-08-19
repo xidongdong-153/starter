@@ -19,8 +19,6 @@ const call = {
   requestId: 'request-1',
   userId: 'user-1',
   scenario: 'model_test',
-  conversationId: null,
-  generationId: null,
   runId: null,
   providerId: 'openai',
   modelId: 'gpt-4o',

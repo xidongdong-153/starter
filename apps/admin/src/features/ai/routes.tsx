@@ -2,27 +2,9 @@ import type { AdminRouteRecord } from '@admin/app/router/types'
 
 import { PermissionKeys } from '@starter/contracts'
 import { lazyRouteComponent } from '@tanstack/react-router'
-import {
-  BarChart3,
-  Bot,
-  FileText,
-  GraduationCap,
-  MessageCircle,
-  MessagesSquare,
-  ScrollText,
-  SlidersHorizontal,
-} from 'lucide-react'
+import { BarChart3, Bot, FileText, GraduationCap, MessagesSquare, ScrollText, SlidersHorizontal } from 'lucide-react'
 
 export const aiRoutes: AdminRouteRecord[] = [
-  {
-    component: lazyRouteComponent(() => import('./pages/AiConversations'), 'AiConversations'),
-    icon: MessageCircle,
-    id: 'ai.chat',
-    layout: { contentWidth: 'full' },
-    menu: { group: 'ai', order: 5 },
-    path: '/ai/chat',
-    title: 'menu.aiChat',
-  },
   {
     component: lazyRouteComponent(() => import('./pages/AgentSessions'), 'AgentSessions'),
     icon: MessagesSquare,

@@ -1,11 +1,8 @@
 import type {
-  AiConversationDetail,
-  AiConversationList,
   AiModelCallAuditDetail,
   AiModelCallAuditList,
   AiModelCallAuditQuery,
   AiModelRef,
-  CreateAiConversationInput,
   ReplaceAiEnabledModelsInput,
   UpdateAiProviderConfigInput,
 } from '@starter/contracts'
@@ -14,11 +11,7 @@ import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/r
 import {
   checkAiProvider,
   clearAiProviderCredential,
-  createAiConversation,
-  deleteAiConversation,
   getAdminAiModels,
-  getAiConversation,
-  getAiConversations,
   getAiModels,
   getAiPreference,
   getAiProviders,
@@ -28,7 +21,6 @@ import {
   replaceAdminAiModels,
   setAdminAiDefault,
   setAiProviderState,
-  stopAiConversationGeneration,
   updateAiPreference,
   updateAiProviderConfig,
 } from './ai.api'
@@ -43,11 +35,6 @@ export const aiQueryKeys = {
   usageCallDetail: (callId: string) => [...aiQueryKeys.admin, 'usage', 'call', callId] as const,
   models: () => [...aiQueryKeys.all, 'models'] as const,
   preference: () => [...aiQueryKeys.all, 'preference'] as const,
-  conversations: () => [...aiQueryKeys.all, 'conversations'] as const,
-  conversationLists: () => [...aiQueryKeys.conversations(), 'list'] as const,
-  conversationList: (query: { page: number; pageSize: number }) => [...aiQueryKeys.conversationLists(), query] as const,
-  conversationDetails: () => [...aiQueryKeys.conversations(), 'detail'] as const,
-  conversationDetail: (conversationId: string) => [...aiQueryKeys.conversationDetails(), conversationId] as const,
   systemPrompts: () => [...aiQueryKeys.admin, 'system-prompts'] as const,
   globalSystemPrompt: () => [...aiQueryKeys.admin, 'settings', 'system-prompt'] as const,
   promptTemplates: () => [...aiQueryKeys.admin, 'prompt-templates'] as const,
@@ -91,55 +78,6 @@ export function useAiModelsQuery() {
 
 export function useAiPreferenceQuery() {
   return useQuery({ queryKey: aiQueryKeys.preference(), queryFn: getAiPreference })
-}
-
-export function useAiConversationsQuery(query: { page: number; pageSize: number } = { page: 1, pageSize: 20 }) {
-  return useQuery<AiConversationList>({
-    queryKey: aiQueryKeys.conversationList(query),
-    queryFn: () => getAiConversations(query),
-  })
-}
-
-export function useAiConversationQuery(conversationId: string | null) {
-  return useQuery<AiConversationDetail>({
-    queryKey: aiQueryKeys.conversationDetail(conversationId ?? ''),
-    queryFn: () => getAiConversation(conversationId ?? ''),
-    enabled: conversationId !== null,
-  })
-}
-
-export function useCreateAiConversationMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: (input: CreateAiConversationInput = {}) => createAiConversation(input),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: aiQueryKeys.conversationLists() })
-    },
-  })
-}
-
-export function useDeleteAiConversationMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: deleteAiConversation,
-    onSuccess: async (_, conversationId) => {
-      queryClient.removeQueries({ queryKey: aiQueryKeys.conversationDetail(conversationId) })
-      await queryClient.invalidateQueries({ queryKey: aiQueryKeys.conversationLists() })
-    },
-  })
-}
-
-export function useStopAiConversationGenerationMutation() {
-  const queryClient = useQueryClient()
-  return useMutation({
-    mutationFn: stopAiConversationGeneration,
-    onSuccess: async (generation) => {
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: aiQueryKeys.conversationList({ page: 1, pageSize: 20 }) }),
-        queryClient.invalidateQueries({ queryKey: aiQueryKeys.conversationDetail(generation.conversationId) }),
-      ])
-    },
-  })
 }
 
 async function invalidateAdminAi(queryClient: ReturnType<typeof useQueryClient>) {
