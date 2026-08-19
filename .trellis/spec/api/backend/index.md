@@ -45,4 +45,5 @@ pnpm --filter @starter/api test
 - `agent-run-guidelines.md`：AgentRun 子域的启动、SSE、终态持久化、控制接口、并发和启动恢复。
 - `pi-agent-execution-guidelines.md`：Pi Agent executor、原生 stream、Tool adapter、Session entry、compaction、active Run 和审计边界。
 - `ai-integration-guidelines.md`：AI Provider、加密凭据、模型目录、白名单、默认模型和 SSE 调用契约。
+- `ai-system-design.md`：AI 系统总设计、输入到输出的数据流、事件、双库状态归属、Run 恢复和审计记录。
 - `quality-guidelines.md`：API、数据库和 smoke test 检查项。
