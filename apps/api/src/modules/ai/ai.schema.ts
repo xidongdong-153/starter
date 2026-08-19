@@ -1,6 +1,5 @@
 import { relations, sql } from "drizzle-orm";
 import {
-  type AnySQLiteColumn,
   check,
   index,
   integer,
@@ -8,7 +7,6 @@ import {
   real,
   sqliteTable,
   text,
-  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 import { user } from "@api/modules/auth/auth.schema.js";
@@ -340,20 +338,6 @@ export const aiModelCalls = sqliteTable(
     requestId: text("request_id").notNull(),
     userId: text("user_id").notNull(),
     scenario: text("scenario").notNull(),
-    conversationId: text("conversation_id").references(
-      // eslint-disable-next-line ts/no-use-before-define -- 审计记录通过延迟回调引用后声明的会话表。
-      (): AnySQLiteColumn => aiConversations.id,
-      {
-        onDelete: "set null",
-      },
-    ),
-    generationId: text("generation_id").references(
-      // eslint-disable-next-line ts/no-use-before-define -- 审计记录通过延迟回调引用后声明的 generation 表。
-      (): AnySQLiteColumn => aiGenerations.id,
-      {
-        onDelete: "set null",
-      },
-    ),
     runId: text("run_id").references(() => aiAgentRuns.id, {
       onDelete: "set null",
     }),
@@ -403,11 +387,7 @@ export const aiModelCalls = sqliteTable(
     ),
     check(
       "ai_model_calls_scenario_check",
-      sql`${table.scenario} IN ('model_test', 'conversation', 'agent_run')`,
-    ),
-    check(
-      "ai_model_calls_run_association_check",
-      sql`${table.runId} IS NULL OR (${table.conversationId} IS NULL AND ${table.generationId} IS NULL)`,
+      sql`${table.scenario} IN ('model_test', 'agent_run', 'legacy')`,
     ),
   ],
 );
@@ -437,108 +417,6 @@ export const aiToolExecutions = sqliteTable(
       table.status,
       table.startedAt,
     ),
-  ],
-);
-
-export const aiConversations = sqliteTable(
-  "ai_conversations",
-  {
-    id: text("id").primaryKey(),
-    ownerId: text("owner_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    title: text("title").notNull(),
-    status: text("status").notNull().default("idle"),
-    activeGenerationId: text("active_generation_id"),
-    systemPromptId: text("system_prompt_id").references(
-      () => aiSystemPrompts.id,
-      { onDelete: "set null" },
-    ),
-    lastProviderId: text("last_provider_id"),
-    lastModelId: text("last_model_id"),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-  },
-  (table) => [
-    index("ai_conversations_owner_updated_idx").on(
-      table.ownerId,
-      table.updatedAt,
-      table.id,
-    ),
-    index("ai_conversations_owner_active_idx").on(
-      table.ownerId,
-      table.activeGenerationId,
-    ),
-  ],
-);
-
-export const aiConversationMessages = sqliteTable(
-  "ai_conversation_messages",
-  {
-    id: text("id").primaryKey(),
-    conversationId: text("conversation_id")
-      .notNull()
-      .references(() => aiConversations.id, { onDelete: "cascade" }),
-    sequence: integer("sequence").notNull(),
-    role: text("role").notNull(),
-    contentJson: text("content_json").notNull(),
-    status: text("status").notNull(),
-    providerId: text("provider_id"),
-    modelId: text("model_id"),
-    stopReason: text("stop_reason"),
-    errorCode: text("error_code"),
-    generationId: text("generation_id").references(
-      // eslint-disable-next-line ts/no-use-before-define -- 会话消息与 generation 互相引用，保留延迟解析以支持 SQLite 外键。
-      (): AnySQLiteColumn => aiGenerations.id,
-      { onDelete: "set null" },
-    ),
-    createdAt: timestamp("created_at").notNull(),
-    updatedAt: timestamp("updated_at").notNull(),
-    completedAt: timestamp("completed_at"),
-  },
-  (table) => [
-    uniqueIndex("ai_conversation_messages_sequence_unique").on(
-      table.conversationId,
-      table.sequence,
-    ),
-    index("ai_conversation_messages_conversation_sequence_idx").on(
-      table.conversationId,
-      table.sequence,
-    ),
-    index("ai_conversation_messages_generation_idx").on(table.generationId),
-  ],
-);
-
-export const aiGenerations = sqliteTable(
-  "ai_generations",
-  {
-    id: text("id").primaryKey(),
-    conversationId: text("conversation_id")
-      .notNull()
-      .references(() => aiConversations.id, { onDelete: "cascade" }),
-    ownerId: text("owner_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
-    status: text("status").notNull(),
-    retryOfGenerationId: text("retry_of_generation_id").references(
-      (): AnySQLiteColumn => aiGenerations.id,
-      { onDelete: "set null" },
-    ),
-    userMessageId: text("user_message_id")
-      .notNull()
-      .references(() => aiConversationMessages.id, { onDelete: "cascade" }),
-    startedAt: timestamp("started_at").notNull(),
-    finishedAt: timestamp("finished_at"),
-    errorCode: text("error_code"),
-  },
-  (table) => [
-    index("ai_generations_owner_conversation_idx").on(
-      table.ownerId,
-      table.conversationId,
-      table.startedAt,
-      table.id,
-    ),
-    index("ai_generations_user_message_idx").on(table.userMessageId),
   ],
 );
 
@@ -590,14 +468,6 @@ export const aiAgentRunsRelations = relations(aiAgentRuns, ({ one, many }) => ({
 export const aiModelCallsRelations = relations(
   aiModelCalls,
   ({ one, many }) => ({
-    conversation: one(aiConversations, {
-      fields: [aiModelCalls.conversationId],
-      references: [aiConversations.id],
-    }),
-    generation: one(aiGenerations, {
-      fields: [aiModelCalls.generationId],
-      references: [aiGenerations.id],
-    }),
     run: one(aiAgentRuns, {
       fields: [aiModelCalls.runId],
       references: [aiAgentRuns.id],
@@ -613,55 +483,5 @@ export const aiToolExecutionsRelations = relations(
       fields: [aiToolExecutions.aiCallId],
       references: [aiModelCalls.id],
     }),
-  }),
-);
-
-export const aiConversationsRelations = relations(
-  aiConversations,
-  ({ one, many }) => ({
-    owner: one(user, {
-      fields: [aiConversations.ownerId],
-      references: [user.id],
-    }),
-    messages: many(aiConversationMessages),
-    generations: many(aiGenerations),
-  }),
-);
-
-export const aiConversationMessagesRelations = relations(
-  aiConversationMessages,
-  ({ one }) => ({
-    conversation: one(aiConversations, {
-      fields: [aiConversationMessages.conversationId],
-      references: [aiConversations.id],
-    }),
-    generation: one(aiGenerations, {
-      fields: [aiConversationMessages.generationId],
-      references: [aiGenerations.id],
-    }),
-  }),
-);
-
-export const aiGenerationsRelations = relations(
-  aiGenerations,
-  ({ one, many }) => ({
-    conversation: one(aiConversations, {
-      fields: [aiGenerations.conversationId],
-      references: [aiConversations.id],
-    }),
-    owner: one(user, {
-      fields: [aiGenerations.ownerId],
-      references: [user.id],
-    }),
-    retryOf: one(aiGenerations, {
-      fields: [aiGenerations.retryOfGenerationId],
-      references: [aiGenerations.id],
-      relationName: "retry_chain",
-    }),
-    userMessage: one(aiConversationMessages, {
-      fields: [aiGenerations.userMessageId],
-      references: [aiConversationMessages.id],
-    }),
-    messages: many(aiConversationMessages),
   }),
 );

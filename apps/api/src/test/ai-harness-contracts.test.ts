@@ -403,8 +403,6 @@ describe("agent harness contracts", () => {
       requestId: "request-1",
       userId: "user-1",
       scenario: "agent_run",
-      conversationId: null,
-      generationId: null,
       runId: IDS.run,
       providerId: "openai",
       modelId: "gpt-4o",
@@ -431,7 +429,19 @@ describe("agent harness contracts", () => {
     expect(
       aiModelCallAuditSchema.safeParse({
         ...audit,
-        conversationId: IDS.session,
+        scenario: "legacy",
+        runId: null,
+      }).success,
+    ).toBe(true);
+    expect(
+      aiModelCallAuditSchema.safeParse({ ...audit, scenario: "legacy" })
+        .success,
+    ).toBe(false);
+    expect(
+      aiModelCallAuditSchema.safeParse({
+        ...audit,
+        scenario: "agent_run",
+        runId: null,
       }).success,
     ).toBe(false);
   });

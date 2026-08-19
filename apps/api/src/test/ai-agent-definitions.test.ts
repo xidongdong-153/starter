@@ -282,30 +282,6 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
     });
     const promptBody = await readSuccess<{ id: string }>(prompt);
 
-    const legacyConversation = await postJson(
-      app,
-      "/api/ai/conversations",
-      admin.cookie,
-      {
-        title: "legacy prompt reference",
-        systemPromptId: promptBody.data.id,
-      },
-    );
-    expect(legacyConversation.status).toBe(200);
-    const legacyConversationBody = await readSuccess<{ id: string }>(
-      legacyConversation,
-    );
-    const legacyDeleteAttempt = await app.request(
-      `/api/ai/system-prompts/${promptBody.data.id}`,
-      { method: "DELETE", headers: { cookie: admin.cookie } },
-    );
-    expect(legacyDeleteAttempt.status).toBe(409);
-    const legacyConversationDeleted = await app.request(
-      `/api/ai/conversations/${legacyConversationBody.data.id}`,
-      { method: "DELETE", headers: { cookie: admin.cookie } },
-    );
-    expect(legacyConversationDeleted.status).toBe(200);
-
     for (const [name, config] of [
       [
         "invalid-model",

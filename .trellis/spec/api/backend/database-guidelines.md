@@ -57,37 +57,37 @@ status: text("status").notNull().default("active"),
 status: text("status").notNull().default("active"),
 ```
 
-## Harness 主库增量迁移
+## Harness 主库结构
 
 ### 1. 适用范围
 
-新增 Agent、Session、Run 业务索引，或给 `ai_model_calls` 增加 Run 关联时，必须保留旧 Conversation 表、列、外键、索引和记录。Pi transcript 不进入 Starter 主库。
+修改 Agent、Session、Run 业务表或 `ai_model_calls` Run 关联时，按本节检查。Pi transcript 不进入 Starter 主库。旧 Conversation 三表（`ai_conversations`、`ai_conversation_messages`、`ai_generations`）已在 destructive migration 中删除，不再存在于 schema 和运行时。
 
 ### 2. 数据库签名
 
 - `ai_agent_definitions`：`id`、`name`、`description`、`status`、`revision`、`config_json`、创建/更新人和时间。
 - `ai_agent_sessions`：`id`、`owner_id`、`title`、`default_agent_id`、`archived_at` 和时间。
 - `ai_agent_runs`：`id`、`session_id`、`agent_id`、`lane`、`status`、`agent_revision`、`snapshot_json`、`request_id`、终态摘要和时间。
-- `ai_model_calls.run_id`：可空，引用 `ai_agent_runs.id`，索引为 `(run_id, started_at, id)`。
+- `ai_model_calls.run_id`：可空，引用 `ai_agent_runs.id`，索引为 `(run_id, started_at, id)`，`scenario` 为 `model_test | agent_run | legacy`。
 
 时间列使用 `timestamp_ms`；`final_entry_id` 不建立跨数据库外键。
 
 ### 3. 数据契约
 
-`config_json` 和 `snapshot_json` 由 `packages/contracts/src/ai.ts` 的严格 Zod schema 校验，数据库只检查 JSON 语法。旧调用写 `conversation_id`/`generation_id`，新 Run 调用只写 `run_id`，模型测试三列都为空。Run 关联不能和旧 Conversation 关联同时存在。
+`config_json` 和 `snapshot_json` 由 `packages/contracts/src/ai.ts` 的严格 Zod schema 校验，数据库只检查 JSON 语法。`ai_model_calls` 的 `scenario` 分布：模型测试无 Run 关联，新 Run 调用写 `run_id`，destructive migration 后旧 Conversation 调用归为 `legacy` 且 `run_id` 为 `NULL`。
 
 ### 4. 校验与错误矩阵
 
 - `status`、`revision`、`agent_revision` 和 JSON 语法：由表级 CHECK 保证；接口输入继续由 Zod 校验。
-- `run_id` 与旧关联同时存在：数据库拒绝写入。
+- destructive migration 后旧三表和外键不存在，`ai_model_calls` 不再有 `conversation_id`/`generation_id` 列。
 - 迁移后外键不完整：`PRAGMA foreign_key_check` 必须返回空结果，否则停止迁移验证。
 - 迁移复制语句缺少旧列或旧值：停止，不在开发库继续执行。
 
 ### 5. 正常、基础、错误用例
 
-- 正常：含旧 Conversation 数据的临时库执行新 migration 后，旧记录数和关键字段不变，新三张表为空。
-- 基础：没有 Run 数据时，旧 `ai_model_calls` 的 `run_id` 全部为 `NULL`，旧审计响应增加 `runId: null`。
-- 错误：同时提交 `run_id` 与 `conversation_id` 时写入失败；不能通过删除旧列来绕过约束。
+- 正常：destructive migration 在临时库执行后，旧三表被删除，`ai_model_calls` 旧 `conversation` 调用保留为 `legacy` 且 `run_id` 为 `NULL`，新 Run 调用保留 `run_id`。
+- 基础：没有 Run 数据时，`ai_model_calls` 只有 `legacy` 和模型测试记录，`run_id` 全部为 `NULL`。
+- 错误：destructive migration 后仍从代码、测试或断言中引用旧三表，或复用旧 `conversation_id`/`generation_id` 列。
 
 ### 6. 必须执行的测试
 
@@ -99,85 +99,26 @@ pnpm --filter @starter/api db:check
 git diff --check
 ```
 
-迁移测试必须先写入 Conversation、message、generation、model call、Provider、Prompt 和 Skill，再执行新 migration，检查旧记录、新表空值、Run 索引和 `foreign_key_check`。
+迁移测试必须用 drizzle-kit 事务式执行（BEGIN/COMMIT 逐条跑 `statement-breakpoint`），写入 Conversation、message、generation、model call、Provider、Prompt、Skill 和 Tool 执行，再执行 destructive migration，检查旧三表删除、`legacy` 归一、Run 审计保留、Tool 审计保留和 `foreign_key_check`。
 
 ### 7. 错误与正确写法
 
-错误写法只复制部分旧列，或用字符串替换删除旧表关联：
+错误写法在重建 `ai_model_calls` 时保留旧 `conversation_id`/`generation_id` 列，或不复制 Tool 执行审计（DROP 父表会级联删除 `ai_tool_executions`）：
 
 ```sql
-INSERT INTO __new_ai_model_calls (id, run_id)
-SELECT id, NULL FROM ai_model_calls;
+-- 错误：DROP 被引用的父表会级联清空 ai_tool_executions
+DROP TABLE ai_model_calls;
 ```
 
-正确写法逐列复制旧值，只把新增 `run_id` 初始化为 `NULL`，并在最后恢复外键检查：
-
-```sql
-INSERT INTO __new_ai_model_calls (
-  id,
-  request_id,
-  user_id,
-  scenario,
-  conversation_id,
-  generation_id,
-  provider_id,
-  model_id,
-  started_at,
-  timeout_ms,
-  finished_at,
-  duration_ms,
-  result,
-  stop_reason,
-  error_code,
-  input_tokens,
-  output_tokens,
-  cache_read_tokens,
-  cache_write_tokens,
-  cache_write_1h_tokens,
-  reasoning_tokens,
-  total_tokens,
-  cost_input,
-  cost_output,
-  cost_cache_read,
-  cost_cache_write,
-  cost_total,
-  cost_currency,
-  run_id
-)
-SELECT
-  id,
-  request_id,
-  user_id,
-  scenario,
-  conversation_id,
-  generation_id,
-  provider_id,
-  model_id,
-  started_at,
-  timeout_ms,
-  finished_at,
-  duration_ms,
-  result,
-  stop_reason,
-  error_code,
-  input_tokens,
-  output_tokens,
-  cache_read_tokens,
-  cache_write_tokens,
-  cache_write_1h_tokens,
-  reasoning_tokens,
-  total_tokens,
-  cost_input,
-  cost_output,
-  cost_cache_read,
-  cost_cache_write,
-  cost_total,
-  cost_currency,
-  NULL
-FROM ai_model_calls;
-```
+正确写法先复制 Tool 执行审计到临时表，重建备份表，再恢复：
 
 ```sql
-PRAGMA foreign_keys=ON;
-PRAGMA foreign_key_check;
+CREATE TABLE __keep_tool_executions AS SELECT * FROM ai_tool_executions;
+DROP TABLE ai_tool_executions;
+-- ... 删除旧表、重建 ai_model_calls、把旧 scenario 归一为 legacy ...
+CREATE TABLE ai_tool_executions (... 同原结构 ...);
+INSERT INTO ai_tool_executions SELECT * FROM __keep_tool_executions;
+DROP TABLE __keep_tool_executions;
 ```
+
+注意：drizzle-kit migrate 在单个事务内执行 SQL，事务内 `PRAGMA foreign_keys=OFF` 是 no-op，所以重建父表前必须显式解除子表引用，不能依赖外键开关。

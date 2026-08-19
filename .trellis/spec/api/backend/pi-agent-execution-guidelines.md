@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-修改 `apps/api/src/infra/agent/`、Pi 原生 stream adapter、Agent Tool adapter、active Run registry 或 Run 用量审计 port 时，按本规范执行。S4 executor 不注册 HTTP Route、不写 `starter.run.v1`、不调用旧 `tool-orchestrator`；Run Service 负责 registry 生命周期和 terminal event。
+修改 `apps/api/src/infra/agent/`、Pi 原生 stream adapter、Agent Tool adapter、active Run registry 或 Run 用量审计 port 时，按本规范执行。S4 executor 不注册 HTTP Route、不写 `starter.run.v1`；Run Service 负责 registry 生命周期和 terminal event。
 
 ## 2. Signatures
 
@@ -38,7 +38,7 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 - Pi `Agent` 负责 prompt、Tool loop、并行/串行执行、steer、follow-up 和 abort；Starter 不复制这些循环。
 - `PiEventMapper` 是 Pi `AgentEvent` 到 HarnessEvent 的唯一转换位置。assistant message 在 `message_start` 预生成 entry ID，Tool 在写入 result entry 后发布 `tool.completed`；sequence 只由 caller 提供的 `EventSequencer` 分配。
 - 原生 stream adapter 只使用现有 `Models` 的模型、Provider auth、provider env、timeout 和 AbortSignal；失败编码为 Pi `error`/`aborted` event。旧 `AiGatewayEvent` 不能作为 `StreamFn` 输入 Agent。
-- `ai_model_calls` 的新记录使用 `scenario='agent_run'`、`run_id=<runId>`，`conversation_id` 和 `generation_id` 必须为 `NULL`。审计 begin/finalize 是 best-effort，不能把 secret、原始错误、prompt 或 response 写入日志或事件。
+- `ai_model_calls` 的新记录使用 `scenario='agent_run'`、`run_id=<runId>`。审计 begin/finalize 是 best-effort，不能把 secret、原始错误、prompt 或 response 写入日志或事件。
 - Tool 的模型参数来自 `z.toJSONSchema`；`AgentTool.execute` 前仍执行原 Zod schema parse，并合并 Tool timeout、Run deadline 和 AbortSignal。公开事件和 transcript projection 只允许 `safeSummary`，最多 1000 字符。
 - compaction 只能调用 Pi 的 `estimateContextTokens`、`shouldCompact`、`prepareCompaction` 和 `compact`；摘要或 entry 写入失败时 Run 失败且原 transcript 保留。
 

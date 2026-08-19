@@ -3,7 +3,7 @@
   "name": "conversation-destructive-cutover",
   "title": "Conversation 破坏性切换",
   "description": "删除旧 Conversation runtime、contracts、Admin 页面和数据表，完成最终迁移与全量验收",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": "api,contracts,admin",
   "package": "api",
@@ -21,6 +21,6 @@
   "children": [],
   "parent": "08-17-pi-agent-harness-foundation",
   "relatedFiles": [],
-  "notes": "",
+  "notes": "S8 完成：删除旧 Conversation runtime（conversation/ 目录 5 文件、tool-orchestrator.ts）、contracts、Admin 页面（AiConversations.tsx + 测试）与三张数据表；重建 ai_model_calls（去 conversation/generation 列，保留 run_id，旧记录归并 legacy=57）；生成并执行 0012_far_lockjaw.sql，开发库已迁移；新增 ai-destructive-migration.test.ts 验证；全仓质量门通过（api 33 files/228 tests，admin 19 files/107 tests）；spec 已改写为 Harness 规则。注意：执行开发库 migration 时因 drizzle-kit 事务内 PRAGMA foreign_keys 无效，原有 2 条 tool 审计被级联删除（已修复 migration 为事务安全版，但旧数据无法恢复，见 progress.md）。",
   "meta": {}
 }

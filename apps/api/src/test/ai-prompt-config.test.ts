@@ -1,11 +1,8 @@
-import type { AiGateway, AiGatewayInput } from "@api/infra/ai/index.js";
 import { ApiErrorCodes } from "@starter/contracts";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 
 import {
-  aiEnabledModels,
-  aiProviderConfigs,
   permissions,
   rolePermissions,
   roles,
@@ -18,16 +15,6 @@ import {
   readSuccess,
   register,
 } from "./helpers.js";
-
-const usage = {
-  inputTokens: 1,
-  outputTokens: 1,
-  cacheReadTokens: null,
-  cacheWriteTokens: null,
-  cacheWrite1hTokens: null,
-  reasoningTokens: null,
-  totalTokens: 2,
-} as const;
 
 it("system prompt CRUD：创建、更新、列表、删除全链路", async () => {
   const { app, cleanup, runtime } = createTestApp();
@@ -123,105 +110,6 @@ it("被引用为全局默认的 system prompt 不能删除（409）", async () =
     expect(deleted.status).toBe(409);
     const failure = await readFailure(deleted);
     expect(failure.error.code).toBe(ApiErrorCodes.AI_PROMPT_REFERENCED);
-  } finally {
-    cleanup();
-  }
-});
-
-it("对话注入 system prompt：会话级覆盖优先于全局默认", async () => {
-  const captured: AiGatewayInput[] = [];
-  const gateway: AiGateway = {
-    async *stream(input) {
-      captured.push(input);
-      yield {
-        type: "text_delta",
-        text: "hi",
-        turnIndex: input.turnIndex,
-        contentIndex: 0,
-        blockId: `${input.turnIndex}:0`,
-      };
-      yield {
-        type: "completed",
-        turnIndex: input.turnIndex,
-        assistantMessage: {
-          role: "assistant",
-          blocks: [
-            {
-              type: "text",
-              text: "hi",
-              turnIndex: input.turnIndex,
-              contentIndex: 0,
-              blockId: `${input.turnIndex}:0`,
-            },
-          ],
-        },
-        stopReason: "stop",
-        usage,
-        cost: null,
-      };
-    },
-  };
-  const { app, cleanup, runtime } = createTestApp({}, { aiGateway: gateway });
-  try {
-    const admin = await registerAdmin(app, runtime);
-    const globalPrompt = await postJson(
-      app,
-      "/api/ai/system-prompts",
-      admin.cookie,
-      { name: "global-default", content: "全局默认提示词" },
-    );
-    const globalBody = await readSuccess<{ id: string }>(globalPrompt);
-    await putJson(app, "/api/ai/settings/system-prompt", admin.cookie, {
-      systemPromptId: globalBody.data.id,
-    });
-
-    const owner = await register(app, "prompt-user@example.com");
-    const model = seedModel(runtime);
-    const conversationResponse = await app.request("/api/ai/conversations", {
-      method: "POST",
-      headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "with global" }),
-    });
-    const conversation = await readSuccess<{ id: string }>(
-      conversationResponse,
-    );
-    await sendMessage(app, conversation.data.id, owner.cookie, model);
-    expect(captured[0]?.systemPrompt).toBe("全局默认提示词");
-
-    // 会话级覆盖：创建会话时指定 systemPromptId
-    const customPrompt = await postJson(
-      app,
-      "/api/ai/system-prompts",
-      admin.cookie,
-      { name: "session-rule", content: "会话专属提示词" },
-    );
-    const customBody = await readSuccess<{ id: string }>(customPrompt);
-    const customConversationResponse = await app.request(
-      "/api/ai/conversations",
-      {
-        method: "POST",
-        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: "with override",
-          systemPromptId: customBody.data.id,
-        }),
-      },
-    );
-    const customConversation = await readSuccess<{ id: string }>(
-      customConversationResponse,
-    );
-    await sendMessage(app, customConversation.data.id, owner.cookie, model);
-    expect(captured[1]?.systemPrompt).toBe("会话专属提示词");
-
-    // 发消息时切换 systemPromptId 并清除回全局默认
-    await sendMessage(app, conversation.data.id, owner.cookie, model, {
-      systemPromptId: customBody.data.id,
-    });
-    expect(captured[2]?.systemPrompt).toBe("会话专属提示词");
-    await sendMessage(app, conversation.data.id, owner.cookie, model, {
-      systemPromptId: null,
-    });
-    expect(captured[3]?.systemPrompt).toBe("全局默认提示词");
   } finally {
     cleanup();
   }
@@ -336,49 +224,4 @@ async function getJson(
   cookie: string,
 ) {
   return app.request(path, { method: "GET", headers: { cookie } });
-}
-
-async function sendMessage(
-  app: ReturnType<typeof createTestApp>["app"],
-  conversationId: string,
-  cookie: string,
-  model: { providerId: string; modelId: string },
-  extra: Record<string, unknown> = {},
-) {
-  const response = await app.request(
-    `/api/ai/conversations/${conversationId}/messages`,
-    {
-      method: "POST",
-      headers: { cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ text: "hello", model, ...extra }),
-    },
-  );
-  await response.text();
-}
-
-function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]) {
-  const model = runtime.ai.listModels("openai")[0];
-  if (!model) throw new Error("测试模型目录为空");
-  const now = new Date();
-  runtime.db
-    .insert(aiProviderConfigs)
-    .values({
-      providerId: model.providerId,
-      enabled: true,
-      configRevision: 0,
-      checkedConfigRevision: 0,
-      authStatus: "ready",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-  runtime.db
-    .insert(aiEnabledModels)
-    .values({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      enabledAt: now,
-    })
-    .run();
-  return { providerId: model.providerId, modelId: model.modelId };
 }

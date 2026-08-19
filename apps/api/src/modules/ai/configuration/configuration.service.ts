@@ -586,29 +586,13 @@ export function createAiService(
     return definition;
   }
 
-  async function resolveConversationModel(
-    userId: string,
-    requestedModel?: AiModelRef,
-  ): Promise<AiModelRef> {
-    await runtime.ensureReady();
-    return requestedModel
-      ? requireExplicitModel(requestedModel)
-      : selectModelForUser(userId);
-  }
-
   async function resolveAgentModel(model: AiModelRef): Promise<AiModelRef> {
     await runtime.ensureReady();
     return requireExplicitModel(model);
   }
 
-  function isConversationModelAllowed(model: AiModelRef): boolean {
-    return isModelAllowed(model);
-  }
-
   return {
-    resolveConversationModel,
     resolveAgentModel,
-    isConversationModelAllowed,
     listProviders,
     updateProviderConfig,
     clearProviderCredential,

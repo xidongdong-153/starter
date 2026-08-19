@@ -85,6 +85,13 @@
       "when": 1787032648788,
       "tag": "0011_normal_sentinel",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1787107738253,
+      "tag": "0012_far_lockjaw",
+      "breakpoints": true
     }
   ]
 }

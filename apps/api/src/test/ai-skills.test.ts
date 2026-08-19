@@ -1,10 +1,7 @@
-import type { AiGateway, AiGatewayInput } from "@api/infra/ai/index.js";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 
 import {
-  aiEnabledModels,
-  aiProviderConfigs,
   aiToolExecutions,
   permissions,
   rolePermissions,
@@ -18,16 +15,6 @@ import {
 } from "@api/modules/ai/skill/skill-tools.js";
 
 import { createTestApp, readSuccess, register } from "./helpers.js";
-
-const usage = {
-  inputTokens: 1,
-  outputTokens: 1,
-  cacheReadTokens: null,
-  cacheWriteTokens: null,
-  cacheWrite1hTokens: null,
-  reasoningTokens: null,
-  totalTokens: 2,
-} as const;
 
 it("技能 CRUD：创建、详情、更新、删除、列表不含 content", async () => {
   const { app, cleanup, runtime } = createTestApp();
@@ -117,83 +104,6 @@ it("appendSkillDescriptions：注入 XML 块并转义，无技能时原样返回
   expect(appendSkillDescriptions("base", skills)).toContain(
     "base\n\n<available_skills>",
   );
-});
-
-it("对话注入技能描述块：gatewayInput.systemPrompt 含技能 XML", async () => {
-  const captured: AiGatewayInput[] = [];
-  const gateway: AiGateway = {
-    async *stream(input) {
-      captured.push(input);
-      yield {
-        type: "text_delta",
-        text: "hi",
-        turnIndex: input.turnIndex,
-        contentIndex: 0,
-        blockId: `${input.turnIndex}:0`,
-      };
-      yield {
-        type: "completed",
-        turnIndex: input.turnIndex,
-        assistantMessage: {
-          role: "assistant",
-          blocks: [
-            {
-              type: "text",
-              text: "hi",
-              turnIndex: input.turnIndex,
-              contentIndex: 0,
-              blockId: `${input.turnIndex}:0`,
-            },
-          ],
-        },
-        stopReason: "stop",
-        usage,
-        cost: null,
-      };
-    },
-  };
-  const { app, cleanup, runtime } = createTestApp({}, { aiGateway: gateway });
-  try {
-    const admin = await registerAdmin(app, runtime);
-    await postJson(app, "/api/ai/skills", admin.cookie, {
-      name: "sql-expert",
-      description: "SQL 设计专家",
-      content: "你是 SQL 优化专家",
-    });
-    await postJson(app, "/api/ai/skills", admin.cookie, {
-      name: "disabled-skill",
-      description: "已停用技能",
-      content: "不应出现",
-      enabled: false,
-    });
-
-    const owner = await register(app, "skill-inject@example.com");
-    const model = seedModel(runtime);
-    const conversationResponse = await app.request("/api/ai/conversations", {
-      method: "POST",
-      headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-      body: JSON.stringify({ title: "skills" }),
-    });
-    const conversation = await readSuccess<{ id: string }>(
-      conversationResponse,
-    );
-    const response = await app.request(
-      `/api/ai/conversations/${conversation.data.id}/messages`,
-      {
-        method: "POST",
-        headers: { cookie: owner.cookie, "Content-Type": "application/json" },
-        body: JSON.stringify({ text: "hello", model }),
-      },
-    );
-    await response.text();
-
-    expect(captured[0]?.systemPrompt).toContain("<available_skills>");
-    expect(captured[0]?.systemPrompt).toContain("<name>sql-expert</name>");
-    expect(captured[0]?.systemPrompt).not.toContain("disabled-skill");
-    expect(captured[0]?.systemPrompt).not.toContain("你是 SQL 优化专家");
-  } finally {
-    cleanup();
-  }
 });
 
 it("read_skill 工具：注册在 orchestrator 中，启用技能返回 content，未启用抛错走 failed", async () => {
@@ -325,31 +235,4 @@ async function getJson(
   cookie: string,
 ) {
   return app.request(path, { method: "GET", headers: { cookie } });
-}
-
-function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]) {
-  const model = runtime.ai.listModels("openai")[0];
-  if (!model) throw new Error("测试模型目录为空");
-  const now = new Date();
-  runtime.db
-    .insert(aiProviderConfigs)
-    .values({
-      providerId: model.providerId,
-      enabled: true,
-      configRevision: 0,
-      checkedConfigRevision: 0,
-      authStatus: "ready",
-      createdAt: now,
-      updatedAt: now,
-    })
-    .run();
-  runtime.db
-    .insert(aiEnabledModels)
-    .values({
-      providerId: model.providerId,
-      modelId: model.modelId,
-      enabledAt: now,
-    })
-    .run();
-  return { providerId: model.providerId, modelId: model.modelId };
 }

@@ -186,20 +186,6 @@ type _ai3 = Assert<
   "succeeded" extends AiUsageData["items"][number]["result"] ? true : false
 >;
 
-type AiConversationReq = InferRequestType<
-  C["api"]["ai"]["conversations"][":conversationId"]["$get"]
->;
-type _ai4 = Assert<Eq<AiConversationReq["param"], { conversationId: string }>>;
-type AiConversationData = InferResponseType<
-  C["api"]["ai"]["conversations"][":conversationId"]["$get"],
-  200
->["data"];
-type _ai5 = Assert<
-  "assistant" extends AiConversationData["messages"][number]["role"]
-    ? true
-    : false
->;
-
 type SystemPromptReq = InferRequestType<
   C["api"]["ai"]["system-prompts"][":id"]["$put"]
 >;
@@ -324,8 +310,6 @@ export type RpcTypeProbePass = [
   _ai1,
   _ai2,
   _ai3,
-  _ai4,
-  _ai5,
   _ai6,
   _ai7,
   _ai8,

@@ -4,7 +4,6 @@ import { asc, desc, eq } from "drizzle-orm";
 import type { AppDatabase } from "@api/infra/db/client.js";
 import {
   aiAgentDefinitions,
-  aiConversations,
   aiPromptTemplates,
   aiSettings,
   aiSystemPrompts,
@@ -133,13 +132,6 @@ export function createAiPromptRepository(db: AppDatabase): AiPromptRepository {
         .where(eq(aiSettings.globalSystemPromptId, id))
         .get();
       if (globalRef) return true;
-      const conversationRef = db
-        .select({ id: aiConversations.id })
-        .from(aiConversations)
-        .where(eq(aiConversations.systemPromptId, id))
-        .limit(1)
-        .get();
-      if (conversationRef) return true;
 
       const agentDefinitions = db
         .select({ configJson: aiAgentDefinitions.configJson })

@@ -8,7 +8,7 @@
 
 - 新增或改动 Session 的 repository、service、route、presenter、OpenAPI 或测试。
 - 改动 `ai_agent_sessions` 表或 Session 相关的双库交互（补偿、一致性检查）。
-- 不需要本规范：只读改动 AgentDefinition、旧 Conversation，或后端无关的前端页面。
+- 不需要本规范：只读改动 AgentDefinition、，或后端无关的前端页面。
 
 ## 2. Signatures
 

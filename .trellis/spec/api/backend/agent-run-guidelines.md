@@ -6,7 +6,7 @@
 
 - 新增或改动 Run 的 repository、service、route、presenter、OpenAPI 或测试。
 - 改动 `ai_agent_runs` 表、Run 启动恢复扫描或 SSE 事件流。
-- 不需要本规范：只读改动 AgentDefinition、旧 Conversation、Admin 页面或 executor 内部逻辑（executor 见 `pi-agent-execution-guidelines.md`）。
+- 不需要本规范：只读改动 AgentDefinition、Admin 页面或 executor 内部逻辑（executor 见 `pi-agent-execution-guidelines.md`）。
 
 ## 2. Signatures
 

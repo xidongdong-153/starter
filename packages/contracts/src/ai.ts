@@ -162,114 +162,6 @@ export type UpdateAiDefaultModelInput = z.infer<typeof updateAiDefaultModelSchem
 export const updateAiPreferenceSchema = z.object({ model: aiModelRefSchema.nullable() })
 export type UpdateAiPreferenceInput = z.infer<typeof updateAiPreferenceSchema>
 
-export const aiContentBlockMetadataSchema = z.object({
-  turnIndex: z.number().int().min(0),
-  contentIndex: z.number().int().min(0),
-  blockId: z.string().min(1).max(200),
-})
-
-export type AiContentBlockMetadata = z.infer<typeof aiContentBlockMetadataSchema>
-
-export const aiTextContentSchema = z.object({
-  type: z.literal('text'),
-  text: z.string(),
-})
-
-export type AiTextContent = z.infer<typeof aiTextContentSchema>
-
-export const aiConversationTextBlockSchema = aiContentBlockMetadataSchema.extend({
-  type: z.literal('text'),
-  text: z.string(),
-})
-
-export const aiToolActivityStatusSchema = z.enum([
-  'running',
-  'succeeded',
-  'not_found',
-  'invalid_arguments',
-  'forbidden',
-  'failed',
-  'timed_out',
-  'cancelled',
-  'interrupted',
-])
-
-export type AiToolActivityStatus = z.infer<typeof aiToolActivityStatusSchema>
-
-export const aiToolErrorCodeSchema = z.enum([
-  'AI.TOOL_NOT_FOUND',
-  'AI.TOOL_INVALID_ARGUMENTS',
-  'AI.TOOL_FORBIDDEN',
-  'AI.TOOL_FAILED',
-  'AI.TOOL_TIMED_OUT',
-  'AI.TOOL_CANCELLED',
-])
-
-export type AiToolErrorCode = z.infer<typeof aiToolErrorCodeSchema>
-
-export const aiToolActivitySchema = z.object({
-  type: z.literal('tool_activity'),
-  toolCallId: z.string().min(1).max(240),
-  name: z.string().min(1).max(240),
-  status: aiToolActivityStatusSchema,
-  errorCode: aiToolErrorCodeSchema.nullable(),
-})
-
-export type AiToolActivity = z.infer<typeof aiToolActivitySchema>
-
-export const aiToolActivityEventSchema = aiToolActivitySchema.omit({ type: true }).extend({
-  type: z.literal('tool_activity'),
-  ...aiContentBlockMetadataSchema.shape,
-  safeSummary: z.string().max(1000).nullable(),
-})
-
-export type AiToolActivityEvent = z.infer<typeof aiToolActivityEventSchema>
-
-export const aiConversationToolActivityBlockSchema = aiToolActivitySchema.omit({ type: true }).extend({
-  type: z.literal('tool_activity'),
-  ...aiContentBlockMetadataSchema.shape,
-})
-
-export const aiConversationContentBlockSchema = z.discriminatedUnion('type', [
-  aiConversationTextBlockSchema,
-  aiConversationToolActivityBlockSchema,
-])
-
-export type AiConversationContentBlock = z.infer<typeof aiConversationContentBlockSchema>
-
-export const aiConversationUserMessageSchema = z.object({
-  role: z.literal('user'),
-  blocks: z.array(aiConversationTextBlockSchema),
-})
-
-export const aiAssistantMessageSchema = z.object({
-  role: z.literal('assistant'),
-  blocks: z.array(aiConversationContentBlockSchema),
-})
-
-export const aiConversationMessageSchema = z.discriminatedUnion('role', [
-  aiConversationUserMessageSchema,
-  aiAssistantMessageSchema,
-])
-
-export type AiConversationMessage = z.infer<typeof aiConversationMessageSchema>
-
-export type AiAssistantMessage = z.infer<typeof aiAssistantMessageSchema>
-
-export const aiConversationStatusSchema = z.enum(['idle', 'generating'])
-export type AiConversationStatus = z.infer<typeof aiConversationStatusSchema>
-
-export const aiConversationMessageStatusSchema = z.enum(['completed', 'streaming', 'aborted', 'failed', 'interrupted'])
-export type AiConversationMessageStatus = z.infer<typeof aiConversationMessageStatusSchema>
-
-export const aiGenerationStatusSchema = z.enum(['generating', 'succeeded', 'failed', 'aborted', 'interrupted'])
-export type AiGenerationStatus = z.infer<typeof aiGenerationStatusSchema>
-
-export const aiConversationStopReasonSchema = z.enum(['stop', 'length', 'tool_use'])
-export type AiConversationStopReason = z.infer<typeof aiConversationStopReasonSchema>
-
-export const aiConversationTitleSchema = z.string().trim().min(1).max(120)
-
 export const aiPromptNameSchema = z
   .string()
   .trim()
@@ -884,93 +776,6 @@ export const starterRunEntrySchema = z.strictObject({
 
 export type StarterRunEntry = z.infer<typeof starterRunEntrySchema>
 
-export const createAiConversationSchema = z.object({
-  title: aiConversationTitleSchema.optional(),
-  systemPromptId: uuidSchema.optional(),
-})
-export type CreateAiConversationInput = z.infer<typeof createAiConversationSchema>
-
-export const aiConversationListQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(20),
-})
-export type AiConversationListQuery = z.infer<typeof aiConversationListQuerySchema>
-
-export const aiConversationParamsSchema = z.object({
-  conversationId: uuidSchema,
-})
-
-export const aiConversationGenerationParamsSchema = aiConversationParamsSchema.extend({
-  generationId: uuidSchema,
-})
-
-export const sendAiConversationMessageSchema = z.object({
-  text: z.string().trim().min(1).max(100_000),
-  model: aiModelRefSchema.optional(),
-  systemPromptId: uuidSchema.nullable().optional(),
-})
-export type SendAiConversationMessageInput = z.infer<typeof sendAiConversationMessageSchema>
-
-export const retryAiConversationGenerationSchema = z.object({
-  generationId: uuidSchema,
-  model: aiModelRefSchema.optional(),
-})
-export type RetryAiConversationGenerationInput = z.infer<typeof retryAiConversationGenerationSchema>
-
-export const aiConversationSummarySchema = z.object({
-  id: uuidSchema,
-  title: aiConversationTitleSchema,
-  status: aiConversationStatusSchema,
-  activeGenerationId: uuidSchema.nullable(),
-  lastModel: aiModelRefSchema.nullable(),
-  createdAt: isoDateTimeSchema,
-  updatedAt: isoDateTimeSchema,
-})
-export type AiConversationSummary = z.infer<typeof aiConversationSummarySchema>
-
-export const aiConversationMessageDtoSchema = z.object({
-  id: uuidSchema,
-  conversationId: uuidSchema,
-  sequence: z.number().int().min(1),
-  role: z.enum(['user', 'assistant']),
-  blocks: z.array(aiConversationContentBlockSchema),
-  status: aiConversationMessageStatusSchema,
-  model: aiModelRefSchema.nullable(),
-  stopReason: aiConversationStopReasonSchema.nullable(),
-  errorCode: apiErrorCodeSchema.nullable(),
-  generationId: uuidSchema.nullable(),
-  createdAt: isoDateTimeSchema,
-  updatedAt: isoDateTimeSchema,
-  completedAt: isoDateTimeSchema.nullable(),
-})
-export type AiConversationMessageDto = z.infer<typeof aiConversationMessageDtoSchema>
-
-export const aiConversationDetailSchema = aiConversationSummarySchema.extend({
-  messages: z.array(aiConversationMessageDtoSchema),
-})
-export type AiConversationDetail = z.infer<typeof aiConversationDetailSchema>
-
-export const aiConversationListSchema = z.object({
-  items: z.array(aiConversationSummarySchema),
-  total: z.number().int().min(0),
-  page: z.number().int().min(1),
-  pageSize: z.number().int().min(1),
-})
-export type AiConversationList = z.infer<typeof aiConversationListSchema>
-
-export const aiConversationGenerationSchema = z.object({
-  id: uuidSchema,
-  conversationId: uuidSchema,
-  status: aiGenerationStatusSchema,
-  userMessageId: uuidSchema,
-  assistantMessageId: uuidSchema,
-  retryOfGenerationId: uuidSchema.nullable(),
-  errorCode: apiErrorCodeSchema.nullable(),
-  startedAt: isoDateTimeSchema,
-  finishedAt: isoDateTimeSchema.nullable(),
-})
-export type AiConversationGeneration = z.infer<typeof aiConversationGenerationSchema>
-
 export const aiUsageSchema = z.object({
   inputTokens: z.number().int().min(0).nullable(),
   outputTokens: z.number().int().min(0).nullable(),
@@ -1038,9 +843,7 @@ export const aiModelCallAuditSchema = z
     id: uuidSchema,
     requestId: z.string().min(1).max(200),
     userId: z.string().min(1).max(200),
-    scenario: z.enum(['model_test', 'conversation', 'agent_run']),
-    conversationId: uuidSchema.nullable(),
-    generationId: uuidSchema.nullable(),
+    scenario: z.enum(['model_test', 'agent_run', 'legacy']),
     runId: uuidSchema.nullable(),
     providerId: aiProviderIdSchema,
     modelId: aiModelIdSchema,
@@ -1055,21 +858,16 @@ export const aiModelCallAuditSchema = z
     cost: aiCostSchema.nullable(),
   })
   .superRefine((call, context) => {
-    const legacyAssociation = call.conversationId !== null || call.generationId !== null
-    if (call.runId !== null && legacyAssociation) {
-      context.addIssue({ code: 'custom', path: ['runId'], message: 'Run 关联不能与 Conversation 关联同时存在' })
+    const issue = (path: 'runId' | 'scenario', message: string) =>
+      context.addIssue({ code: 'custom', path: [path], message })
+    if (call.scenario === 'model_test' && call.runId !== null) {
+      issue('scenario', '模型测试不能包含 Run 关联')
     }
-    if (call.scenario === 'model_test' && (call.runId !== null || legacyAssociation)) {
-      context.addIssue({ code: 'custom', path: ['scenario'], message: '模型测试不能包含业务关联' })
+    if (call.scenario === 'agent_run' && call.runId === null) {
+      issue('runId', 'Agent Run 调用必须包含 runId')
     }
-    if (
-      call.scenario === 'conversation' &&
-      (call.runId !== null || call.conversationId === null || call.generationId === null)
-    ) {
-      context.addIssue({ code: 'custom', path: ['scenario'], message: 'Conversation 调用必须包含旧会话关联' })
-    }
-    if (call.scenario === 'agent_run' && (call.runId === null || legacyAssociation)) {
-      context.addIssue({ code: 'custom', path: ['scenario'], message: 'Agent Run 调用必须只包含 runId' })
+    if (call.scenario === 'legacy' && call.runId !== null) {
+      issue('runId', 'legacy 调用不能包含 runId')
     }
   })
 export type AiModelCallAudit = z.infer<typeof aiModelCallAuditSchema>
@@ -1100,48 +898,6 @@ export const aiModelCallAuditQuerySchema = z.object({
   to: isoDateTimeSchema.optional(),
 })
 export type AiModelCallAuditQuery = z.infer<typeof aiModelCallAuditQuerySchema>
-
-export const aiConversationStartEventSchema = z.object({
-  type: z.literal('start'),
-  requestId: z.string().min(1),
-  conversationId: uuidSchema,
-  generationId: uuidSchema,
-  assistantMessageId: uuidSchema,
-  model: aiModelRefSchema,
-})
-
-export const aiConversationTextDeltaEventSchema = z.object({
-  type: z.literal('text_delta'),
-  text: z.string(),
-  ...aiContentBlockMetadataSchema.shape,
-})
-
-export const aiConversationCompletedEventSchema = z.object({
-  type: z.literal('completed'),
-  turnIndex: z.number().int().min(0),
-  assistantMessage: aiAssistantMessageSchema,
-  stopReason: aiConversationStopReasonSchema,
-  usage: aiUsageSchema,
-  cost: aiCostSchema.nullable(),
-})
-
-export const aiConversationErrorEventSchema = z.object({
-  type: z.literal('error'),
-  code: apiErrorCodeSchema,
-  message: z.string().min(1),
-  retryable: z.boolean(),
-  requestId: z.string().min(1),
-})
-
-export const aiConversationStreamEventSchema = z.discriminatedUnion('type', [
-  aiConversationStartEventSchema,
-  aiConversationTextDeltaEventSchema,
-  aiToolActivityEventSchema,
-  aiConversationCompletedEventSchema,
-  aiConversationErrorEventSchema,
-])
-
-export type AiConversationStreamEvent = z.infer<typeof aiConversationStreamEventSchema>
 
 export const aiTestInputSchema = z.object({
   model: aiModelRefSchema.optional(),

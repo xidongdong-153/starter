@@ -37,8 +37,6 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
       requestId: "recovery-request",
       userId: "recovery-user",
       scenario: "model_test",
-      conversationId: null,
-      generationId: null,
       runId: null,
       providerId: "openai",
       modelId: "gpt-test",
@@ -57,8 +55,6 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
       requestId: "fresh-request",
       userId: "fresh-user",
       scenario: "model_test",
-      conversationId: null,
-      generationId: null,
       runId: null,
       providerId: "openai",
       modelId: "gpt-test",
@@ -110,8 +106,6 @@ it("finalize 只写一次并保留真实的 0 usage 和 0 成本", () => {
       requestId: "zero-request",
       userId: "zero-user",
       scenario: "model_test",
-      conversationId: null,
-      generationId: null,
       runId: null,
       providerId: "openai",
       modelId: "gpt-test",
@@ -200,7 +194,7 @@ it("模型和工具调用使用剩余 generation 时间计算 effective timeout"
       {
         requestId: "timeout-request",
         userId: "timeout-user",
-        scenario: "conversation",
+        scenario: "model_test",
         timeoutMs: 60_000,
         generationRemainingMs: 1200,
       },
@@ -381,8 +375,6 @@ describe("agent run audit ports", () => {
         expect.objectContaining({
           scenario: "agent_run",
           runId: "run-1",
-          conversationId: null,
-          generationId: null,
         }),
       );
       modelPort.finalizeModelCall({

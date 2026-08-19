@@ -38,13 +38,10 @@ GET    /api/ai/models
 GET    /api/ai/preferences
 PUT    /api/ai/preferences
 POST   /api/ai/test
-POST   /api/ai/conversations
-GET    /api/ai/conversations?page=1&pageSize=20
-GET    /api/ai/conversations/{conversationId}
-DELETE /api/ai/conversations/{conversationId}
-POST   /api/ai/conversations/{conversationId}/messages
-POST   /api/ai/conversations/{conversationId}/retry
-POST   /api/ai/conversations/{conversationId}/generations/{generationId}/stop
+POST   /api/ai/agents
+GET    /api/ai/agents?page=1&pageSize=20
+GET    /api/ai/sessions
+POST   /api/ai/sessions
 ```
 
 运维命令：
@@ -61,10 +58,7 @@ pnpm --filter @starter/api ai:auth -- <providerId> --logout
 - `ai_enabled_models`：以 `(provider_id, model_id)` 为复合主键保存管理员白名单。
 - `ai_settings`：保存全局默认模型，Provider 与 model 两列必须同时为空或同时有值。
 - `user_ai_preferences`：以 `user_id` 为主键保存个人默认模型，用户删除时级联删除。
-- `ai_conversations`：保存 owner、标题、状态、active generation 和最近模型；列表按 `(owner_id, updated_at, id)` 稳定排序。
-- `ai_conversation_messages`：按 `(conversation_id, sequence)` 唯一保存项目文本和脱敏 tool activity；不保存 SDK message、完整 arguments/result。
-- `ai_generations`：一次用户发送或 retry 一条记录；retry 复用 `user_message_id`，通过 `retry_of_generation_id` 关联来源。
-- `ai_model_calls`：每次 Gateway Provider 请求一条记录；保存安全终态、effective timeout、nullable usage/cost，不保存 prompt、response 或原始错误。
+- `ai_model_calls`：每次 Gateway Provider 请求一条记录；新 Run 调用写 `run_id`，模型测试三列都为空，`scenario` 为 `model_test | agent_run | legacy`。
 - `ai_tool_executions`：每次工具执行一条记录；只保存工具名、安全状态、effective timeout 和项目错误码，不保存 arguments/result。
 
 Gateway 内部签名：
@@ -122,25 +116,17 @@ Gateway 使用项目自己的 user、assistant 和 tool result 消息。公开�
 
 成功 `completed` 携带项目 assistant message、规范化 stop reason、nullable usage/cost。usage 缺失字段使用 `null`，真实的 `0` 必须保留；cost 只有在 USD 估算字段完整时存在，否则整体为 `null`。
 
-会话发送请求使用 `{ text, model? }`，retry 使用 `{ generationId, model? }`。会话详情只返回公开 message DTO；所有 repository 读取、更新、删除和 generation 查询都带 `owner_id`，他人资源统一返回 404。
-
-发送和 retry 在 transaction 内用 `active_generation_id IS NULL` 做 CAS。retry 只允许会话最新的 `failed | aborted | interrupted` generation，复用原 user message，不重复插入 user。普通后续发送保留 aborted partial assistant；retry context 排除同一 user message retry 链中的失败、中止 assistant。
-
-会话 Context 固定最多 50 条项目消息和 100000 个文本字符，不截断、不摘要。超限必须发生在新消息落库前。会话 SSE 绕过普通 5 秒 API timeout，使用 AI deadline 和 AbortSignal first-cause；stop 返回 202 后原 SSE 继续等待唯一 error/completed 终态。
-
-进程启动时把遗留 generating/streaming 记录恢复为 interrupted。终态 transaction 同时更新 assistant、generation、conversation，并且只在 `active_generation_id = 当前 generation` 时清空 active 状态。
-
-模型测试和会话通过同一个 invocation runner 写入 `ai_model_calls`。输入或模型校验在 runner 前失败时不创建记录；Gateway `tool_use` 是成功模型调用，工具失败由 `ai_tool_executions` 单独记录。begin/finalize 审计失败只能记录 operation、requestId 和审计 ID，不能改变模型响应，也不能记录原始异常。
+模型测试和建议调用通过同一个 invocation runner 写入 `ai_model_calls`。输入或模型校验在 runner 前失败时不创建记录；Gateway `tool_use` 是成功模型调用，工具失败由 `ai_tool_executions` 单独记录。begin/finalize 审计失败只能记录 operation、requestId 和审计 ID，不能改变模型响应，也不能记录原始异常。
 
 模型调用保存实际传给 Gateway 的 timeout。工具调用保存 `min(tool.timeoutMs, generationRemainingMs)`；未知工具使用 5000ms 再与 generation remaining 比较。启动恢复只处理 `started_at + timeout_ms + 5000ms` 已过期的 running 记录，刚创建的 running 保持不变。终态更新必须带 `status = running` 条件，重复 finalize 不得覆盖第一终态。
 
 用量读取接口要求 `ai:usage:read`，按 `(started_at, id)` 倒序稳定分页，支持 user、Provider、model、result、request ID 和时间范围精确筛选。presenter 只返回 contracts 白名单字段。
 
-工具执行循环由 `AiToolOrchestrator` 驱动：每轮通过 `AiInvocationRunner` 发起 Provider 请求，成功 completed/tool_use 后按 registry 名称、Zod schema、permission 顺序校验，再并行执行同轮合法工具并保持模型 call 顺序回填 tool result；error、deferred、aborted 或结构与缓存不一致时都不执行 handler。生产 runtime 默认注入空 registry，业务工具不注册，测试通过 `RuntimeDeps.aiTools` 注入。
+Tool Registry 保存名称、描述、Zod schema、timeout 和权限。Retold Execution 由 Agent Executor 通过 Pi Tool adapter 驱动：adapter 把 registry 工具转成 Pi 工具，执行时再次 parse 输入、检查权限、记录 begin/finalize 审计，并生成安全 tool result。生产 runtime 默认注入空 registry，业务工具不注册，测试通过 `RuntimeDeps.aiTools` 注入。
 
-固定预算：最多 4 个 tool round（即最多 5 次 Provider 请求）、每轮最多 8 个调用、generation 总时限 120 秒、工具自身 timeout 100 到 30000 毫秒。每次 Provider 请求前检查 50 条消息/100000 字符总预算；arguments 和 model-facing result 各最多 16000 字符，超限 arguments 以 `{ error: "arguments_too_large" }` sentinel 回填，safeSummary 最多 1000 字符。单工具 timeout、用户取消和总时限到达会停止循环；unknown/invalid/forbidden/普通失败生成安全 tool result 后继续。每个未超量 call 在校验前 best-effort begin tool audit，所有已 begin 记录都必须 finalize，不能遗留 running。
+固定约束：工具自身 timeout 100 到 30000 毫秒；arguments 和 model-facing result 各最多 16000 字符；safeSummary 最多 1000 字符。每个未超量 call 在校验前 best-effort begin tool audit，所有已 begin 记录都必须 finalize，不能遗留 running。
 
-安全边界：tool arguments、model-facing result 和 safeSummary 只存在于当前 generation 内存与 SSE 实时事件；SQLite 只保存脱敏 activity（toolCallId、name、status、errorCode）和执行审计元数据。handler 只接收 user ID、request ID、AbortSignal 和已校验输入；日志字段固定为 event、requestId、toolCallId、toolName、status、errorCode。
+安全边界：tool arguments、model-facing result 和 safeSummary 只存在于当前内存与 SSE 实时事件；SQLite 只保存脱敏 activity（toolCallId、name、status、errorCode）和执行审计元数据。handler 只接收 user ID、request ID、AbortSignal 和已校验输入；日志字段固定为 event、requestId、toolCallId、toolName、status、errorCode。
 
 API 环境变量：
 
@@ -258,21 +244,12 @@ const repository = new SqliteSessionRepository({
 | 调用方 abort 与 timeout 先后触发 | 按 first-cause 分类；先 abort 为 `AI.REQUEST_ABORTED`，先 timeout 为 `AI.UPSTREAM_TIMEOUT` |
 | `toolcall_end` 后出现 error、aborted 或 deferred | 不发送 `tool_call_completed`，不进入工具执行层 |
 | final tool call 与已缓存调用不一致 | 按上游失败处理，不执行工具 |
-| 会话不属于当前用户 | 404 `COMMON.NOT_FOUND`，不能泄漏资源是否存在 |
-| 会话已有 active generation | 409 `AI.GENERATION_ACTIVE`，不新增 message/generation |
-| retry 来源不是最新失败、中止或 interrupted generation | 409 `AI.RETRY_NOT_ALLOWED`，不新增 user message |
-| 会话 Context 超过 50 条或 100000 字符 | 413 `AI.CONTEXT_LIMIT`，会话内容保持不变 |
-| stop 或客户端断开先于 done | `AI.REQUEST_ABORTED`，保存 partial assistant；排队的 done 不能覆盖为 succeeded |
-| Provider timeout/auth/upstream | SSE error 终态，assistant/generation=`failed`，保留安全 partial |
+| Provider timeout/auth/upstream | SSE error 终态，保留安全 partial |
 | 未注册工具 | `AI.TOOL_NOT_FOUND`，tool execution=`not_found`，回填后继续 |
 | 工具参数 schema 校验失败 | `AI.TOOL_INVALID_ARGUMENTS`，tool execution=`invalid_arguments`，回填后继续 |
 | 工具权限不足 | `AI.TOOL_FORBIDDEN`，tool execution=`forbidden`，回填后继续 |
 | handler 普通失败 | `AI.TOOL_FAILED`，tool execution=`failed`，回填后继续 |
-| 单工具 timeout | `AI.TOOL_TIMED_OUT`，终止 generation，触发者=`timed_out`、兄弟=`cancelled` |
-| 用户/父 signal 取消 | `AI.REQUEST_ABORTED`，tool execution=`cancelled`，终止 generation |
-| 单轮调用数超 8 | `AI.GENERATION_TOOL_CALL_LIMIT`，不执行任何 handler，不伪造 tool execution |
-| 工具轮数超 4 | `AI.GENERATION_TOOL_ROUND_LIMIT`，不伪造 tool execution |
-| generation 总时限 120 秒到期 | `AI.GENERATION_TOOL_TOTAL_TIMEOUT`，工具按父取消记录 `cancelled` |
+| 单工具 timeout | `AI.TOOL_TIMED_OUT`，Tool executor 终止当前 Run |
 
 配置或凭据变化必须递增 `config_revision`、设置 `needs_check` 并停用 Provider。只有检查成功且检查时的 revision 仍等于当前 revision，Provider 才能启用。OAuth token refresh 只通过 `row_version` CAS 更新凭据，不改变 `config_revision`。
 
@@ -285,12 +262,9 @@ const repository = new SqliteSessionRepository({
 - 错误：用户显式提交未进白名单的模型时返回 `AI.MODEL_NOT_ALLOWED`，不能切换到其他默认模型，也不能泄漏该模型是否存在于管理员目录。
 - 并发：OAuth refresh 与管理员替换凭据同时发生时，旧 refresh callback 的 CAS 必须失败，不能覆盖新凭据。
 - 取消：Admin 主动停止流式请求时保留原始 `AbortError`，界面显示已停止状态，不显示“API 服务连不上”。
-- 工具调用：Gateway 收到完整 `toolcall_end` 后仍等待成功 `done`；结构一致后才交给后续 orchestrator，参数 schema 校验不能提前放到 SDK partial 事件。
+- 工具调用：Gateway 收到完整 `toolcall_end` 后仍等待成功 `done`；结构一致后才交给 Tool adapter，参数 schema 校验不能提前放到 SDK partial 事件。
 - smoke 诊断：`pnpm --filter @starter/api ai:provider-smoke` 复用正式 runtime/Gateway，但绕过 `AiInvocationRunner`，不写 `ai_model_calls`/`ai_tool_executions`；输出只含事件计数、provider/model、stop reason、usage、duration 和规范化错误分类，prompt/response/secret 永不输出。
 - 错误终态：timeout 或 abort 已经收到部分 usage 时保留安全 token/cost；完全未知时写 `null`，不能伪造为 0。
-- 会话并发：同一会话并发发送只有一个 CAS 成功，失败请求不产生孤儿 user/assistant/generation。
-- 会话停止：stop 接受后保留原 SSE 等待终态；停止请求失败时客户端不能自行标记 aborted。
-- 会话恢复：进程重启后遗留 generation 变为 interrupted，可以按最新失败 generation retry。
 
 ## 6. 必须执行的测试
 
@@ -309,15 +283,13 @@ pnpm --filter @starter/api db:check
 - `apps/api/src/test/ai-auth.test.ts`：OAuth 支持边界、登出不会误删 API Key、stored credential 不回退到 ambient auth。
 - `apps/api/src/test/ai.smoke.test.ts`：权限、Provider 状态机、白名单、默认解析、SSE 两阶段错误和敏感信息过滤；真实 route 响应逐帧通过 `aiTestStreamEventSchema`，并断言事件数量、顺序和终态字段。
 - `apps/api/src/infra/ai/ai-gateway.test.ts`：项目消息到 SDK context、thinking 丢弃、tool call 结构一致性、usage/cost、first-cause timeout/abort 和安全错误投影。
-- `apps/api/src/test/ai-contracts.test.ts`：公开 assistant block、stream event、nullable usage 和 0 值保持。
-- `apps/api/src/test/ai-conversations.smoke.test.ts`：owner 隔离、多轮 Context、CAS、retry user 复用、partial stop/timeout、恢复、上下文上限、模型失效历史读取、cascade 和敏感 marker。
 - `apps/api/src/test/ai-usage-audit.test.ts`：stale/fresh running 恢复、0/null 保持、幂等 finalize 和审计写失败隔离。
 - `apps/api/src/test/ai-provider-smoke.test.ts`：fake Gateway 的 success/auth/timeout/abort/upstream 分类、provider/model 未找到时请求前失败、prompt/response marker 不泄漏、不写审计表。
+- `apps/api/src/test/ai-destructive-migration.test.ts`：destructive migration 删除旧三表、把旧 `conversation` 关联归一为 `legacy`、保留 Run 审计和 Tool 审计。
 - `apps/admin/src/test/ai-usage-audit.test.tsx`：loading/empty/error、字段白名单、筛选入口、分页表格和详情 Drawer。
-- `apps/admin/src/test/ai-conversations.test.tsx`：loading/empty/error、首轮 pending、generation 隔离、stop failure、retry 和切换会话取消旧流。
 - `apps/admin/src/test/ai-api.test.ts`：`eventsource-parser` 处理任意 chunk 边界并校验每个 event。
 - `apps/admin/src/test/ai-query.test.tsx`：Query 缓存失效、主动取消和只读权限。
-- `apps/admin/src/test/navigation.test.ts`：普通用户只看到 AI 模型入口，有权限的管理员才看到 Provider 入口。
+- `apps/admin/src/test/navigation.test.ts`：普通用户只看到 AI 会话与模型入口，有权限的管理员才看到 Provider 入口。
 
 ## 7. 错误与正确写法
 
@@ -360,10 +332,6 @@ if (event.type === 'toolcall_end') await handler(event.toolCall.arguments)
 if (event.type === 'toolcall_end') pending.set(event.contentIndex, event.toolCall)
 if (event.type === 'done' && event.reason === 'toolUse') emitVerifiedCalls(event.message, pending)
 ```
-
-错误写法先按裸 conversation/message ID 查询，再在 service 判断 owner，或 stop 202 后立刻中断原 SSE 并自行标记 aborted。
-
-正确写法把 owner 条件下沉到 repository，通过 active generation CAS 和条件终态更新保护并发；Admin 使用 generation token 隔离旧流，并让原 SSE 接收服务端唯一终态。
 
 ## 8. AgentDefinition 管理
 
@@ -409,7 +377,7 @@ GET   /api/ai/admin/tools
 | 无 session | 401 `AUTH.UNAUTHENTICATED` |
 | 已登录但缺少 `ai:config:read` 或 `ai:config:manage` | 403 `AUTH.FORBIDDEN` |
 | Admin 读取损坏的 config JSON | 500 `SYSTEM.INTERNAL_ERROR`，不返回原始 JSON |
-| 删除被 AgentDefinition 引用的 System Prompt | 409 `AI.PROMPT_REFERENCED`；检查必须同时覆盖 global、Conversation 和 Agent config |
+| 删除被 AgentDefinition 引用的 System Prompt | 409 `AI.PROMPT_REFERENCED`；检查必须同时覆盖 global 和 Agent config |
 
 引用检查读取 Agent config 后用 `agentDefinitionConfigSchema.safeParse()` 判断 `systemPromptId`，不能使用 SQL `LIKE` 搜索 UUID。解析失败时禁止删除，避免损坏配置绕过引用保护。
 
@@ -426,7 +394,7 @@ GET   /api/ai/admin/tools
 - API smoke test 覆盖 Agent CRUD、分页、重复名称、revision 规则、状态变化、公开/Admin DTO 字段和 secret marker 过滤。
 - API smoke test 覆盖模型、Prompt、Skill、Tool 无效或停用引用，以及启用 draft 的失败分支。
 - API smoke test 覆盖 `ai:config:read` 和 `ai:config:manage` 的 401、403、2xx 分支。
-- Prompt smoke test 覆盖旧 Conversation 和 AgentDefinition 两种引用都阻止删除；损坏 Agent config 不能绕过保护。
+- Prompt smoke test 覆盖全局默认和 AgentDefinition 两种引用都阻止删除；损坏 Agent config 不能绕过保护。
 - Admin 页面测试覆盖列表 loading/empty/error、资源选项失败重试、创建/编辑提交、status pending 和缺少 manage 权限时隐藏写操作。
 - 运行 `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build` 和 `pnpm --filter @starter/api db:check`。
 

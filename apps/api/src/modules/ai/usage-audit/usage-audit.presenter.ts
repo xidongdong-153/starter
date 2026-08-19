@@ -19,8 +19,6 @@ export function toAiModelCallAudit(
     requestId: record.requestId,
     userId: record.userId,
     scenario: record.scenario as AiModelCallAudit["scenario"],
-    conversationId: record.conversationId,
-    generationId: record.generationId,
     runId: record.runId,
     providerId: record.providerId,
     modelId: record.modelId,

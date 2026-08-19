@@ -28,9 +28,6 @@ import {
 import { createAiConfigurationRoute } from "./configuration/configuration.route.js";
 import { createAiRepository } from "./configuration/configuration.repository.js";
 import { createAiService } from "./configuration/configuration.service.js";
-import { createAiConversationRepository } from "./conversation/conversation.repository.js";
-import { createAiConversationRoute } from "./conversation/conversation.route.js";
-import { createAiConversationService } from "./conversation/conversation.service.js";
 import { createAiPromptRepository } from "./prompt/prompt.repository.js";
 import { createAiPromptRoute } from "./prompt/prompt.route.js";
 import { createAiPromptService } from "./prompt/prompt.service.js";
@@ -38,7 +35,6 @@ import { createAiSkillRepository } from "./skill/skill.repository.js";
 import { createAiSkillRoute } from "./skill/skill.route.js";
 import { createAiSkillService } from "./skill/skill.service.js";
 import { createReadSkillTool } from "./skill/skill-tools.js";
-import { createAiToolOrchestrator } from "./tool/tool-orchestrator.js";
 import { createAiToolRegistry } from "./tool/tool-registry.js";
 import { createAiUsageAuditRepository } from "./usage-audit/usage-audit.repository.js";
 import { createAiUsageAuditRoute } from "./usage-audit/usage-audit.route.js";
@@ -75,13 +71,6 @@ export function createAiRoute(runtime: AppRuntime) {
     ...runtime.aiTools.list(),
     createReadSkillTool(skillRepository),
   ]);
-  const toolOrchestrator = createAiToolOrchestrator({
-    invocationRunner,
-    registry: toolRegistry,
-    audit: usageAuditService,
-    hasPermission: authorizationRepository.hasPermission,
-    logger: runtime.logger.child({ module: "ai-tool-orchestrator" }),
-  });
   const configurationService = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
@@ -123,23 +112,6 @@ export function createAiRoute(runtime: AppRuntime) {
     .catch((error: unknown) => {
       runtime.logger.error({ err: error }, "Agent Session 一致性检查失败");
     });
-  const conversationService = createAiConversationService(
-    createAiConversationRepository(runtime.db),
-    runtime.aiGateway,
-    {
-      isAllowed: configurationService.isConversationModelAllowed,
-      resolve: configurationService.resolveConversationModel,
-    },
-    invocationRunner,
-    runtime.env.AI_REQUEST_TIMEOUT_MS,
-    toolOrchestrator,
-    {
-      assertAvailable: promptService.assertSystemPromptAvailable,
-      getGlobalSystemPromptId: promptService.getGlobalSystemPromptId,
-      resolveContent: promptService.resolveSystemPromptContent,
-    },
-    { listDescriptions: skillService.listEnabledDescriptions },
-  );
   const runExecutor =
     runtime.piAgentExecutor ??
     createPiAgentExecutor({
@@ -210,13 +182,6 @@ export function createAiRoute(runtime: AppRuntime) {
       "/",
       createAiAgentRunRoute({
         service: runService,
-        requireAuth,
-      }),
-    )
-    .route(
-      "/",
-      createAiConversationRoute({
-        service: conversationService,
         requireAuth,
       }),
     )
