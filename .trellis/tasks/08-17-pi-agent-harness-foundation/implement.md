@@ -3,14 +3,15 @@
 ## 当前状态
 
 - 父任务处于 `planning`。
-- 当前进度为 `6/8 done`。
+- 当前进度为 `7/8 done`。
 - S1 `08-18-pi-session-storage-foundation` 已完成并归档。
 - S2 `08-18-agent-harness-contracts-schema` 已完成并归档。
 - S3 `08-18-agent-definition-management` 已完成并归档。
 - S4 `08-18-pi-agent-execution-core` 已完成、检查并归档，提交为 `f72c2e3`。
 - S5 `08-18-agent-session-api` 已完成、检查并归档，提交为 `81ce2fb`（实现）/ `164daff`（归档）。
 - S6 `08-18-agent-run-api` 已完成、检查并归档，提交为 `a4c58d5`（实现）/ `ba7b3fd`（track）。
-- S7、S8 仍处于 `planning`，均未启动。
+- S7 `08-18-admin-agent-harness-ui` 已完成、检查并归档，提交为 `c96423c`（实现）/ `8aa6bd6`（归档）。
+- S8 仍处于 `planning`，未启动。
 - 旧 Conversation runtime 继续临时保留。
 
 ## 父任务职责
@@ -58,10 +59,10 @@ S6 实现提交为 `a4c58d5`。检查点：文本 Run 唯一 completed/failed �
 
 ### 4. 完成 Admin 调试界面
 
-- [ ] 评审并批准 S7 `08-18-admin-agent-harness-ui`。
-- [ ] 启动、实施、检查并归档 S7。
+- [x] 评审并批准 S7 `08-18-admin-agent-harness-ui`。
+- [x] 启动、实施、检查并归档 S7。
 
-检查点：Admin 同时有旧 Conversation 页面和新 Harness 调试页面，两者没有共享 reducer、query key 或运行状态。
+检查点：Admin 同时有旧 Conversation 页面和新 Harness 调试页面，两者没有共享 reducer、query key 或运行状态。已通过 tsc/lint/format/test/build/db:check，前端测试 120 条全绿；开发库已应用到 `0011_normal_sentinel.sql`（含 Harness 新表，`ai_model_calls` 旧 61 条审计数据保留），并在 Admin 完成 Session 创建、Agent 选择（S7验证Agent）、Run 流式、Tool 活动、abort（AI.REQUEST_ABORTED）与 refresh 恢复的人工验证。
 
 ### 5. 执行破坏性切换
 
