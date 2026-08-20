@@ -449,6 +449,11 @@ export const agentTranscriptQuerySchema = z.strictObject({
   lane: agentLaneSchema.default('main'),
   cursor: z.coerce.number().int().min(0).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
+  /**
+   * 分页方向。`backward` 取比 cursor 更早的一页（cursor 省略时取最新一页），
+   * `forward` 取比 cursor 更新的一页。两种方向的 `items` 都是时间正序。
+   */
+  direction: z.enum(['forward', 'backward']).default('backward'),
 })
 
 export type AgentTranscriptQuery = z.infer<typeof agentTranscriptQuerySchema>
@@ -496,6 +501,18 @@ export const agentToolStatusSchema = z.enum([
 
 export type AgentToolStatus = z.infer<typeof agentToolStatusSchema>
 
+/**
+ * assistant message 内部的有序内容块。
+ * `text` 是给用户看的正文，`thinking` 是模型的思考内容（默认折叠展示）。
+ * 工具入参不作为块暴露，只通过 `toolCalls` 暴露 id 和名称。
+ */
+export const agentMessageBlockSchema = z.discriminatedUnion('type', [
+  z.strictObject({ type: z.literal('text'), text: z.string() }),
+  z.strictObject({ type: z.literal('thinking'), text: z.string() }),
+])
+
+export type AgentMessageBlock = z.infer<typeof agentMessageBlockSchema>
+
 export const agentTranscriptUserMessageSchema = z.strictObject({
   ...agentTranscriptItemBaseShape,
   type: z.literal('user_message'),
@@ -507,7 +524,10 @@ export const agentTranscriptAssistantMessageSchema = z.strictObject({
   ...agentTranscriptItemBaseShape,
   type: z.literal('assistant_message'),
   runId: uuidSchema,
+  /** 纯文字拼接，语义不变，只包含 text 块。 */
   content: z.string(),
+  /** 按原始顺序保留的 text 与 thinking 块；缺失时回退到 `content`。 */
+  blocks: z.array(agentMessageBlockSchema).max(64).optional(),
   status: z.enum(['completed', 'failed', 'aborted', 'interrupted']),
   model: strictAiModelRefSchema,
   stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
@@ -581,28 +601,37 @@ export const agentRunLiveSnapshotSchema = z.strictObject({
   lastSequence: z.number().int().min(0),
   turn: z.number().int().min(0),
   maxTurns: z.number().int().min(1).max(32),
-  messages: z
+  /** 按 sequence 排序的一条时间线，与 Admin reducer 同构；超过 128 条丢最旧的。 */
+  timeline: z
     .array(
-      z.strictObject({
-        messageId: uuidSchema,
-        content: z.string(),
-        completed: z.boolean(),
-      }),
+      z.discriminatedUnion('kind', [
+        z.strictObject({
+          kind: z.literal('message'),
+          messageId: uuidSchema,
+          blocks: z.array(agentMessageBlockSchema).max(64),
+          completed: z.boolean(),
+          usage: aiUsageSchema.nullish(),
+        }),
+        z.strictObject({
+          kind: z.literal('tool'),
+          toolCallId: z.string().min(1).max(240),
+          name: z.string().min(1).max(240),
+          status: z.union([agentToolStatusSchema, z.literal('running')]),
+          safeSummary: z.string().max(1000).nullable(),
+        }),
+        z.strictObject({
+          kind: z.literal('compaction'),
+          entryId: uuidSchema,
+          summary: z.string(),
+        }),
+      ]),
     )
-    .max(64),
-  tools: z
-    .array(
-      z.strictObject({
-        toolCallId: z.string().min(1).max(240),
-        name: z.string().min(1).max(240),
-        status: z.union([agentToolStatusSchema, z.literal('running')]),
-        safeSummary: z.string().max(1000).nullable(),
-      }),
-    )
-    .max(64),
+    .max(128),
 })
 
 export type AgentRunLiveSnapshot = z.infer<typeof agentRunLiveSnapshotSchema>
+
+export type AgentRunLiveTimelineItem = AgentRunLiveSnapshot['timeline'][number]
 
 export const agentRunSchema = z
   .strictObject({
@@ -727,6 +756,30 @@ export const harnessMessageCompletedEventSchema = z.strictObject({
   }),
 })
 
+const harnessThinkingBlockShape = {
+  messageId: uuidSchema,
+  /** 同一条 message 内的内容块下标，直接用模型流的 contentIndex。 */
+  blockIndex: z.number().int().min(0),
+}
+
+export const harnessThinkingStartedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('thinking.started'),
+  data: z.strictObject({ ...harnessThinkingBlockShape }),
+})
+
+export const harnessThinkingDeltaEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('thinking.delta'),
+  data: z.strictObject({ ...harnessThinkingBlockShape, delta: z.string() }),
+})
+
+export const harnessThinkingCompletedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('thinking.completed'),
+  data: z.strictObject({ ...harnessThinkingBlockShape, content: z.string() }),
+})
+
 export const harnessToolStartedEventSchema = z.strictObject({
   ...harnessEventEnvelopeShape,
   type: z.literal('tool.started'),
@@ -791,7 +844,15 @@ export const harnessContextCompactedEventSchema = z.strictObject({
 export const harnessRunCompletedEventSchema = z.strictObject({
   ...harnessEventEnvelopeShape,
   type: z.literal('run.completed'),
-  data: z.strictObject({ status: z.literal('completed'), finalEntryId: uuidSchema }),
+  data: z.strictObject({
+    status: z.literal('completed'),
+    finalEntryId: uuidSchema,
+    /**
+     * `model_finished`：模型自己给出了文字回答。
+     * `max_turns`：撞上轮次上限，最后一段文字来自收尾轮。
+     */
+    reason: z.enum(['model_finished', 'max_turns']),
+  }),
 })
 
 export const harnessRunFailedEventSchema = z.strictObject({
@@ -823,6 +884,9 @@ export const harnessEventSchema = z.discriminatedUnion('type', [
   harnessMessageStartedEventSchema,
   harnessMessageDeltaEventSchema,
   harnessMessageCompletedEventSchema,
+  harnessThinkingStartedEventSchema,
+  harnessThinkingDeltaEventSchema,
+  harnessThinkingCompletedEventSchema,
   harnessToolStartedEventSchema,
   harnessToolProgressEventSchema,
   harnessToolCompletedEventSchema,
