@@ -110,7 +110,9 @@ type AiTestStreamEvent =
   | { type: 'error'; code: ApiErrorCode; message: string; retryable: boolean; requestId: string }
 ```
 
-Gateway 使用项目自己的 user、assistant 和 tool result 消息。公开内容只支持文本和脱敏工具活动；SDK `thinking`、partial message、Provider payload、原始错误和 SDK cost 对象必须在 infra 内丢弃。
+Gateway 使用项目自己的 user、assistant 和 tool result 消息。这条通道（`POST /api/ai/test`）的公开内容只支持文本和脱敏工具活动；SDK `thinking`、partial message、Provider payload、原始错误和 SDK cost 对象必须在 infra 内丢弃。
+
+> **Warning**: 丢弃 `thinking` 只适用于模型测试 Gateway。Agent Run 走的是原生 pi-ai stream，思考内容会映射成 `thinking.*` 事件并进入 transcript 的 assistant `blocks`，见 `ai-system-design.md` 第 4.2 节。
 
 `text_delta` 保留 SDK 到达顺序，并用 `turnIndex/contentIndex/blockId` 标识所属 block。`toolcall_end` 只进入缓存；仅当成功 `done` 的 stop reason 为 `tool_use`，且 final assistant message 中的调用 ID、名称和参数与缓存一致时，才按 final block 顺序发送 `tool_call_completed`。参数保持 `unknown`，由工具执行层在调用 handler 前执行 Zod schema 和权限校验。
 

@@ -21,6 +21,14 @@ onSuccess: async () => {
 };
 ```
 
+## 流式与轮询兼顾
+
+Agent Run 的 SSE 提前结束（事件队列超限、读流中途断开）不代表 Run 失败，Run 还在后台跑。
+
+- `startAgentRun` 返回 `{ terminal }` 表示是不是收到了终态事件，没收到时不报错、不清空已有时间线。只有一个事件都没收到的启动失败才抛错。
+- 轮询开关是页面局部 state，通过 `useAgentRunQuery` 的 `refetchInterval` 生效；Run 进终态或查询失败就关掉，不要无限轮。
+- 流式状态不是最终业务状态。Run 到终态后用 transcript 替换临时视图，不把 reducer 结果当持久事实。
+
 ## 持久化边界
 
 `useSettingStore` 只通过 `partialize` 持久化 `adminTheme`、`language` 和 `themeMode`；临时打开状态不写入 localStorage。`useTabBarStore` 负责规范化路径、去重和保留不可关闭的首页标签。

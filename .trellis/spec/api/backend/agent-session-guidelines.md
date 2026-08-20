@@ -42,8 +42,9 @@ GET    /api/ai/sessions/{sessionId}/transcript
 - `ai_agent_sessions` 只存索引：id、owner_id、title、default_agent_id、archived_at、created_at、updated_at。message、Tool 结果、lane tree 和完整 transcript 不进主库。
 - Session id 与 Pi Session id 是同一个 UUIDv7，由 Starter 生成，创建时传给 `agentSessionStore.createSession({ id })`。
 - 默认列表排除已归档。title 未传时用「新会话」。`defaultAgentId` 非空必须指向已启用的 Agent。
-- transcript 查询参数：lane 默认 `main`，cursor 可选非负整数，limit 默认 50、最大 200，由 `agentTranscriptQuerySchema` 校验。
-- transcript 响应 `{ items, nextCursor }`；读取时向 Pi Session store 请求 `limit + 1` 条，只有确实读到额外 entry 才返回当前页最后一条 raw entry 的 seq，否则 nextCursor 为 null。
+- transcript 查询参数：lane 默认 `main`，cursor 可选非负整数，limit 默认 50、最大 200，direction 默认 `backward`，由 `agentTranscriptQuerySchema` 校验。
+- transcript 响应 `{ items, nextCursor }`，items 始终是时间正序。读取时向 Pi Session store 请求 `limit + 1` 条，只有确实读到额外 entry 才返回 nextCursor，否则为 null。hasMore 按 raw entry 数量判，不是投影后的 item 数量。
+- 两个方向的语义：`backward` 用 Pi 的 `newestFirst` 读（该方向下 `cursor.afterSeq` 取的是 `entry.seq < afterSeq`，也就是更早的），服务端反转成正序后返回，`nextCursor` 是本页最早一条 raw entry 的 seq，用于继续往更早翻；`forward` 用 `oldestFirst`，`nextCursor` 指向更新的一页。首屏不传 cursor 时 `backward` 返回最新一页。
 
 ### 3.1 runId 读取规则
 
@@ -64,7 +65,7 @@ S5 投影读取顺序固定：
 - `assistant_message.toolCalls`：从 `message.content` filter `type === 'toolCall'`，只取 `{ toolCallId, name }`，最多 64 条。**不取 `arguments`**，入参属于脱敏边界内的数据。`toolCallId` 与对应 `tool_activity` item 的 `toolCallId` 一致，客户端靠它建关联。
 - `system.tokensBefore`：读 `CompactionEntry.tokensBefore`，同样只接受非负整数。
 
-`content` 字段语义不变，仍然只拼 text block，不改成 blocks 结构。
+`content` 字段语义不变，仍然只拼 text block。顺序信息走另一个可选字段 `blocks`：按 `message.content` 原顺序把 `TextContent` 和 `ThinkingContent` 投成 `{ type, text }` 块数组（上限 64），toolCall 块不进 `blocks`，继续只走 `toolCalls`。只带 toolCall 的 assistant message 投出来是 `content: ''` + `blocks: []`，客户端不能把这种空消息当成「还在生成中」渲染。
 
 ## 4. Validation & Error Matrix
 
@@ -96,7 +97,9 @@ S5 投影读取顺序固定：
 - `defaultAgentId`：不存在 400、非 enabled 409、enabled 成功。
 - 主库失败补偿删除 Pi Session；补偿失败日志带 sessionId 与 cause（用 fake repository + fake session store 直接测 service）。
 - transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、只有多读到一条 raw entry 时才返回 nextCursor、原始 entry 数量刚好等于 limit 时 nextCursor 为 null、四种 item、`starter.run.v1`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
+- 分页方向：`direction=backward` 首屏返回最新一页且是时间正序、带 cursor 时返回更早一页、没有更早内容时 nextCursor 为 null；`direction=forward` 行为与改动前一致。
 - assistant item 的 `usage` 和 `toolCalls`、system item 的 `tokensBefore` 都能读到；toolCall block 带 `arguments` 时投影结果不得包含入参，`toolCallId` 与对应 `tool_activity` item 一致。
+- assistant item 的 `blocks` 按 `message.content` 原顺序输出（含 text 与 thinking 交错的情况），`content` 仍然只有正文。
 - 一致性检查两方向 orphan 且不修改数据。
 
 ## 7. Wrong vs Correct

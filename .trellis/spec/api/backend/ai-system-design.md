@@ -202,7 +202,8 @@ Pi Agent 读取当前 lane branch，使用当前 Agent 配置构造上下文。�
 Executor 通过原生 `pi-ai` stream 调 Provider：
 
 - Provider、模型、认证和 AbortSignal 由 infra 负责。
-- SDK partial message、thinking、Provider payload 和原始错误不会进入公开协议。
+- SDK partial message、Provider payload 和原始错误不会进入公开协议。
+- 模型的思考内容是例外：`thinking_start` / `thinking_delta` / `thinking_end` 映射成 `thinking.*` 事件对外发布，正文也进入 transcript 的 assistant `blocks`。它是排查模型行为的主要依据，`thinkingLevel` 为 `off` 时不产生这类事件。
 - `PiEventMapper` 是 Pi AgentEvent 到 HarnessEvent 的唯一转换位置。
 - `EventSequencer` 给每个公开事件分配递增 sequence。
 
@@ -210,7 +211,7 @@ assistant message 的写入和 `message.completed` 事件使用同一个 message
 
 Agent loop 的轮次边界和上下文压缩都是可观测的：
 
-- 每一轮发布 `turn.started` 和 `turn.completed`，带当前轮次和 `maxTurns`；轮次计数由 `PiEventMapper` 维护。
+- 每一轮发布 `turn.started` 和 `turn.completed`，带当前轮次和 `maxTurns`；轮次计数由 `PiEventMapper` 维护。收尾轮的 `turn` 会比 `maxTurns` 大 1，契约不做 clamp。
 - compaction 写入 Pi entry 成功后发布 `context.compacted`，带 `entryId`、`tokensBefore` 和 summary。发布失败不影响 compaction 结果，也不改变 Run 终态。
 - `message.completed` 携带该次 assistant message 的 token 用量；读不到用量时省略该字段，不补 0 值。
 
@@ -289,6 +290,9 @@ run.started
 turn.started
 message.started
 message.delta
+thinking.started
+thinking.delta
+thinking.completed
 message.completed
 tool.started
 tool.progress
@@ -299,6 +303,10 @@ run.completed
 run.failed
 run.aborted
 ```
+
+`thinking.*` 的 data 带 `messageId` 和 `blockIndex`（`blockIndex` 直接用 pi-ai 的 `contentIndex`），一条 assistant message 内可能有多个思考块。`message.completed.content` 仍然只拼 text block，思考正文只走这三个事件和 transcript `blocks`。
+
+`run.completed.data.reason` 是必填字段：`model_finished` 表示模型自己结束，`max_turns` 表示撞上轮次上限、由收尾轮给出的回答。它只在事件和活跃快照里，不落主库、不进 transcript，所以刷新页面后看不到这个标记。
 
 `turn.started` / `turn.completed` 标记 Agent loop 的轮次边界，携带 `turn` 和 `maxTurns`，由 `PiEventMapper` 映射 Pi 的 `turn_start` / `turn_end`。
 
@@ -315,13 +323,16 @@ run.aborted
 - 由 Run Service 在事件进入对外队列的同一处累积（`run.service.ts` 的 `publish`），折叠规则与 `apps/admin/src/features/ai/harness/stream-reducer.ts` 同构。
 - 判据是 Run row 状态，不是 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。
 - Run 进入终态或进程重启后为 `null`，客户端此时回落到 transcript。
-- `messages` 和 `tools` 各有 64 条上限，超限丢最旧的，避免长 Run 的内存无界增长。
+- 内容是一条 `timeline`，元素按 `kind` 分 message、tool 和 compaction；message 元素内含有序 `blocks`（text 与 thinking）。timeline 上限 128 条、单条 message 的 blocks 上限 64，超限丢最旧的，避免长 Run 的内存无界增长。
+- `message.completed` 到达时的折叠规则：消息里只有一个 text 块就用事件的 `content` 覆盖它，一个 text 块都没有且 `content` 非空就追加一个，有多个 text 块则保留 delta 累积出来的原始顺序。不能把 thinking 块重排到前面或把多个 text 块折叠成一个，否则 interleaved thinking 的消息在 Run 进终态时顺序会跳变。
 
 它解决的是「刷新页面后正在生成的内容消失」：assistant message 要等 `message_end` 才写入 Pi DB，在此之前既不在事件队列历史里、也不在 transcript 里。快照不持久化，也不改变 HarnessEvent 仍然只存在于进程内有界队列这一约束。
 
 SSE 的 `id` 是 `eventId`，`event` 是 HarnessEvent.type，`data` 是完整事件 JSON。heartbeat 是 SSE comment，不创建 HarnessEvent。
 
-SSE 断开不会 abort Run。Route 只停止向当前连接写数据；Agent 继续运行、写 Pi transcript、写主库终态。Admin 在连接异常后重新读取 Run 和 transcript，用持久结果替换临时流式视图。
+SSE 断开不会 abort Run。Route 只停止向当前连接写数据；Agent 继续运行、写 Pi transcript、写主库终态。
+
+客户端遇到流提前结束（包括事件队列超限关闭 transport、读流中途断开）时不能报错也不能清空已有视图，Run 还在后台跑。正确做法是转成轮询 `GET /runs/{runId}` 的 `live`，到终态后再用 transcript 替换临时流式视图。只有一个事件都没收到就断的启动失败才报错。
 
 ### 5.2 Pi Session SQLite
 
@@ -344,6 +355,8 @@ Pi DB 不保存：
 - 主库 Run 索引。
 
 读取 transcript 时必须从指定 lane 的 leaf 读取 branch，不能把整棵 Session tree 当作当前 lane transcript。API 读取 `limit + 1` 条，只有确实存在下一条 raw entry 时才返回 `nextCursor`。
+
+分页默认从最新一页开始：`direction: 'backward'` 用 Pi 的 `newestFirst` 读取，服务端反转成时间正序后返回，`nextCursor` 指向更早一页；`direction: 'forward'` 是旧语义，取比 cursor 更新的。`newestFirst` 方向下 Pi 的 `cursor.afterSeq` 判据是 `entry.seq < afterSeq`（取更早的），`oldestFirst` 会先遍历整条 branch 再反转，长会话更慢。
 
 ### 5.3 Starter SQLite
 
@@ -466,6 +479,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 | Pi Session 读写失败 | Run failed | 主库 Run 终态 + 日志 | 修复存储后重新启动 Run |
 | Provider 失败或超时 | Run failed | Pi assistant 终态、模型 audit、Run terminal entry | 按 retryable 字段决定是否重试 |
 | Tool 参数、权限或执行失败（含工具超时） | 继续 Agent loop | Tool audit + safe tool result | Agent 根据安全结果决定下一轮 |
+| 撞到 `maxTurns` 且当轮还在调工具 | 追加一轮无工具收尾，Run completed | 多一条 `ai_model_calls` | 终态事件 `reason=max_turns` |
 | Run abort 或 Run 总时长耗尽 | Run aborted/failed | Tool audit + Run terminal entry | 用户显式发起新的 Run |
 | SSE 连接断开 | Run 不变，继续执行 | Pi transcript + 主库终态 | 客户端重新读取 Run/transcript |
 | 进程在终态前退出 | Run 暂存非终态 | Pi terminal entry 或无 entry | API 启动时 recovery scan |
@@ -559,6 +573,7 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 
 - 输入只能经过当前 AgentDefinition、模型状态和权限检查后进入 Pi Agent。
 - 每个公开事件符合 `harnessEventSchema`，sequence 单调递增，terminal event 只发布一次。
+- 流式视图和 transcript 视图同构：同一串事件在 `run.live-snapshot.ts` 和 Admin `stream-reducer.ts` 两边折叠出的 kind 序列、顺序和 blocks 序列必须一致，回归用例读同一份 `test-fixtures/harness-timeline-isomorphism.json`。
 - Pi DB 有完整 message、Tool result、compaction 和 `starter.run.v1`；Starter 主库只有业务索引和审计元数据。
 - `ai_model_calls` 与 `ai_tool_executions` 不含 prompt、response、arguments、result 和 secret。
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。

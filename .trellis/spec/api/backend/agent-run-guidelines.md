@@ -46,8 +46,10 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - `registry.reserve` 返回的原始 lease 必须保留到 Run 终态。`prepare`、`attach` 或 `markRunning` 失败时可能还没有 runId handle，清理路径必须直接释放原始 lease，不能只按 runId 释放。
 - 终态顺序固定：等待 executor result -> 写 `starter.run.v1` -> 条件更新主库 -> 发布唯一 terminal event -> release registry。
 - 启动恢复读取 `starter.run.v1` 时，必须同时核对 `runId`、`sessionId`、`lane`、`agentId` 和 `agentRevision`；任一字段与主库 Run 不一致都按损坏处理并标记 `AI.RUN_INTERRUPTED`。
-- 事件队列是有界 `AsyncEventQueue`（`MAX_PENDING_EVENTS = 1024`），超限时关闭 transport，不阻塞 Agent loop、不 abort Run。
+- 事件队列是有界 `AsyncEventQueue`（`MAX_PENDING_EVENTS = 1024`），超限时关闭 transport，不阻塞 Agent loop、不 abort Run。客户端遇到这种提前结束不能报错，要转成轮询 `live` 快照。
 - Run Service 同时负责累积对外的活跃 Run 快照（`GET /runs/{runId}` 的 `live` 字段），Executor 和 `ActiveRunRegistry` 都不参与。所有事件必须经过 `publish` 进入队列：它先折叠快照、再 push，绕过它会让快照漏掉首尾状态。
+- 快照内容是一条 `timeline`（message / tool / compaction），折叠规则必须与 Admin `stream-reducer.ts` 同构，包括 `message.completed` 不重排块、timeline 128 / blocks 64 上限丢最旧、按 sequence 去重。改任一边都要同时改另一边，否则 SSE 视图和轮询视图会错位。
+- `run.completed` 带必填 `reason`，值来自 executor 的 `completionReason`（只在 completed 时有值，缺失时当 `model_finished`）。failed / aborted 的事件形状不变。
 - 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
 - SSE 的 `id` 是 eventId、`event` 是 `HarnessEvent.type`、`data` 是完整事件 JSON；heartbeat 用 comment，不创建 HarnessEvent。
 
@@ -89,6 +91,8 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 启动恢复：无 terminal entry -> interrupted；唯一合法且 `runId`、`sessionId`、`lane`、`agentId`、`agentRevision` 全部匹配的 entry -> 投影终态；重复 entry、身份字段不匹配 -> corrupted/interrupted；schema 解析失败 -> corrupted/interrupted。
 - transcript 写入侧挂载 runId（message 顶层字段，S5 读取规则兼容）。
 - 活跃快照：Run 执行中 `GET /runs/{runId}` 的 `live` 非空且部分 assistant 文本与已推送 delta 一致；终态后 `live` 为 null；他人 Run 仍 404。用挂住的 streamFn 让 Run 停在生成中间态来断言。
+- 终态原因：撞 `maxTurns` 的 Run 的 `run.completed.data.reason` 为 `max_turns`，正常结束为 `model_finished`。
+- 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读 `test-fixtures/harness-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；Admin 侧读同一份 fixture 比对自己的 reducer。任一边漂移都会红。
 - 测试通过 `createTestApp({}, { agentSessionStore, piAgentExecutor })` 注入 fake executor，控制 streamFn 行为，不依赖真实模型。
 
 ## 7. Wrong vs Correct

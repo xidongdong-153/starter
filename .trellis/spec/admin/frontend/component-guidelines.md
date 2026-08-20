@@ -34,6 +34,15 @@ const files = filesQuery.data ?? [];
 - 页面文案通过 `useTranslation` 和 `src/i18n/locales/{zh,en}.ts` 提供，不在领域组件里重复维护中英文分支。
 - 页面同时存在侧边栏/局部搜索框与主文本域（如聊天 TextArea）时，搜索框显式指定 `role="searchbox"`，确保无障碍语义与测试定位隔离。
 
+## AI 会话时间线
+
+Agent 会话页的流式视图和历史视图必须共用一组时间线组件（`features/ai/components/timeline/`），不允许各写一套渲染分支，否则 Run 从生成中切到终态时布局会跳变。
+
+- 两种数据源先经 `features/ai/harness/timeline.ts` 的 `fromLiveSnapshot` / `fromTranscript` 转成同一种元素结构，再交给组件。
+- 元素顺序只认 `sequence`，不要在组件里重排。
+- 思考块默认折叠。工具卡只显示工具名、状态和 `safeSummary`，入参不在协议里，不要显示也不要构造。
+- 只带工具调用的 assistant message 投影出来是空 blocks，`completed` 为真时整条元素不渲染，不要显示成「正在生成」。
+
 ## 不要做的事
 
 不要在组件中直接调用 `fetch`、手动管理 React Query cache，或用 `any` 绕过表格/表单类型。请求应由 `apiRequest` 和对应 query hook 统一处理。

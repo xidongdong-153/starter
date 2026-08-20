@@ -13,6 +13,7 @@ starter/
 │   ├── theme/          # Rose Pine 主题变量（Tailwind CSS + Ant Design token）
 │   └── eslint-config/  # 共享 ESLint 和 Prettier 配置
 ├── turbo.json              # Turborepo 构建配置
+├── test-fixtures/          # 跨包共用的测试数据（目前只有流式与历史同构的事件 fixture）
 └── pnpm-workspace.yaml     # pnpm 工作空间配置
 ```
 
@@ -71,6 +72,7 @@ pnpm approve-builds better-sqlite3 esbuild sharp @prisma/client
 - 测试框架：Vitest
 - 测试文件位于 `apps/api/src/test/`，涵盖 auth、files、profile 三组 smoke tests
 - 每次测试给 app 注入独立的临时 SQLite 数据库和临时文件目录，不读写 `apps/api/data/app.db`
+- 需要 API 与 Admin 两侧断言同一份数据时，把数据放 `test-fixtures/`，两边用相对路径读，不要跨包 import 源码
 - 运行：`pnpm test`（等同于 `pnpm --filter=@starter/api test`）
 
 ## 环境变量

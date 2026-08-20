@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API 侧质量与测试要求"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "验收时对照第 12 节的 AI 系统验收命令与重点"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "检查终态唯一性、SSE 断开语义和 reason 字段是否符合 Run 规范"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "Admin 侧质量与测试要求"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享检查指引"}

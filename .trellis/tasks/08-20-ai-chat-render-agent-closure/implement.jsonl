@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "AI 系统数据流与状态归属总览，改事件、live 快照和收尾轮前必读"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi Agent 执行、原生 stream、Tool adapter 和 compaction 的既有约束，收尾轮改在这一层"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run API、并发、SSE、终态和启动恢复规则，终态加 reason 不能改发布路径"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "Session 归属、transcript 投影和 cursor 语义，transcript 反向分页改这里"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 包的 schema 与 DTO 约定"}
+{"file": ".trellis/spec/admin/frontend/index.md", "reason": "Admin 前端结构与组件约定"}
+{"file": ".trellis/spec/admin/frontend/state-management.md", "reason": "Admin 状态管理约定，stream-reducer 和轮询状态归属参照它"}
+{"file": ".trellis/spec/admin/frontend/component-guidelines.md", "reason": "时间线组件抽取要遵守的组件规范"}

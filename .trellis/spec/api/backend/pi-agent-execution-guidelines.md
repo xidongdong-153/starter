@@ -43,6 +43,8 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 - 工具失败不等于 Run 失败。只有用户取消和 Run 总时长耗尽会设 `terminate: true` 并调 `onTerminalFailure`；工具自身超时、抛错、参数无效、未注册和权限不足一律 `terminate: false`，把失败原因作为 tool result 交回模型，让它自己决定下一步。超时的 `modelText` 带上实际 timeout 毫秒数，模型才知道重试时要换参数。
 - Tool 进度通道：`AiToolExecutionContext.reportProgress(safeSummary)` 由 adapter 注入，内部转成 Pi 的 `onUpdate`，`PiEventMapper` 再把 `tool_execution_update` 映射成 `tool.progress`。上报内容只能是脱敏摘要，`modelText` 留空，空字符串忽略，不产生额外审计。`reportProgress` 是可选字段，工具内部用 `?.` 调用，单元测试可以不提供。
 - 轮次与 compaction 可观测：`PiEventMapper` 把 Pi 的 `turn_start` / `turn_end` 映射成 `turn.started` / `turn.completed`（带 `maxTurns`，从 `PiEventMapperOptions` 传入）；`compactIfNeeded` 写入 entry 成功后通过 `onCompacted` 回调发 `context.compacted`，事件由 `PiEventMapper.contextCompactedEvent()` 构造以复用同一个 sequencer。回调必须包 try/catch，发事件失败不能影响已写入的 compaction 结果。
+- 思考内容有公开出口：`mapMessageUpdate` 除了 `text_delta` 还要映射 `thinking_start` / `thinking_delta` / `thinking_end`，`blockIndex` 用 pi-ai 的 `contentIndex`。`assistantText` 和 `message.completed.content` 仍然只拼 text block，不把思考正文混进正文字段。
+- 撞到 `maxTurns` 要给模型一次收尾机会：Pi 的回调顺序是 `turn_end` → `prepareNextTurn` → `shouldStopAfterTurn`，所以清空工具只能在 `prepareNextTurnWithContext` 里做，停或不停由 `shouldStopAfterTurn` 决定。撞顶那一轮如果还有 toolCall，就返回 `tools: []` 的 context 并追加一条只进内存的收尾提示，再放一轮。`maxTurns` 语义是「最多 N 轮工具轮 + 1 轮收尾」，`ExecutorTerminalResult.completionReason` 只在 completed 时有值。
 - compaction 只能调用 Pi 的 `estimateContextTokens`、`shouldCompact`、`prepareCompaction` 和 `compact`；摘要或 entry 写入失败时 Run 失败且原 transcript 保留。
 
 ## 4. Validation & Error Matrix
@@ -58,6 +60,8 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 | Tool 未注册、参数无效或权限不足 | Tool result 使用 `not_found`、`invalid_arguments` 或 `forbidden`，继续由 Pi Agent 处理下一轮 |
 | Tool timeout | Tool 审计 finalize 为 `timed_out`，`terminate: false`，tool result 交回模型继续下一轮 |
 | 父 signal abort 或 Run deadline 耗尽 | Tool 审计 finalize 为 `cancelled` 或 `timed_out`，`terminate: true`，当前 Run 终止 |
+| 撞到 `maxTurns` 且当轮 assistant message 还带 toolCall | 追加一轮 `tools: []` 的收尾轮，`completionReason` 为 `max_turns` |
+| 撞到 `maxTurns` 但当轮已经给出文字回答 | 不追加收尾轮，`completionReason` 为 `model_finished` |
 | 审计 begin/finalize 写入失败 | 记录 operation、requestId 和审计 ID；不改变模型或 Tool 的安全结果 |
 
 ## 5. Good / Base / Bad Cases
@@ -70,7 +74,7 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 
 ## 6. Tests Required
 
-- `apps/api/src/test/pi-agent-executor.test.ts`：两段式 start gate、多轮 Tool、sequence、Session failure、pre-abort、模型不存在、compaction（含 `context.compacted` 事件的 entryId 与 tokensBefore）、轮次事件成对、`tool.progress` 只带脱敏摘要、工具超时后模型继续回复且 Run 为 completed、无效参数和 Tool 审计。
+- `apps/api/src/test/pi-agent-executor.test.ts`：两段式 start gate、多轮 Tool、sequence、Session failure、pre-abort、模型不存在、compaction（含 `context.compacted` 事件的 entryId 与 tokensBefore）、轮次事件成对、`tool.progress` 只带脱敏摘要、工具超时后模型继续回复且 Run 为 completed、无效参数和 Tool 审计。另外要盖：thinking 事件按流顺序发布且 messageId / blockIndex 一致；`maxTurns` 撞顶时收尾轮拿到的 tools 为空、`completionReason` 为 `max_turns`、收尾提示只出现在模型 context 里而不在 Pi transcript；撞顶那一轮已给文字时不追加收尾轮。
 - `apps/api/src/test/pi-native-stream.test.ts`：正常 done、认证/上游失败、timeout、abort、模型不存在、审计失败隔离和 first-cause 终态。
 - `apps/api/src/test/pi-tool-adapter.test.ts`：Zod parse、permission、timeout、取消、安全 result、一次性审计，`reportProgress` 经 `onUpdate` 上报且空摘要被忽略，以及工具超时 `terminate: false` 不调 `onTerminalFailure`、用户取消 `terminate: true` 仍终止 Run。
 - `apps/api/src/test/active-run-registry.test.ts`：lane 冲突、runId/lane 双索引、controls 转发和幂等 release。
