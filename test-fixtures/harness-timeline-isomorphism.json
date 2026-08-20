@@ -1,0 +1,347 @@
+{
+  "events": [
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700001",
+      "sequence": 1,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "run.started",
+      "data": {
+        "agentId": "01958c80-8df7-7ce2-8f90-1234567890a7",
+        "agentRevision": 1,
+        "model": {
+          "providerId": "openai",
+          "modelId": "gpt-test"
+        }
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700002",
+      "sequence": 2,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "turn.started",
+      "data": {
+        "turn": 1,
+        "maxTurns": 4
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700003",
+      "sequence": 3,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.started",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "role": "assistant"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700004",
+      "sequence": 4,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "thinking.started",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "blockIndex": 0
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700005",
+      "sequence": 5,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "thinking.delta",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "blockIndex": 0,
+        "delta": "先看清楚需求"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700006",
+      "sequence": 6,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "thinking.completed",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "blockIndex": 0,
+        "content": "先看清楚需求，再动手"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700007",
+      "sequence": 7,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.delta",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "delta": "我先查一下。"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700008",
+      "sequence": 8,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.completed",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "role": "assistant",
+        "content": "我先查一下。",
+        "stopReason": "tool_use",
+        "errorCode": null,
+        "usage": {
+          "inputTokens": 12,
+          "outputTokens": 8,
+          "cacheReadTokens": null,
+          "cacheWriteTokens": null,
+          "cacheWrite1hTokens": null,
+          "reasoningTokens": 4,
+          "totalTokens": 20
+        }
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700009",
+      "sequence": 9,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "tool.started",
+      "data": {
+        "toolCallId": "tool-1",
+        "name": "lookup"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700010",
+      "sequence": 10,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "tool.completed",
+      "data": {
+        "toolCallId": "tool-1",
+        "name": "lookup",
+        "status": "succeeded",
+        "errorCode": null,
+        "safeSummary": "查到 3 条",
+        "entryId": "01958c80-8df7-7ce2-8f90-1234567890a6"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700011",
+      "sequence": 11,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "context.compacted",
+      "data": {
+        "entryId": "01958c80-8df7-7ce2-8f90-1234567890a5",
+        "tokensBefore": 12000,
+        "summary": "早期对话已压缩"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700012",
+      "sequence": 12,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "turn.started",
+      "data": {
+        "turn": 2,
+        "maxTurns": 4
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700013",
+      "sequence": 13,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.started",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "role": "assistant"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700014",
+      "sequence": 14,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.delta",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "delta": "先给结论。"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700015",
+      "sequence": 15,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "thinking.delta",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "blockIndex": 1,
+        "delta": "还要补一句"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700016",
+      "sequence": 16,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.delta",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "delta": "补充一句。"
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700017",
+      "sequence": 17,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "message.completed",
+      "data": {
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "role": "assistant",
+        "content": "先给结论。补充一句。",
+        "stopReason": "stop",
+        "errorCode": null
+      }
+    },
+    {
+      "version": 1,
+      "eventId": "01958c80-8df7-7ce2-8f90-123456700018",
+      "sequence": 18,
+      "sessionId": "01958c80-8df7-7ce2-8f90-1234567890a1",
+      "runId": "01958c80-8df7-7ce2-8f90-1234567890a2",
+      "lane": "main",
+      "createdAt": "2026-08-20T00:00:00.000Z",
+      "type": "run.completed",
+      "data": {
+        "status": "completed",
+        "finalEntryId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "reason": "model_finished"
+      }
+    }
+  ],
+  "liveSnapshot": {
+    "lastSequence": 18,
+    "turn": 2,
+    "maxTurns": 4,
+    "timeline": [
+      {
+        "kind": "message",
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a3",
+        "blocks": [
+          {
+            "type": "thinking",
+            "text": "先看清楚需求，再动手"
+          },
+          {
+            "type": "text",
+            "text": "我先查一下。"
+          }
+        ],
+        "completed": true,
+        "usage": {
+          "inputTokens": 12,
+          "outputTokens": 8,
+          "cacheReadTokens": null,
+          "cacheWriteTokens": null,
+          "cacheWrite1hTokens": null,
+          "reasoningTokens": 4,
+          "totalTokens": 20
+        }
+      },
+      {
+        "kind": "tool",
+        "toolCallId": "tool-1",
+        "name": "lookup",
+        "status": "succeeded",
+        "safeSummary": "查到 3 条"
+      },
+      {
+        "kind": "compaction",
+        "entryId": "01958c80-8df7-7ce2-8f90-1234567890a5",
+        "summary": "早期对话已压缩"
+      },
+      {
+        "kind": "message",
+        "messageId": "01958c80-8df7-7ce2-8f90-1234567890a4",
+        "blocks": [
+          {
+            "type": "text",
+            "text": "先给结论。"
+          },
+          {
+            "type": "thinking",
+            "text": "还要补一句"
+          },
+          {
+            "type": "text",
+            "text": "补充一句。"
+          }
+        ],
+        "completed": true,
+        "usage": null
+      }
+    ]
+  }
+}

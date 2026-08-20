@@ -159,6 +159,7 @@ async function setupAgent(
   runtime: ReturnType<typeof createTestApp>["runtime"],
   admin: { cookie: string },
   name: string,
+  maxTurns = 8,
 ): Promise<{
   agentId: string;
   modelRef: { providerId: string; modelId: string };
@@ -178,7 +179,7 @@ async function setupAgent(
       skillIds: [],
       toolNames: [],
       thinkingLevel: "off",
-      maxTurns: 8,
+      maxTurns,
     },
   });
   const createdBody = await readSuccess<{ id: string }>(created);
@@ -306,6 +307,10 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
         event.type === "run.aborted",
     );
     expect(terminalEvents).toHaveLength(1);
+    // 模型自己给出文字回答，停止原因是 model_finished
+    expect(terminalEvents[0]?.data).toMatchObject({
+      reason: "model_finished",
+    });
 
     const runId = events[0]?.runId as string;
     expect(runId).toBeTruthy();
@@ -346,6 +351,97 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
     expect(row?.status).toBe("completed");
     expect(row?.finalEntryId).toBeTruthy();
     expect(row?.finishedAt).toBeTruthy();
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("撞上 maxTurns 时追加收尾轮，run.completed 的 reason 是 max_turns", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-max-turns-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  let calls = 0;
+  const streamFn = (
+    _model: Model<Api>,
+    _context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    calls += 1;
+    // 前两轮一直请求工具，收尾轮才给文字
+    if (calls <= 2) {
+      return streamResponse(
+        assistantMessage(
+          [
+            {
+              type: "toolCall",
+              id: `tool-call-${calls}`,
+              name: "lookup",
+              arguments: { value: "input" },
+            },
+          ],
+          "toolUse",
+        ),
+        "toolUse",
+      );
+    }
+    return streamResponse(
+      assistantMessage([{ type: "text", text: "收尾总结" }], "stop"),
+      "stop",
+    );
+  };
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    hasPermission: async () => true,
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    { agentSessionStore: store, piAgentExecutor: executor },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-max-turns@example.com");
+    const { agentId } = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "max-turns-agent",
+      2,
+    );
+    const { sessionId } = await createSession(app, user.cookie, "轮次上限");
+
+    const started = await startRun(app, user.cookie, sessionId, {
+      agentId,
+      input: "keep calling tools",
+    });
+    expect(started.status).toBe(200);
+    const events = parseSseEvents(await readSse(started));
+
+    // 2 轮工具轮 + 1 轮收尾
+    expect(calls).toBe(3);
+    const completed = events.filter((event) => event.type === "run.completed");
+    expect(completed).toHaveLength(1);
+    expect(completed[0]?.data).toMatchObject({
+      status: "completed",
+      reason: "max_turns",
+    });
+    // 最后一条 assistant 消息是文字总结
+    const messages = events.filter(
+      (event) => event.type === "message.completed",
+    );
+    expect(messages.at(-1)?.data).toMatchObject({ content: "收尾总结" });
+
+    const runId = events[0]?.runId as string;
+    const row = runtime.db
+      .select()
+      .from(aiAgentRuns)
+      .where(eq(aiAgentRuns.id, runId))
+      .get();
+    expect(row?.status).toBe("completed");
   } finally {
     cleanup();
     await rm(directory, { recursive: true, force: true });
@@ -1259,8 +1355,11 @@ it("活跃 Run 返回 live 快照，终态后为 null，他人 Run 仍 404", asy
         lastSequence: number;
         turn: number;
         maxTurns: number;
-        messages: Array<{ content: string; completed: boolean }>;
-        tools: unknown[];
+        timeline: Array<{
+          kind: string;
+          blocks?: Array<{ type: string; text: string }>;
+          completed?: boolean;
+        }>;
       } | null;
     };
     await vi.waitFor(async () => {
@@ -1269,8 +1368,10 @@ it("活跃 Run 返回 live 快照，终态后为 null，他人 Run 仍 404", asy
       const body = await readSuccess<LiveDetail>(active);
       expect(body.data.status).toBe("running");
       expect(body.data.live).not.toBeNull();
-      expect(body.data.live?.messages[0]?.content).toBe("部分输出");
-      expect(body.data.live?.messages[0]?.completed).toBe(false);
+      const first = body.data.live?.timeline[0];
+      expect(first?.kind).toBe("message");
+      expect(first?.blocks).toEqual([{ type: "text", text: "部分输出" }]);
+      expect(first?.completed).toBe(false);
       expect(body.data.live?.turn).toBe(1);
       expect(body.data.live?.maxTurns).toBe(8);
       expect(body.data.live?.lastSequence).toBeGreaterThan(0);

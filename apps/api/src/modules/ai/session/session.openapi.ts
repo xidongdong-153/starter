@@ -131,6 +131,13 @@ export const getAgentSessionTranscriptRoute = createRoute({
   path: "/api/ai/sessions/{sessionId}/transcript",
   tags,
   security,
+  description: [
+    "读取指定 lane 的 transcript。`items` 始终是时间正序。",
+    "`direction=backward`（默认）取比 `cursor` 更早的一页，省略 `cursor` 时取最新一页，",
+    "`nextCursor` 是本页最早一条 entry 的 sequence，用它继续往更早翻。",
+    "`direction=forward` 取比 `cursor` 更新的一页，`nextCursor` 是本页最后一条 entry 的 sequence。",
+    "两个方向都在确实还有下一页时才返回 `nextCursor`，否则为 null。",
+  ].join(""),
   request: {
     params: sessionParams,
     query: agentTranscriptQuerySchema,
@@ -138,7 +145,7 @@ export const getAgentSessionTranscriptRoute = createRoute({
   responses: {
     200: apiSuccessResponse(
       agentTranscriptSchema,
-      "Agent Session transcript",
+      "Agent Session transcript，items 为时间正序，nextCursor 语义随 direction 变化",
       "AgentTranscriptResponse",
     ),
     400: invalidRequestResponse,

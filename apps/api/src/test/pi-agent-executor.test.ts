@@ -244,6 +244,127 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
   await rm(directory, { recursive: true, force: true });
 });
 
+it("思考内容映射成 thinking 事件，message.completed 只带正文", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-agent-thinking-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const sessionId = generateId();
+  const runId = generateId();
+  await store.createSession({ id: sessionId });
+  const finalMessage = assistantMessage(
+    [
+      { type: "thinking", thinking: "先想一下" },
+      { type: "text", text: "answer" },
+    ],
+    "stop",
+  );
+  const streamFn = (
+    _requestModel: Model<Api>,
+    _context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    const stream = createAssistantMessageEventStream();
+    const partial = assistantMessage([], "pending");
+    stream.push({ type: "start", partial });
+    stream.push({ type: "thinking_start", contentIndex: 0, partial });
+    stream.push({
+      type: "thinking_delta",
+      contentIndex: 0,
+      delta: "先想",
+      partial,
+    });
+    stream.push({
+      type: "thinking_delta",
+      contentIndex: 0,
+      delta: "一下",
+      partial,
+    });
+    stream.push({
+      type: "thinking_end",
+      contentIndex: 0,
+      content: "先想一下",
+      partial,
+    });
+    stream.push({
+      type: "text_delta",
+      contentIndex: 1,
+      delta: "answer",
+      partial,
+    });
+    stream.push({ type: "done", reason: "stop", message: finalMessage });
+    return stream;
+  };
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    hasPermission: async () => true,
+  });
+  const registry = createActiveRunRegistry();
+  const prepared = executor.prepare({
+    runId,
+    sessionId,
+    lane: "main",
+    userId: generateId(),
+    requestId: "request-agent-thinking",
+    input: "think first",
+    sequencer: createEventSequencer(),
+    config: {
+      model: { providerId: model.provider, modelId: model.id },
+      thinkingLevel: "medium",
+      maxTurns: 4,
+      toolNames: [],
+    },
+  });
+  const lease = registry.reserve(sessionId, "main");
+  registry.attach(lease, runId, prepared.controls);
+  await prepared.start();
+  const [events, terminal] = await Promise.all([
+    collect(prepared.events),
+    prepared.result,
+  ]);
+
+  expect(terminal.status).toBe("completed");
+  // thinking 事件按流顺序发布，夹在 message.started 和 message.delta 之间
+  expect(events.map((event) => event.type)).toEqual([
+    "turn.started",
+    "message.started",
+    "thinking.started",
+    "thinking.delta",
+    "thinking.delta",
+    "thinking.completed",
+    "message.delta",
+    "message.completed",
+    "turn.completed",
+  ]);
+  const messageStarted = events.find(
+    (event) => event.type === "message.started",
+  );
+  const thinkingEvents = events.filter((event) =>
+    event.type.startsWith("thinking."),
+  );
+  for (const event of thinkingEvents) {
+    expect(event.data).toMatchObject({
+      messageId: messageStarted?.data.messageId,
+      blockIndex: 0,
+    });
+  }
+  expect(thinkingEvents.at(-1)?.data).toMatchObject({ content: "先想一下" });
+  // message.completed 的 content 语义不变，只拼 text 块
+  expect(
+    events.find((event) => event.type === "message.completed")?.data,
+  ).toMatchObject({ content: "answer" });
+  expect(events.map((event) => event.sequence)).toEqual(
+    events.map((event) => event.sequence).sort((a, b) => a - b),
+  );
+
+  registry.release(runId);
+  await store.close();
+  await rm(directory, { recursive: true, force: true });
+});
+
 it("工具上报进度时发布 tool.progress，只带脱敏摘要", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-agent-progress-"));
   const store = createPiSessionStore({
@@ -1016,4 +1137,214 @@ it("原生模型 timeout 以 failed 和 AI_UPSTREAM_TIMEOUT 结束，而不是�
     await store.close();
     await rm(directory, { recursive: true, force: true });
   }
+});
+
+it("撞上 maxTurns 且仍在调工具时追加一轮无工具收尾", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-agent-max-turns-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const sessionId = generateId();
+  const runId = generateId();
+  await store.createSession({ id: sessionId });
+  const modelContexts: Context[] = [];
+  const streamFn = (
+    _requestModel: Model<Api>,
+    context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    modelContexts.push(context);
+    // 收尾轮没有工具可用，只能给文字
+    if ((context.tools ?? []).length === 0) {
+      return streamResponse(
+        assistantMessage(
+          [{ type: "text", text: "根据已有结果给出结论。" }],
+          "stop",
+        ),
+        "stop",
+      );
+    }
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: `tool-call-${modelContexts.length}`,
+            name: "lookup",
+            arguments: { value: "input" },
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const tools = createAiToolRegistry([
+    defineAiTool({
+      name: "lookup",
+      description: "Look up a value",
+      inputSchema: z.object({ value: z.string() }),
+      timeoutMs: 1000,
+      requiredPermission: null,
+      execute: async () => ({
+        modelText: "tool-result",
+        safeSummary: "looked up",
+      }),
+    }),
+  ]);
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    tools,
+    hasPermission: async () => true,
+  });
+  const registry = createActiveRunRegistry();
+  const prepared = executor.prepare({
+    runId,
+    sessionId,
+    lane: "main",
+    userId: generateId(),
+    requestId: "request-max-turns",
+    input: "keep calling tools",
+    sequencer: createEventSequencer(),
+    config: {
+      model: { providerId: model.provider, modelId: model.id },
+      maxTurns: 2,
+      toolNames: ["lookup"],
+    },
+  });
+  const lease = registry.reserve(sessionId, "main");
+  registry.attach(lease, runId, prepared.controls);
+  await prepared.start();
+  const [events, terminal] = await Promise.all([
+    collect(prepared.events),
+    prepared.result,
+  ]);
+
+  // 2 轮工具轮 + 1 轮收尾
+  expect(modelContexts).toHaveLength(3);
+  expect(modelContexts[0]?.tools).toHaveLength(1);
+  expect(modelContexts[1]?.tools).toHaveLength(1);
+  expect(modelContexts[2]?.tools ?? []).toHaveLength(0);
+  expect(terminal).toMatchObject({
+    status: "completed",
+    errorCode: null,
+    completionReason: "max_turns",
+  });
+
+  // 收尾轮产生了文字回答，并落到 transcript
+  const completed = events.filter(
+    (event) => event.type === "message.completed",
+  );
+  expect(completed).toHaveLength(3);
+  expect(completed.at(-1)).toMatchObject({
+    data: { content: "根据已有结果给出结论。" },
+  });
+  const transcript = await store.readTranscript({ sessionId, lane: "main" });
+  const rawTranscript = JSON.stringify(transcript);
+  expect(rawTranscript).toContain("根据已有结果给出结论。");
+  // 收尾提示只进内存 context，不写 Pi transcript
+  expect(rawTranscript).not.toContain("Tools are no longer available");
+  expect(JSON.stringify(modelContexts[2]?.messages)).toContain(
+    "Tools are no longer available",
+  );
+  expect(events.filter((event) => event.type === "turn.started")).toHaveLength(
+    3,
+  );
+
+  registry.release(runId);
+  await store.close();
+  await rm(directory, { recursive: true, force: true });
+});
+
+it("撞上 maxTurns 时模型已给文字回答则不追加收尾轮", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-agent-turn-text-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const sessionId = generateId();
+  const runId = generateId();
+  await store.createSession({ id: sessionId });
+  let calls = 0;
+  const streamFn = (
+    _requestModel: Model<Api>,
+    _context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    calls += 1;
+    if (calls === 1) {
+      return streamResponse(
+        assistantMessage(
+          [
+            {
+              type: "toolCall",
+              id: "tool-call-1",
+              name: "lookup",
+              arguments: { value: "input" },
+            },
+          ],
+          "toolUse",
+        ),
+        "toolUse",
+      );
+    }
+    return streamResponse(
+      assistantMessage([{ type: "text", text: "已经够了。" }], "stop"),
+      "stop",
+    );
+  };
+  const tools = createAiToolRegistry([
+    defineAiTool({
+      name: "lookup",
+      description: "Look up a value",
+      inputSchema: z.object({ value: z.string() }),
+      timeoutMs: 1000,
+      requiredPermission: null,
+      execute: async () => ({
+        modelText: "tool-result",
+        safeSummary: "looked up",
+      }),
+    }),
+  ]);
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    tools,
+    hasPermission: async () => true,
+  });
+  const registry = createActiveRunRegistry();
+  const prepared = executor.prepare({
+    runId,
+    sessionId,
+    lane: "main",
+    userId: generateId(),
+    requestId: "request-max-turns-text",
+    input: "lookup once",
+    sequencer: createEventSequencer(),
+    config: {
+      model: { providerId: model.provider, modelId: model.id },
+      maxTurns: 2,
+      toolNames: ["lookup"],
+    },
+  });
+  const lease = registry.reserve(sessionId, "main");
+  registry.attach(lease, runId, prepared.controls);
+  await prepared.start();
+  const terminal = await prepared.result;
+  await collect(prepared.events);
+
+  expect(calls).toBe(2);
+  expect(terminal).toMatchObject({
+    status: "completed",
+    errorCode: null,
+    completionReason: "model_finished",
+  });
+
+  registry.release(runId);
+  await store.close();
+  await rm(directory, { recursive: true, force: true });
 });

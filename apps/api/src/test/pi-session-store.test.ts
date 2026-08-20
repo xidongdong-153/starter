@@ -100,6 +100,50 @@ it("隔离 lane，并保留 starter.run.v1 的原始 data", async () => {
   }
 });
 
+it("newestFirst 从新到旧读取，cursor 取更早的 entry", async () => {
+  const fixture = await createFixture();
+  try {
+    const session = await fixture.store.createSession({ id: "session-1" });
+    for (let index = 1; index <= 4; index += 1) {
+      await session.appendMessage("main", {
+        ...message,
+        content: `消息 ${index}`,
+      });
+    }
+
+    const newest = await fixture.store.readTranscript({
+      sessionId: "session-1",
+      lane: "main",
+      order: "newestFirst",
+      limit: 2,
+    });
+    expect(newest.map((entry) => entry.seq)).toEqual([4, 3]);
+
+    // newestFirst 下 cursor.afterSeq 的判据是 seq < afterSeq，即取更早的 entry
+    const earlier = await fixture.store.readTranscript({
+      sessionId: "session-1",
+      lane: "main",
+      order: "newestFirst",
+      cursor: 3,
+      limit: 2,
+    });
+    expect(earlier.map((entry) => entry.seq)).toEqual([2, 1]);
+
+    // 默认仍然是 oldestFirst
+    expect(
+      (
+        await fixture.store.readTranscript({
+          sessionId: "session-1",
+          lane: "main",
+        })
+      ).map((entry) => entry.seq),
+    ).toEqual([1, 2, 3, 4]);
+  } finally {
+    await fixture.store.close();
+    await rm(fixture.directory, { recursive: true, force: true });
+  }
+});
+
 it("两个 Session DB 相互隔离，不向 app.db 写入 Pi 表", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-pi-isolation-"));
   const firstPath = join(directory, "first.db");

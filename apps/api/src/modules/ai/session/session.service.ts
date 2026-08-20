@@ -209,6 +209,7 @@ export function createAiAgentSessionService(input: {
   ): Promise<AgentTranscript> {
     requireActiveSession(ownerId, sessionId);
 
+    const backward = query.direction === "backward";
     let entries;
     try {
       entries = await sessionStore.readTranscript({
@@ -216,6 +217,7 @@ export function createAiAgentSessionService(input: {
         lane: query.lane,
         cursor: query.cursor,
         limit: query.limit + 1,
+        order: backward ? "newestFirst" : "oldestFirst",
       });
     } catch (cause) {
       logger.error(
@@ -229,8 +231,11 @@ export function createAiAgentSessionService(input: {
       );
     }
 
+    // hasMore 只看多读的那一条 raw entry 是否存在，与投影后的 item 数量无关。
     const hasMore = entries.length > query.limit;
-    const visibleEntries = hasMore ? entries.slice(0, query.limit) : entries;
+    const pageEntries = hasMore ? entries.slice(0, query.limit) : entries;
+    // backward 读到的是从新到旧，投影前先反转成时间正序。
+    const visibleEntries = backward ? [...pageEntries].reverse() : pageEntries;
     const items = projectTranscript(visibleEntries, query.lane, (info) => {
       logger.warn(
         { ...info, sessionId, requestId },
@@ -238,8 +243,13 @@ export function createAiAgentSessionService(input: {
       );
     });
 
-    const last = visibleEntries[visibleEntries.length - 1];
-    const nextCursor = hasMore && last !== undefined ? last.seq : null;
+    // backward 的 nextCursor 指向本页最早一条 raw entry，用来继续往更早翻；
+    // forward 指向本页最后一条，用来继续往更新翻。
+    const cursorEntry = backward
+      ? visibleEntries[0]
+      : visibleEntries[visibleEntries.length - 1];
+    const nextCursor =
+      hasMore && cursorEntry !== undefined ? cursorEntry.seq : null;
     return { items, nextCursor };
   }
 

@@ -1,19 +1,26 @@
-import type { AgentRunLiveSnapshot, HarnessEvent } from "@starter/contracts";
+import type {
+  AgentMessageBlock,
+  AgentRunLiveSnapshot,
+  AgentRunLiveTimelineItem,
+  AiUsage,
+  HarnessEvent,
+} from "@starter/contracts";
 
-/** 快照里保留的 message 与 tool 上限，防止长 Run 的内存无界增长；超限丢最旧的。 */
-const MAX_SNAPSHOT_ITEMS = 64;
+/** 时间线元素上限，防止长 Run 的内存无界增长；超限丢最旧的。 */
+const MAX_TIMELINE_ITEMS = 128;
+/** 单条 message 内保留的内容块上限，与契约一致。 */
+const MAX_MESSAGE_BLOCKS = 64;
 
-interface LiveMessage {
-  messageId: string;
-  content: string;
-  completed: boolean;
-}
+type LiveTimelineItem = AgentRunLiveTimelineItem;
+type LiveMessageItem = Extract<LiveTimelineItem, { kind: "message" }>;
+type LiveToolItem = Extract<LiveTimelineItem, { kind: "tool" }>;
 
-interface LiveTool {
-  toolCallId: string;
-  name: string;
-  status: AgentRunLiveSnapshot["tools"][number]["status"];
-  safeSummary: string | null;
+type ThinkingBlock = Extract<AgentMessageBlock, { type: "thinking" }>;
+
+interface LiveMessageEntry {
+  item: LiveMessageItem;
+  /** blockIndex（模型流的 contentIndex）到 thinking 块的映射，用于定位续写目标。 */
+  thinkingBlocks: Map<number, ThinkingBlock>;
 }
 
 /**
@@ -27,8 +34,9 @@ export interface RunLiveSnapshotState {
   lastSequence: number;
   turn: number;
   maxTurns: number;
-  messages: LiveMessage[];
-  tools: LiveTool[];
+  timeline: LiveTimelineItem[];
+  /** messageId 到时间线里 message 元素的索引，避免每次线性查找。 */
+  messages: Map<string, LiveMessageEntry>;
 }
 
 export function createRunLiveSnapshot(maxTurns: number): RunLiveSnapshotState {
@@ -36,8 +44,8 @@ export function createRunLiveSnapshot(maxTurns: number): RunLiveSnapshotState {
     lastSequence: 0,
     turn: 0,
     maxTurns,
-    messages: [],
-    tools: [],
+    timeline: [],
+    messages: new Map(),
   };
 }
 
@@ -57,28 +65,50 @@ export function applyRunEvent(
     case "turn.started":
       state.turn = event.data.turn;
       break;
-    case "message.started":
-      pushCapped(state.messages, {
+    case "message.started": {
+      const item: LiveMessageItem = {
+        kind: "message",
         messageId: event.data.messageId,
-        content: "",
+        blocks: [],
         completed: false,
+      };
+      pushTimelineItem(state, item);
+      state.messages.set(event.data.messageId, {
+        item,
+        thinkingBlocks: new Map(),
       });
       break;
+    }
     case "message.delta": {
-      const message = state.messages.find(
-        (item) => item.messageId === event.data.messageId,
-      );
-      if (message) message.content += event.data.delta;
+      const entry = state.messages.get(event.data.messageId);
+      if (!entry) break;
+      appendText(entry, event.data.delta);
+      break;
+    }
+    case "thinking.started": {
+      const entry = state.messages.get(event.data.messageId);
+      if (!entry) break;
+      thinkingBlock(entry, event.data.blockIndex);
+      break;
+    }
+    case "thinking.delta": {
+      const entry = state.messages.get(event.data.messageId);
+      if (!entry) break;
+      const block = thinkingBlock(entry, event.data.blockIndex);
+      if (block) block.text += event.data.delta;
+      break;
+    }
+    case "thinking.completed": {
+      const entry = state.messages.get(event.data.messageId);
+      if (!entry) break;
+      const block = thinkingBlock(entry, event.data.blockIndex);
+      if (block) block.text = event.data.content;
       break;
     }
     case "message.completed": {
-      const message = state.messages.find(
-        (item) => item.messageId === event.data.messageId,
-      );
-      if (message) {
-        message.content = event.data.content;
-        message.completed = true;
-      }
+      const entry = state.messages.get(event.data.messageId);
+      if (!entry) break;
+      completeMessage(entry, event.data.content, event.data.usage ?? null);
       break;
     }
     case "tool.started":
@@ -95,9 +125,16 @@ export function applyRunEvent(
       tool.safeSummary = event.data.safeSummary;
       break;
     }
+    case "context.compacted":
+      pushTimelineItem(state, {
+        kind: "compaction",
+        entryId: event.data.entryId,
+        summary: event.data.summary,
+      });
+      break;
     default:
-      // run.started / turn.completed / context.compacted / terminal 事件
-      // 不改变快照内容，只推进 lastSequence。
+      // run.started / turn.completed / terminal 事件不改变快照内容，
+      // 只推进 lastSequence。
       break;
   }
 }
@@ -109,32 +146,97 @@ export function toAgentRunLiveSnapshot(
     lastSequence: state.lastSequence,
     turn: state.turn,
     maxTurns: state.maxTurns,
-    messages: state.messages.map((message) => ({ ...message })),
-    tools: state.tools.map((tool) => ({ ...tool })),
+    timeline: state.timeline.map((item) =>
+      item.kind === "message"
+        ? { ...item, blocks: item.blocks.map((block) => ({ ...block })) }
+        : { ...item },
+    ),
   };
+}
+
+/** 文本追加到当前 message 的最后一个 text 块；没有就新建一个。 */
+function appendText(entry: LiveMessageEntry, delta: string): void {
+  const last = entry.item.blocks.at(-1);
+  if (last?.type === "text") {
+    last.text += delta;
+    return;
+  }
+  pushBlock(entry, { type: "text", text: delta });
+}
+
+/** 按 blockIndex 找 thinking 块；没有就新建。块数撞上限时返回 undefined。 */
+function thinkingBlock(
+  entry: LiveMessageEntry,
+  blockIndex: number,
+): ThinkingBlock | undefined {
+  const existing = entry.thinkingBlocks.get(blockIndex);
+  if (existing) return existing;
+  const block: ThinkingBlock = { type: "thinking", text: "" };
+  if (!pushBlock(entry, block)) return undefined;
+  entry.thinkingBlocks.set(blockIndex, block);
+  return block;
+}
+
+/**
+ * `message.completed` 收尾：块顺序优先，content 只在能确定归属时作为权威值修正。
+ *
+ * - 只有一个 text 块：用事件 content 覆盖它，补回可能丢掉的 delta。
+ * - 没有 text 块且 content 非空：追加一个 text 块。
+ * - 有多个 text 块（interleaved thinking）：保留 delta 累积出来的顺序和内容，
+ *   不重排也不折叠，否则终态顺序会和 transcript 投影不一致。
+ */
+function completeMessage(
+  entry: LiveMessageEntry,
+  content: string,
+  usage: AiUsage | null,
+): void {
+  const textBlocks = entry.item.blocks.filter((block) => block.type === "text");
+  if (textBlocks.length === 1 && textBlocks[0]) {
+    textBlocks[0].text = content;
+  } else if (textBlocks.length === 0 && content.length > 0) {
+    pushBlock(entry, { type: "text", text: content });
+  }
+  entry.item.completed = true;
+  entry.item.usage = usage;
+}
+
+function pushBlock(entry: LiveMessageEntry, block: AgentMessageBlock): boolean {
+  if (entry.item.blocks.length >= MAX_MESSAGE_BLOCKS) return false;
+  entry.item.blocks.push(block);
+  return true;
 }
 
 function upsertTool(
   state: RunLiveSnapshotState,
   toolCallId: string,
   name: string,
-): LiveTool {
-  const existing = state.tools.find((item) => item.toolCallId === toolCallId);
+): LiveToolItem {
+  const existing = state.timeline.find(
+    (item): item is LiveToolItem =>
+      item.kind === "tool" && item.toolCallId === toolCallId,
+  );
   if (existing) {
     if (name) existing.name = name;
     return existing;
   }
-  const tool: LiveTool = {
+  const tool: LiveToolItem = {
+    kind: "tool",
     toolCallId,
     name,
     status: "running",
     safeSummary: null,
   };
-  pushCapped(state.tools, tool);
+  pushTimelineItem(state, tool);
   return tool;
 }
 
-function pushCapped<T>(list: T[], value: T): void {
-  list.push(value);
-  if (list.length > MAX_SNAPSHOT_ITEMS) list.shift();
+function pushTimelineItem(
+  state: RunLiveSnapshotState,
+  item: LiveTimelineItem,
+): void {
+  state.timeline.push(item);
+  while (state.timeline.length > MAX_TIMELINE_ITEMS) {
+    const dropped = state.timeline.shift();
+    if (dropped?.kind === "message") state.messages.delete(dropped.messageId);
+  }
 }

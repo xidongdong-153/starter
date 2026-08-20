@@ -129,6 +129,7 @@ function projectMessage(
       runId,
       createdAt: new Date(entry.timestamp).toISOString(),
       content: assistantContentToString(message.content),
+      blocks: assistantBlocks(message.content),
       status,
       model: { providerId: message.provider, modelId: message.model },
       stopReason: assistantStopReason(message.stopReason),
@@ -220,6 +221,26 @@ function assistantContentToString(
       (block): block is { type: "text"; text: string } => block.type === "text",
     ),
   );
+}
+
+/**
+ * 按 `message.content` 的原始顺序投影 text 与 thinking 块，供前端按原顺序渲染。
+ * toolCall 块不进这里，只走 `toolCalls`（只有 id 和名称，不带 arguments）。
+ */
+function assistantBlocks(
+  content: Extract<AgentMessage, { role: "assistant" }>["content"],
+): AssistantItem["blocks"] {
+  const blocks: NonNullable<AssistantItem["blocks"]> = [];
+  for (const block of content) {
+    if (block.type === "text") {
+      blocks.push({ type: "text", text: block.text });
+      continue;
+    }
+    if (block.type === "thinking") {
+      blocks.push({ type: "thinking", text: block.thinking });
+    }
+  }
+  return blocks.slice(0, 64);
 }
 
 /**

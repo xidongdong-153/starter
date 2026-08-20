@@ -2,6 +2,7 @@ import {
   agentDefinitionConfigSchema,
   agentDefinitionDetailSchema,
   agentDefinitionSummarySchema,
+  agentRunLiveSnapshotSchema,
   agentRunSchema,
   agentSessionSchema,
   agentTranscriptItemSchema,
@@ -118,7 +119,16 @@ describe("agent harness contracts", () => {
     expect(agentTranscriptQuerySchema.parse({})).toEqual({
       lane: "main",
       limit: 50,
+      direction: "backward",
     });
+    expect(agentTranscriptQuerySchema.parse({ direction: "forward" })).toEqual({
+      lane: "main",
+      limit: 50,
+      direction: "forward",
+    });
+    expect(
+      agentTranscriptQuerySchema.safeParse({ direction: "newest" }).success,
+    ).toBe(false);
     expect(
       agentTranscriptQuerySchema.safeParse({ lane: "_private" }).success,
     ).toBe(false);
@@ -310,6 +320,85 @@ describe("agent harness contracts", () => {
     ).toBe(false);
   });
 
+  it("assistant item 的 blocks 保留 text 与 thinking 的原始顺序", () => {
+    const assistant = {
+      id: IDS.entry,
+      sequence: 1,
+      lane: "main",
+      createdAt: NOW,
+      type: "assistant_message",
+      runId: IDS.run,
+      content: "answer",
+      status: "completed",
+      model: MODEL,
+      stopReason: "stop",
+      errorCode: null,
+    };
+    expect(
+      agentTranscriptItemSchema.safeParse({
+        ...assistant,
+        blocks: [
+          { type: "thinking", text: "先想" },
+          { type: "text", text: "answer" },
+        ],
+      }).success,
+    ).toBe(true);
+    // blocks 可选：缺失时消费者回退到 content
+    expect(agentTranscriptItemSchema.safeParse(assistant).success).toBe(true);
+    // 只允许 text / thinking 两种块，工具入参不能借块结构进协议
+    expect(
+      agentTranscriptItemSchema.safeParse({
+        ...assistant,
+        blocks: [{ type: "toolCall", text: "lookup" }],
+      }).success,
+    ).toBe(false);
+  });
+
+  it("live 快照的 timeline 覆盖 message / tool / compaction 三种元素", () => {
+    const snapshot = {
+      lastSequence: 6,
+      turn: 1,
+      maxTurns: 8,
+      timeline: [
+        {
+          kind: "message",
+          messageId: IDS.entry,
+          blocks: [
+            { type: "thinking", text: "想" },
+            { type: "text", text: "答" },
+          ],
+          completed: true,
+          usage: null,
+        },
+        {
+          kind: "tool",
+          toolCallId: "tool-1",
+          name: "lookup",
+          status: "running",
+          safeSummary: null,
+        },
+        { kind: "compaction", entryId: IDS.entry, summary: "摘要" },
+      ],
+    };
+    expect(agentRunLiveSnapshotSchema.safeParse(snapshot).success).toBe(true);
+    // 旧的 messages / tools 两个数组已经被 timeline 取代
+    expect(
+      agentRunLiveSnapshotSchema.safeParse({
+        lastSequence: 1,
+        turn: 1,
+        maxTurns: 8,
+        messages: [],
+        tools: [],
+      }).success,
+    ).toBe(false);
+    expect(
+      agentRunLiveSnapshotSchema.safeParse({
+        ...snapshot,
+        timeline: [{ kind: "user", messageId: IDS.entry }],
+      }).success,
+    ).toBe(false);
+  });
+
   it("解析所有 HarnessEvent 分支并拒绝不匹配的 data", () => {
     const envelope = {
       version: 1,
@@ -346,6 +435,21 @@ describe("agent harness contracts", () => {
           stopReason: "stop",
           errorCode: null,
         },
+      },
+      {
+        ...envelope,
+        type: "thinking.started",
+        data: { messageId: IDS.entry, blockIndex: 0 },
+      },
+      {
+        ...envelope,
+        type: "thinking.delta",
+        data: { messageId: IDS.entry, blockIndex: 0, delta: "想" },
+      },
+      {
+        ...envelope,
+        type: "thinking.completed",
+        data: { messageId: IDS.entry, blockIndex: 0, content: "想完了" },
       },
       {
         ...envelope,
@@ -391,7 +495,11 @@ describe("agent harness contracts", () => {
       {
         ...envelope,
         type: "run.completed",
-        data: { status: "completed", finalEntryId: IDS.entry },
+        data: {
+          status: "completed",
+          finalEntryId: IDS.entry,
+          reason: "model_finished",
+        },
       },
       {
         ...envelope,

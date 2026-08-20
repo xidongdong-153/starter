@@ -17,6 +17,7 @@ export {
 } from "./agent-executor.js";
 export type {
   AgentExecutorInput,
+  ExecutorCompletionReason,
   ExecutorTerminalResult,
   PiAgentExecutorOptions,
   PreparedAgentExecution,

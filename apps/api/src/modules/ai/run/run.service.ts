@@ -653,7 +653,11 @@ function terminalEvent(
     return {
       ...base,
       type: "run.completed",
-      data: { status: "completed", finalEntryId: terminal.finalEntryId! },
+      data: {
+        status: "completed",
+        finalEntryId: terminal.finalEntryId!,
+        reason: terminal.completionReason ?? "model_finished",
+      },
     };
   }
   if (terminal.status === "aborted") {

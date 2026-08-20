@@ -413,14 +413,15 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       tokensBefore: 100,
     });
 
-    // limit=2 分页：第一页 2 项，nextCursor = 第 2 条 raw entry 的 seq
+    // limit=2 分页（direction=forward 保持既有语义）：第一页 2 项，nextCursor = 第 2 条 raw entry 的 seq
     const page1 = await readSuccess<{
       items: Array<{ id: string }>;
       nextCursor: number | null;
     }>(
-      await app.request(`/api/ai/sessions/${sessionId}/transcript?limit=2`, {
-        headers: { cookie: user.cookie },
-      }),
+      await app.request(
+        `/api/ai/sessions/${sessionId}/transcript?limit=2&direction=forward`,
+        { headers: { cookie: user.cookie } },
+      ),
     );
     expect(page1.data.items).toHaveLength(2);
     expect(page1.data.nextCursor).toBe(2);
@@ -431,7 +432,7 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       nextCursor: number | null;
     }>(
       await app.request(
-        `/api/ai/sessions/${sessionId}/transcript?limit=2&cursor=${page1.data.nextCursor}`,
+        `/api/ai/sessions/${sessionId}/transcript?limit=2&direction=forward&cursor=${page1.data.nextCursor}`,
         { headers: { cookie: user.cookie } },
       ),
     );
@@ -445,9 +446,10 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       items: Array<Record<string, unknown>>;
       nextCursor: number | null;
     }>(
-      await app.request(`/api/ai/sessions/${sessionId}/transcript?limit=7`, {
-        headers: { cookie: user.cookie },
-      }),
+      await app.request(
+        `/api/ai/sessions/${sessionId}/transcript?limit=7&direction=forward`,
+        { headers: { cookie: user.cookie } },
+      ),
     );
     expect(exactPage.data.nextCursor).toBeNull();
 
@@ -457,6 +459,144 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       { headers: { cookie: user.cookie } },
     );
     expect(badLane.status).toBe(400);
+  } finally {
+    cleanup();
+  }
+});
+
+it("transcript backward 默认取最新一页，游标往更早翻且 items 保持时间正序", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const user = await register(app, "transcript-backward@example.com");
+    const session = await readSuccess<{ id: string }>(
+      await requestJson(app, "POST", "/api/ai/sessions", user.cookie, {}),
+    );
+    const sessionId = session.data.id;
+    const runId = generateId();
+    const store = runtime.agentSessionStore;
+
+    for (let index = 1; index <= 5; index += 1) {
+      await store.appendMessage({
+        sessionId,
+        lane: "main",
+        message: makeUserMessage(`消息 ${index}`, runId),
+      });
+    }
+
+    type Page = {
+      items: Array<{ sequence: number; content: string }>;
+      nextCursor: number | null;
+    };
+
+    // 首屏不传 cursor，默认 backward：取最新两条，但返回时是时间正序
+    const latest = await readSuccess<Page>(
+      await app.request(`/api/ai/sessions/${sessionId}/transcript?limit=2`, {
+        headers: { cookie: user.cookie },
+      }),
+    );
+    expect(latest.data.items.map((item) => item.sequence)).toEqual([4, 5]);
+    expect(latest.data.items.map((item) => item.content)).toEqual([
+      "消息 4",
+      "消息 5",
+    ]);
+    // nextCursor 指向本页最早一条，用它继续往更早翻
+    expect(latest.data.nextCursor).toBe(4);
+
+    const earlier = await readSuccess<Page>(
+      await app.request(
+        `/api/ai/sessions/${sessionId}/transcript?limit=2&cursor=${latest.data.nextCursor}`,
+        { headers: { cookie: user.cookie } },
+      ),
+    );
+    expect(earlier.data.items.map((item) => item.sequence)).toEqual([2, 3]);
+    expect(earlier.data.nextCursor).toBe(2);
+
+    // 最后一页只剩一条，没有更早的内容
+    const oldest = await readSuccess<Page>(
+      await app.request(
+        `/api/ai/sessions/${sessionId}/transcript?limit=2&cursor=${earlier.data.nextCursor}`,
+        { headers: { cookie: user.cookie } },
+      ),
+    );
+    expect(oldest.data.items.map((item) => item.sequence)).toEqual([1]);
+    expect(oldest.data.nextCursor).toBeNull();
+  } finally {
+    cleanup();
+  }
+});
+
+it("assistant item 的 blocks 保留 text 与 thinking 的原始顺序，content 只拼 text", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const user = await register(app, "transcript-blocks@example.com");
+    const session = await readSuccess<{ id: string }>(
+      await requestJson(app, "POST", "/api/ai/sessions", user.cookie, {}),
+    );
+    const sessionId = session.data.id;
+    const runId = generateId();
+
+    await runtime.agentSessionStore.appendMessage({
+      sessionId,
+      lane: "main",
+      message: {
+        role: "assistant",
+        content: [
+          { type: "thinking", thinking: "先想一下" },
+          { type: "text", text: "先说一句" },
+          {
+            type: "toolCall",
+            id: "tc-blocks",
+            name: "read_skill",
+            arguments: { skillId: "secret-skill-id" },
+          },
+          { type: "thinking", thinking: "再想一下" },
+          { type: "text", text: "再说一句" },
+        ],
+        api: "anthropic",
+        provider: "anthropic",
+        model: "claude-sonnet-4-0",
+        usage: {
+          input: 1,
+          output: 2,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 3,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+        stopReason: "toolUse",
+        timestamp: Date.now(),
+        runId,
+      } as unknown as AgentMessage,
+    });
+
+    const body = await readSuccess<{
+      items: Array<{
+        type: string;
+        content: string;
+        blocks?: Array<{ type: string; text: string }>;
+        toolCalls?: Array<{ toolCallId: string; name: string }>;
+      }>;
+    }>(
+      await app.request(`/api/ai/sessions/${sessionId}/transcript`, {
+        headers: { cookie: user.cookie },
+      }),
+    );
+    const assistant = body.data.items[0];
+    expect(assistant?.type).toBe("assistant_message");
+    // blocks 按 message.content 原顺序，toolCall 块不进 blocks
+    expect(assistant?.blocks).toEqual([
+      { type: "thinking", text: "先想一下" },
+      { type: "text", text: "先说一句" },
+      { type: "thinking", text: "再想一下" },
+      { type: "text", text: "再说一句" },
+    ]);
+    // content 语义不变，只拼 text 块
+    expect(assistant?.content).toBe("先说一句再说一句");
+    expect(assistant?.toolCalls).toEqual([
+      { toolCallId: "tc-blocks", name: "read_skill" },
+    ]);
+    // 工具入参不进协议
+    expect(JSON.stringify(body.data.items)).not.toContain("secret-skill-id");
   } finally {
     cleanup();
   }

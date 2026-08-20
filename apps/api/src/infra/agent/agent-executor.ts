@@ -81,10 +81,20 @@ export interface AgentExecutorInput {
 
 export type ExecutorTerminalStatus = "completed" | "failed" | "aborted";
 
+export type ExecutorCompletionReason = Extract<
+  HarnessEvent,
+  { type: "run.completed" }
+>["data"]["reason"];
+
 export interface ExecutorTerminalResult {
   status: ExecutorTerminalStatus;
   finalEntryId: string | null;
   errorCode: ApiErrorCode | null;
+  /**
+   * 只有 completed 终态有意义：`model_finished` 是模型自己给出文字回答，
+   * `max_turns` 是撞上轮次上限后由收尾轮给出的回答。缺省按 `model_finished` 处理。
+   */
+  completionReason?: ExecutorCompletionReason;
 }
 
 export interface PreparedAgentExecution {
@@ -133,6 +143,7 @@ export class PiAgentExecutor {
     let deadlineAt: number | undefined;
     let abortRequested = false;
     let turns = 0;
+    let summaryPlanned = false;
     let currentModelCallId: string | null = null;
     let latestModelFailure: PiStreamFailure | undefined;
     let terminalOverride: ExecutorTerminalResult | undefined;
@@ -324,9 +335,29 @@ export class PiAgentExecutor {
           sessionId: input.sessionId,
           toolExecution: "parallel",
           afterToolCall: toolAdapter.afterToolCall,
+          // Pi 的回调顺序是 turn_end -> prepareNextTurn -> shouldStopAfterTurn，
+          // 所以清空工具只能在 prepareNextTurn 里做，停或不停由 shouldStopAfterTurn 决定。
+          prepareNextTurnWithContext: ({ context, message }) => {
+            if (summaryPlanned) return undefined;
+            // shouldStopAfterTurn 还没加，刚结束的这一轮是第 turns + 1 轮。
+            if (turns + 1 < config.maxTurns) return undefined;
+            // 判据是刚结束那一轮 assistant message 里的 toolCall block，
+            // 与 Pi agent loop 判断是否还要继续的依据一致。
+            if (!hasToolCalls(message)) return undefined;
+            summaryPlanned = true;
+            return {
+              context: {
+                ...context,
+                tools: [],
+                messages: [...context.messages, summaryHintMessage()],
+              },
+            };
+          },
           shouldStopAfterTurn: async () => {
             turns += 1;
-            return turns >= config.maxTurns;
+            if (turns < config.maxTurns) return false;
+            // 撞顶那一轮安排了收尾轮，就再放一轮无工具的模型请求。
+            return !(summaryPlanned && turns === config.maxTurns);
           },
           transformContext: async (messages, signal) => {
             return compactIfNeeded({
@@ -406,6 +437,7 @@ export class PiAgentExecutor {
           abortRequested || input.signal?.aborted === true,
           terminalOverride,
           latestModelFailure,
+          summaryPlanned ? "max_turns" : "model_finished",
         );
         resolveResult(terminal);
       } catch {
@@ -502,6 +534,20 @@ function userMessage(text: string): AgentMessage {
   return { role: "user", content: text, timestamp: Date.now() };
 }
 
+function hasToolCalls(message: AssistantMessage): boolean {
+  return message.content.some((block) => block.type === "toolCall");
+}
+
+/**
+ * 收尾轮提示只进内存 context，不经过 message_start / message_end，
+ * 因此不会写入 Pi transcript。
+ */
+function summaryHintMessage(): AgentMessage {
+  return userMessage(
+    "Tools are no longer available for this run. Answer the user directly in text, based on the tool results you already have.",
+  );
+}
+
 function resolveCompactionSettings(
   settings: Partial<CompactionSettings> | undefined,
 ): CompactionSettings {
@@ -592,6 +638,7 @@ function resolveTerminalResult(
   abortRequested: boolean,
   override: ExecutorTerminalResult | undefined,
   failure: PiStreamFailure | undefined,
+  completionReason: ExecutorCompletionReason,
 ): ExecutorTerminalResult {
   if (override) {
     return {
@@ -629,6 +676,7 @@ function resolveTerminalResult(
     status: "completed",
     finalEntryId: mapper.lastAssistantEntryId,
     errorCode: null,
+    completionReason,
   };
 }
 

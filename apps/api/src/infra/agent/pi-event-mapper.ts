@@ -166,20 +166,44 @@ export class PiEventMapper {
       { type: "message_update" }
     >["assistantMessageEvent"],
   ): readonly HarnessEvent[] {
-    if (
-      message.role !== "assistant" ||
-      assistantMessageEvent.type !== "text_delta"
-    ) {
-      return [];
-    }
+    if (message.role !== "assistant") return [];
     const messageId = this.activeAssistant?.id;
     if (!messageId) return [];
-    return [
-      this.event("message.delta", {
-        messageId,
-        delta: assistantMessageEvent.delta,
-      }),
-    ];
+
+    switch (assistantMessageEvent.type) {
+      case "text_delta":
+        return [
+          this.event("message.delta", {
+            messageId,
+            delta: assistantMessageEvent.delta,
+          }),
+        ];
+      case "thinking_start":
+        return [
+          this.event("thinking.started", {
+            messageId,
+            blockIndex: assistantMessageEvent.contentIndex,
+          }),
+        ];
+      case "thinking_delta":
+        return [
+          this.event("thinking.delta", {
+            messageId,
+            blockIndex: assistantMessageEvent.contentIndex,
+            delta: assistantMessageEvent.delta,
+          }),
+        ];
+      case "thinking_end":
+        return [
+          this.event("thinking.completed", {
+            messageId,
+            blockIndex: assistantMessageEvent.contentIndex,
+            content: assistantMessageEvent.content,
+          }),
+        ];
+      default:
+        return [];
+    }
   }
 
   private async mapMessageEnd(

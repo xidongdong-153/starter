@@ -12,6 +12,12 @@ import {
 } from "@earendil-works/pi-session-backend-sqlite-node";
 import type { SqliteSessionMetadata } from "@earendil-works/pi-session-backend-sqlite-node";
 
+/**
+ * transcript 读取方向。`newestFirst` 下 `cursor.afterSeq` 取更早的 entry
+ * （判据是 `entry.seq < afterSeq`），返回顺序也是从新到旧。
+ */
+export type TranscriptReadOrder = "oldestFirst" | "newestFirst";
+
 export interface AgentSessionStore {
   createSession: (options?: { id?: string }) => Promise<AgentSessionHandle>;
   openSession: (sessionId: string) => Promise<AgentSessionHandle>;
@@ -27,6 +33,7 @@ export interface AgentSessionStore {
     lane: string;
     cursor?: number;
     limit?: number;
+    order?: TranscriptReadOrder;
   }) => Promise<Entry[]>;
   appendMessage: (options: {
     sessionId: string;
@@ -59,6 +66,7 @@ export interface AgentSessionHandle {
     lane?: string;
     cursor?: number;
     limit?: number;
+    order?: TranscriptReadOrder;
   }) => Promise<Entry[]>;
   appendMessage: (
     lane: string,
@@ -161,9 +169,9 @@ export function createPiSessionStore(
       await session.createLane(lane, at);
     },
 
-    readTranscript: async ({ sessionId, lane, cursor, limit }) => {
+    readTranscript: async ({ sessionId, lane, cursor, limit, order }) => {
       const session = await open(sessionId);
-      return readTranscriptFromSession(session, { lane, cursor, limit });
+      return readTranscriptFromSession(session, { lane, cursor, limit, order });
     },
 
     appendMessage: async ({ sessionId, lane, message, id }) => {
@@ -198,14 +206,19 @@ export function createPiSessionStore(
 
 async function readTranscriptFromSession(
   session: Session<SqliteSessionMetadata>,
-  options: { lane?: string; cursor?: number; limit?: number },
+  options: {
+    lane?: string;
+    cursor?: number;
+    limit?: number;
+    order?: TranscriptReadOrder;
+  },
 ): Promise<Entry[]> {
   const lane = session.view(options.lane ?? "main");
   const leafId = await lane.getLeafId();
   if (!leafId) return [];
   return lane.findEntriesOnBranch({
     start: leafId,
-    order: "oldestFirst",
+    order: options.order ?? "oldestFirst",
     ...(options.cursor === undefined
       ? {}
       : { cursor: { afterSeq: options.cursor } }),
