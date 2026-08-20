@@ -265,6 +265,51 @@ describe("agent harness contracts", () => {
     }
   });
 
+  it("transcript item 的 usage / toolCalls / tokensBefore 是可选新增字段", () => {
+    const base = { id: IDS.entry, sequence: 1, lane: "main", createdAt: NOW };
+    const assistant = {
+      ...base,
+      type: "assistant_message",
+      runId: IDS.run,
+      content: "world",
+      status: "completed",
+      model: MODEL,
+      stopReason: "stop",
+      errorCode: null,
+      usage: {
+        inputTokens: 12,
+        outputTokens: 8,
+        cacheReadTokens: null,
+        cacheWriteTokens: null,
+        cacheWrite1hTokens: null,
+        reasoningTokens: null,
+        totalTokens: 20,
+      },
+      toolCalls: [{ toolCallId: "tool-1", name: "lookup" }],
+    };
+    expect(agentTranscriptItemSchema.safeParse(assistant).success).toBe(true);
+
+    const system = {
+      ...base,
+      type: "system",
+      runId: null,
+      kind: "compaction",
+      summary: "summary",
+      tokensBefore: 4096,
+    };
+    expect(agentTranscriptItemSchema.safeParse(system).success).toBe(true);
+
+    // toolCalls 只暴露标识，带 arguments 的对象必须被 strictObject 拒绝
+    expect(
+      agentTranscriptItemSchema.safeParse({
+        ...assistant,
+        toolCalls: [
+          { toolCallId: "tool-1", name: "lookup", arguments: { q: "x" } },
+        ],
+      }).success,
+    ).toBe(false);
+  });
+
   it("解析所有 HarnessEvent 分支并拒绝不匹配的 data", () => {
     const envelope = {
       version: 1,
@@ -327,6 +372,21 @@ describe("agent harness contracts", () => {
           safeSummary: "done",
           entryId: IDS.entry,
         },
+      },
+      {
+        ...envelope,
+        type: "turn.started",
+        data: { turn: 1, maxTurns: 8 },
+      },
+      {
+        ...envelope,
+        type: "turn.completed",
+        data: { turn: 1, maxTurns: 8, toolCallCount: 2 },
+      },
+      {
+        ...envelope,
+        type: "context.compacted",
+        data: { entryId: IDS.entry, tokensBefore: 12_000, summary: "摘要" },
       },
       {
         ...envelope,

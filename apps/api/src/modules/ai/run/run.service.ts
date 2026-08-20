@@ -25,6 +25,12 @@ import { generateId } from "@api/shared/id.js";
 
 import type { AiAgentDefinitionService } from "../agent/agent.service.js";
 import type { AiAgentSessionRepository } from "../session/session.repository.js";
+import type { RunLiveSnapshotState } from "./run.live-snapshot.js";
+import {
+  applyRunEvent,
+  createRunLiveSnapshot,
+  toAgentRunLiveSnapshot,
+} from "./run.live-snapshot.js";
 import { toAgentRun, toStarterRunData } from "./run.presenter.js";
 import type {
   AiAgentRunRecord,
@@ -81,6 +87,7 @@ interface RunContext {
   lease: ActiveRunLease;
   sequencer: EventSequencer;
   events: AsyncEventQueue<HarnessEvent>;
+  live: RunLiveSnapshotState;
 }
 
 export function createAiAgentRunService(input: {
@@ -101,6 +108,15 @@ export function createAiAgentRunService(input: {
     executor,
     logger,
   } = input;
+
+  /** 活跃 Run 的进程内快照，Run 终态后立即移除。 */
+  const liveSnapshots = new Map<string, RunLiveSnapshotState>();
+
+  /** 事件进入对外队列的唯一入口：先折叠进快照，再推给订阅方。 */
+  function publish(context: RunContext, event: HarnessEvent): void {
+    applyRunEvent(context.live, event);
+    context.events.push(event);
+  }
 
   async function startRun(startInput: {
     ownerId: string;
@@ -166,7 +182,9 @@ export function createAiAgentRunService(input: {
       lease,
       sequencer,
       events,
+      live: createRunLiveSnapshot(resolved.maxTurns),
     };
+    liveSnapshots.set(runId, context.live);
 
     try {
       repository.create({
@@ -252,7 +270,8 @@ export function createAiAgentRunService(input: {
     }
 
     // 正常路径：run.started 是 sequence 1 的第一个事件
-    events.push(
+    publish(
+      context,
       buildEvent(context, "run.started", {
         agentId: resolved.id,
         agentRevision: resolved.revision,
@@ -267,13 +286,29 @@ export function createAiAgentRunService(input: {
       );
     });
 
-    const pump = pumpExecutorEvents(prepared, events);
+    const pump = pumpExecutorEvents(prepared, context, publish);
     void runToTerminal(context, prepared, pump);
     return { runId, events };
   }
 
   function get(ownerId: string, sessionId: string, runId: string): AgentRun {
-    return toAgentRun(requireOwnedRun(ownerId, sessionId, runId));
+    const record = requireOwnedRun(ownerId, sessionId, runId);
+    return toAgentRun(record, readLiveSnapshot(record));
+  }
+
+  /**
+   * 活跃快照只在 Run 非终态时返回，终态后为 null，客户端回落 transcript。
+   *
+   * 判据用 Run row 状态而不是 registry handle：finalizeRun 先更新主库终态、
+   * 后 release registry，两步之间存在窗口，按 handle 判断会返回「终态 + 非空快照」
+   * 的非法组合。
+   */
+  function readLiveSnapshot(record: AiAgentRunRecord) {
+    if (record.status !== "starting" && record.status !== "running")
+      return null;
+    const state = liveSnapshots.get(record.id);
+    if (!state) return null;
+    return toAgentRunLiveSnapshot(state);
   }
 
   function abort(ownerId: string, sessionId: string, runId: string): AgentRun {
@@ -496,7 +531,8 @@ export function createAiAgentRunService(input: {
           "Run 主库终态更新失败，关闭 transport 并 release",
         );
       } else {
-        events.push(
+        publish(
+          context,
           buildEvent(context, "run.failed", {
             status: "failed",
             finalEntryId: terminal.finalEntryId,
@@ -509,6 +545,7 @@ export function createAiAgentRunService(input: {
         );
       }
       events.end();
+      liveSnapshots.delete(runId);
       release(registry, runId, context.lease);
       return;
     }
@@ -521,7 +558,7 @@ export function createAiAgentRunService(input: {
       finishedAt,
     });
     if (updated) {
-      events.push(terminalEvent(context, terminal));
+      publish(context, terminalEvent(context, terminal));
     } else {
       logger.error(
         { runId, sessionId, requestId },
@@ -529,6 +566,7 @@ export function createAiAgentRunService(input: {
       );
     }
     events.end();
+    liveSnapshots.delete(runId);
     release(registry, runId, context.lease);
   }
 
@@ -568,11 +606,12 @@ export function createAiAgentRunService(input: {
 
 async function pumpExecutorEvents(
   prepared: PreparedAgentExecution,
-  events: AsyncEventQueue<HarnessEvent>,
+  context: RunContext,
+  publish: (context: RunContext, event: HarnessEvent) => void,
 ): Promise<void> {
   try {
     for await (const event of prepared.events) {
-      events.push(event);
+      publish(context, event);
     }
   } catch {
     // executor 事件流异常不影响 Run 终态；terminal 由 result 决定。

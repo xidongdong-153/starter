@@ -177,7 +177,7 @@ function createAgentTool(
     parameters: z.toJSONSchema(tool.inputSchema, {
       target: "draft-7",
     }) as TSchema,
-    execute: async (toolCallId, params, _signal) => {
+    execute: async (toolCallId, params, _signal, onUpdate) => {
       const signal = _signal ?? new AbortController().signal;
       const remaining = options.getRemainingRunMs?.();
       const timeoutMs = effectiveTimeoutMs(tool.timeoutMs, remaining);
@@ -209,13 +209,14 @@ function createAgentTool(
       };
 
       if (remaining !== undefined && remaining <= 0) {
+        // Run 总时长已耗尽，与工具自身超时不同：这里继续跟模型对话没意义，直接终止。
         finalizeAudit("timed_out", ApiErrorCodes.AI_TOOL_TIMED_OUT);
         return failWithoutAudit(
           toolCallId,
           pendingFailures,
           "timed_out",
           ApiErrorCodes.AI_TOOL_TIMED_OUT,
-          "The tool timed out.",
+          "The run ran out of time before the tool could start.",
           true,
           options,
           signal,
@@ -289,6 +290,21 @@ function createAgentTool(
       }, timeoutMs);
       const toolSignal = AbortSignal.any([signal, timeoutController.signal]);
 
+      // 工具上报的进度只带脱敏摘要；modelText 留空，避免把中间结果喂给模型。
+      const reportProgress = (safeSummary: string) => {
+        if (typeof safeSummary !== "string" || safeSummary.length === 0) return;
+        onUpdate?.({
+          content: [],
+          details: {
+            status: "succeeded",
+            errorCode: null,
+            safeSummary: safeSummary.slice(0, 1000),
+            modelText: "",
+            terminate: false,
+          },
+        });
+      };
+
       try {
         const result = await executeWithAbort(
           Promise.resolve().then(() =>
@@ -297,6 +313,7 @@ function createAgentTool(
                 userId: options.userId,
                 requestId: options.requestId,
                 signal: toolSignal,
+                reportProgress,
               },
               parsed,
             ),
@@ -341,8 +358,8 @@ function createAgentTool(
             pendingFailures,
             "timed_out",
             ApiErrorCodes.AI_TOOL_TIMED_OUT,
-            "The tool timed out.",
-            true,
+            `The tool timed out after ${timeoutMs}ms.`,
+            false,
             options,
             signal,
           );
@@ -458,7 +475,9 @@ function toolResultDetails(
     errorCode,
     safeSummary: null,
     modelText,
-    terminate: status === "timed_out" || status === "cancelled",
+    // 只有用户取消才终止整个 Run。工具超时和其他失败一样交回模型，
+    // 让它拿到失败原因后自己决定下一步。
+    terminate: status === "cancelled",
   };
 }
 
@@ -515,7 +534,9 @@ function failWithoutAudit(
     terminate,
   };
   pendingFailures.set(toolCallId, { details });
-  if (status === "timed_out" || status === "cancelled") {
+  // 只有真正要终止 Run 的失败（用户取消、Run 总时长耗尽）才上报终态；
+  // 工具自身超时交给模型继续处理，不 abort agent loop。
+  if (terminate && (status === "timed_out" || status === "cancelled")) {
     options.onTerminalFailure?.(status);
   }
   return Promise.reject(new PiToolExecutionError(modelText));

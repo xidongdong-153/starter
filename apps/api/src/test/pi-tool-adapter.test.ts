@@ -81,6 +81,49 @@ describe("pi tool adapter", () => {
     );
   });
 
+  it("工具的 reportProgress 通过 Pi onUpdate 上报，只带脱敏摘要", async () => {
+    const audit = createAudit();
+    const registry = createAiToolRegistry([
+      defineAiTool({
+        name: "progressive",
+        description: "Reports progress",
+        inputSchema: z.object({ value: z.string() }),
+        timeoutMs: 1000,
+        requiredPermission: null,
+        execute: async (context) => {
+          context.reportProgress?.("第 1 步完成");
+          context.reportProgress?.("");
+          context.reportProgress?.("第 2 步完成");
+          return { modelText: "result", safeSummary: "done" };
+        },
+      }),
+    ]);
+    const adapter = createPiToolAdapter(registry.list(), options(audit));
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    const updates: unknown[] = [];
+    await tool.execute(
+      "tool-call-progress",
+      { value: "input" },
+      new AbortController().signal,
+      (partial) => updates.push(partial),
+    );
+
+    // 空摘要被忽略，只上报两条
+    expect(updates).toHaveLength(2);
+    expect(updates[0]).toMatchObject({
+      content: [],
+      details: { safeSummary: "第 1 步完成", modelText: "" },
+    });
+    expect(updates[1]).toMatchObject({
+      details: { safeSummary: "第 2 步完成" },
+    });
+    // 进度不产生额外审计，仍是一次 begin + 一次 finalize
+    expect(audit.beginToolExecution).toHaveBeenCalledOnce();
+    expect(audit.finalizeToolExecution).toHaveBeenCalledOnce();
+  });
+
   it("再次 parse、检查权限，并把拒绝原因转换为安全 tool result", async () => {
     const audit = createAudit();
     const registry = createAiToolRegistry([
@@ -128,7 +171,7 @@ describe("pi tool adapter", () => {
     );
   });
 
-  it("工具超时会结束审计并通知 executor 终止当前 Run", async () => {
+  it("工具超时结束审计并交回模型，不终止当前 Run", async () => {
     const audit = createAudit();
     const onTerminalFailure = vi.fn();
     const registry = createAiToolRegistry([
@@ -159,11 +202,68 @@ describe("pi tool adapter", () => {
       ),
     ).rejects.toBeInstanceOf(PiToolExecutionError);
 
-    expect(onTerminalFailure).toHaveBeenCalledWith("timed_out");
+    // 工具自身超时不终止 Run，模型要能拿到失败原因继续回复
+    expect(onTerminalFailure).not.toHaveBeenCalled();
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
       expect.objectContaining({ id: "audit-tool-1" }),
       "timed_out",
       "AI.TOOL_TIMED_OUT",
+    );
+
+    // afterToolCall 把失败转成带超时时长的 tool result，terminate 为 false
+    const override = await adapter.afterToolCall({
+      toolCall: {
+        type: "toolCall",
+        id: "tool-call-3",
+        name: "slow",
+        arguments: { value: "input" },
+      },
+    } as never);
+    expect(override).toMatchObject({
+      isError: true,
+      terminate: false,
+      content: [{ type: "text", text: "The tool timed out after 100ms." }],
+      details: { status: "timed_out", errorCode: "AI.TOOL_TIMED_OUT" },
+    });
+  });
+
+  it("用户取消仍然终止当前 Run", async () => {
+    const audit = createAudit();
+    const onTerminalFailure = vi.fn();
+    const registry = createAiToolRegistry([
+      defineAiTool({
+        name: "cancellable",
+        description: "Cancellable action",
+        inputSchema: z.object({ value: z.string() }),
+        timeoutMs: 5000,
+        requiredPermission: null,
+        execute: async () =>
+          new Promise(() => {
+            // never settles; caller abort owns cancellation
+          }),
+      }),
+    ]);
+    const adapter = createPiToolAdapter(registry.list(), {
+      ...options(audit),
+      onTerminalFailure,
+    });
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    const controller = new AbortController();
+    const pending = tool.execute(
+      "tool-call-4",
+      { value: "input" },
+      controller.signal,
+    );
+    controller.abort();
+    await expect(pending).rejects.toBeInstanceOf(PiToolExecutionError);
+
+    expect(onTerminalFailure).toHaveBeenCalledWith("cancelled");
+    expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "audit-tool-1" }),
+      "cancelled",
+      "AI.TOOL_CANCELLED",
     );
   });
 });

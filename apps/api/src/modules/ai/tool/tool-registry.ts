@@ -6,6 +6,14 @@ export interface AiToolExecutionContext {
   userId: string;
   requestId: string;
   signal: AbortSignal;
+  /**
+   * 上报执行进度。文本作为 `tool.progress` 事件的 `safeSummary` 发给客户端，
+   * 超过 1000 字符会被截断。工具返回后调用无效果。
+   *
+   * 只允许放已脱敏的摘要，不要放原始入参、结果正文或 Provider 数据。
+   * 调用方可以不提供（如单元测试直接调 execute），工具内部用 `?.` 调用。
+   */
+  reportProgress?: (safeSummary: string) => void;
 }
 
 export interface AiToolResult {

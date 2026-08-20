@@ -202,13 +202,17 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
     events.map((event) => event.sequence).sort((a, b) => a - b),
   );
   expect(events.map((event) => event.type)).toEqual([
+    "turn.started",
     "message.started",
     "message.completed",
     "tool.started",
     "tool.completed",
+    "turn.completed",
+    "turn.started",
     "message.started",
     "message.delta",
     "message.completed",
+    "turn.completed",
   ]);
   expect(events.find((event) => event.type === "tool.completed")).toMatchObject(
     {
@@ -236,6 +240,223 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
   registry.release(runId);
   expect(registry.get(runId)).toBeUndefined();
 
+  await store.close();
+  await rm(directory, { recursive: true, force: true });
+});
+
+it("工具上报进度时发布 tool.progress，只带脱敏摘要", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-agent-progress-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const sessionId = generateId();
+  const runId = generateId();
+  await store.createSession({ id: sessionId });
+  const streamFn = (
+    _requestModel: Model<Api>,
+    context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    const last = context.messages.at(-1);
+    if (last?.role === "toolResult") {
+      return streamResponse(
+        assistantMessage([{ type: "text", text: "done" }], "stop"),
+        "stop",
+      );
+    }
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: "tool-call-progress",
+            name: "stepwise",
+            arguments: { steps: 2 },
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const tools = createAiToolRegistry([
+    defineAiTool({
+      name: "stepwise",
+      description: "Report progress per step",
+      inputSchema: z.object({ steps: z.number().int().min(1).max(4) }),
+      timeoutMs: 1000,
+      requiredPermission: null,
+      execute: async (context, input) => {
+        for (let step = 1; step <= input.steps; step += 1) {
+          context.reportProgress?.(`已完成 ${step}/${input.steps}`);
+        }
+        return { modelText: "all done", safeSummary: "共 2 步" };
+      },
+    }),
+  ]);
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    tools,
+    hasPermission: async () => true,
+  });
+  const registry = createActiveRunRegistry();
+  const prepared = executor.prepare({
+    runId,
+    sessionId,
+    lane: "main",
+    userId: generateId(),
+    requestId: "request-tool-progress",
+    input: "run stepwise",
+    sequencer: createEventSequencer(),
+    config: {
+      model: { providerId: model.provider, modelId: model.id },
+      maxTurns: 4,
+      toolNames: ["stepwise"],
+    },
+  });
+  const lease = registry.reserve(sessionId, "main");
+  registry.attach(lease, runId, prepared.controls);
+  await prepared.start();
+  const [events] = await Promise.all([
+    collect(prepared.events),
+    prepared.result,
+  ]);
+
+  const progress = events.filter((event) => event.type === "tool.progress");
+  expect(progress.length).toBe(2);
+  expect(progress[0]).toMatchObject({
+    data: {
+      toolCallId: "tool-call-progress",
+      name: "stepwise",
+      safeSummary: "已完成 1/2",
+    },
+  });
+  expect(progress[1]?.data).toMatchObject({ safeSummary: "已完成 2/2" });
+  // progress 事件只带摘要，不泄露 modelText 或入参
+  expect(JSON.stringify(progress)).not.toContain("modelText");
+  expect(JSON.stringify(progress)).not.toContain("steps");
+  // sequence 仍单调递增
+  expect(events.map((event) => event.sequence)).toEqual(
+    events.map((event) => event.sequence).sort((a, b) => a - b),
+  );
+
+  registry.release(runId);
+  await store.close();
+  await rm(directory, { recursive: true, force: true });
+});
+
+it("工具超时后模型继续回复，Run 以 completed 结束", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "starter-agent-tool-timeout-"),
+  );
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const sessionId = generateId();
+  const runId = generateId();
+  await store.createSession({ id: sessionId });
+  let calls = 0;
+  const streamFn = (
+    _requestModel: Model<Api>,
+    context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    calls += 1;
+    const last = context.messages.at(-1);
+    if (last?.role === "toolResult") {
+      return streamResponse(
+        assistantMessage(
+          [{ type: "text", text: "工具超时了，换个思路。" }],
+          "stop",
+        ),
+        "stop",
+      );
+    }
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: "tool-call-timeout",
+            name: "never_finishes",
+            arguments: {},
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const tools = createAiToolRegistry([
+    defineAiTool({
+      name: "never_finishes",
+      description: "Never settles; adapter timeout owns cancellation",
+      inputSchema: z.object({}),
+      timeoutMs: 100,
+      requiredPermission: null,
+      execute: async () => new Promise<never>(() => {}),
+    }),
+  ]);
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    tools,
+    hasPermission: async () => true,
+  });
+  const registry = createActiveRunRegistry();
+  const prepared = executor.prepare({
+    runId,
+    sessionId,
+    lane: "main",
+    userId: generateId(),
+    requestId: "request-tool-timeout",
+    input: "call the tool",
+    sequencer: createEventSequencer(),
+    config: {
+      model: { providerId: model.provider, modelId: model.id },
+      maxTurns: 4,
+      toolNames: ["never_finishes"],
+    },
+  });
+  const lease = registry.reserve(sessionId, "main");
+  registry.attach(lease, runId, prepared.controls);
+  await prepared.start();
+  const [events, terminal] = await Promise.all([
+    collect(prepared.events),
+    prepared.result,
+  ]);
+
+  // 工具超时不再护断 Run：模型拿到失败后又请求了一次
+  expect(calls).toBe(2);
+  expect(terminal).toMatchObject({ status: "completed", errorCode: null });
+
+  const toolCompleted = events.find((event) => event.type === "tool.completed");
+  expect(toolCompleted).toMatchObject({
+    data: {
+      toolCallId: "tool-call-timeout",
+      name: "never_finishes",
+      status: "timed_out",
+      errorCode: ApiErrorCodes.AI_TOOL_TIMED_OUT,
+    },
+  });
+
+  // 超时后仍有一轮 assistant 回复，内容已落到 transcript
+  const completedMessages = events.filter(
+    (event) => event.type === "message.completed",
+  );
+  expect(completedMessages.length).toBe(2);
+  const transcript = await store.readTranscript({ sessionId, lane: "main" });
+  const texts = JSON.stringify(transcript);
+  expect(texts).toContain("工具超时了，换个思路。");
+  // 模型看到的失败原因带上了超时时长
+  expect(texts).toContain("The tool timed out after 100ms.");
+
+  registry.release(runId);
   await store.close();
   await rm(directory, { recursive: true, force: true });
 });
@@ -422,6 +643,7 @@ it("pi compaction 成功后写入 entry，并用 retained context 继续运行",
 
     await prepared.start();
 
+    const compactionEvents = await collect(prepared.events);
     await expect(prepared.result).resolves.toMatchObject({
       status: "completed",
       errorCode: null,
@@ -440,6 +662,24 @@ it("pi compaction 成功后写入 entry，并用 retained context 继续运行",
     expect(transcript.filter((entry) => entry.type === "message")).toHaveLength(
       3,
     );
+
+    // compaction 不再静默：发布 context.compacted 事件，携带 tokensBefore
+    const compacted = compactionEvents.find(
+      (event) => event.type === "context.compacted",
+    );
+    expect(compacted).toBeDefined();
+    expect(compacted?.data).toMatchObject({
+      tokensBefore: expect.any(Number),
+    });
+    const compactionEntry = transcript.find(
+      (entry) => entry.type === "compaction",
+    );
+    expect((compacted?.data as { entryId: string } | undefined)?.entryId).toBe(
+      compactionEntry?.id,
+    );
+    expect(
+      (compacted?.data as { tokensBefore: number } | undefined)?.tokensBefore,
+    ).toBeGreaterThan(0);
   } finally {
     await store.close();
     await rm(directory, { recursive: true, force: true });

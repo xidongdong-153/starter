@@ -90,24 +90,28 @@ export function createTestAiTools(): RegisteredAiTool[] {
     }),
     defineAiTool({
       name: "slow_tool",
-      description: "等待指定秒数后返回，用于验证超时与取消路径。",
+      description:
+        "等待指定秒数后返回，每秒上报一次进度，用于验证超时、取消和进度路径。",
       inputSchema: z.object({
         seconds: z.number().int().min(1).max(10),
       }),
       timeoutMs: 3000,
       requiredPermission: null,
       async execute(_context, input) {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(resolve, input.seconds * 1000);
-          _context.signal.addEventListener(
-            "abort",
-            () => {
-              clearTimeout(timer);
-              reject(new Error("aborted"));
-            },
-            { once: true },
-          );
-        });
+        for (let elapsed = 1; elapsed <= input.seconds; elapsed += 1) {
+          await new Promise<void>((resolve, reject) => {
+            const timer = setTimeout(resolve, 1000);
+            _context.signal.addEventListener(
+              "abort",
+              () => {
+                clearTimeout(timer);
+                reject(new Error("aborted"));
+              },
+              { once: true },
+            );
+          });
+          _context.reportProgress?.(`已等待 ${elapsed}/${input.seconds} 秒`);
+        }
         return {
           modelText: `waited ${input.seconds}s`,
           safeSummary: `等待了 ${input.seconds} 秒`,

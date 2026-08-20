@@ -261,6 +261,7 @@ export class PiAgentExecutor {
           runId: input.runId,
           lane: input.lane,
           sequencer: input.sequencer,
+          maxTurns: config.maxTurns,
           getAssistantErrorCode: () =>
             terminalOverride?.errorCode ??
             latestModelFailure?.errorCode ??
@@ -344,6 +345,14 @@ export class PiAgentExecutor {
                   finalEntryId: mapper.lastAssistantEntryId,
                   errorCode,
                 };
+              },
+              onCompacted: (info) => {
+                // 发事件失败不能影响 compaction 结果本身。
+                try {
+                  events.push(mapper.contextCompactedEvent(info));
+                } catch {
+                  // 忽略：compaction 已成功写入 Pi transcript。
+                }
               },
             });
           },
@@ -513,6 +522,11 @@ async function compactIfNeeded(input: {
   thinkingLevel: AgentDefinitionConfig["thinkingLevel"];
   signal?: AbortSignal;
   onFailure: (errorCode: ApiErrorCode) => void;
+  onCompacted: (info: {
+    entryId: string;
+    tokensBefore: number;
+    summary: string;
+  }) => void;
 }): Promise<AgentMessage[]> {
   if (
     !input.models ||
@@ -561,6 +575,11 @@ async function compactIfNeeded(input: {
         : { usage: compacted.value.usage }),
     });
     input.transcript.push(entry);
+    input.onCompacted({
+      entryId: entry.id,
+      tokensBefore: compacted.value.tokensBefore,
+      summary: compacted.value.summary,
+    });
     return buildSessionContext(input.transcript).messages;
   } catch {
     input.onFailure(ApiErrorCodes.AI_SESSION_STORAGE_FAILED);

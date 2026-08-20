@@ -3,6 +3,7 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type {
   AgentTranscriptItem,
   AgentToolStatus,
+  AiUsage,
   ApiErrorCode,
 } from "@starter/contracts";
 import { ApiErrorCodes, uuidSchema } from "@starter/contracts";
@@ -80,6 +81,7 @@ function projectEntry(
       createdAt: new Date(entry.timestamp).toISOString(),
       kind: "compaction",
       summary: entry.summary,
+      tokensBefore: readTokensBefore(entry.tokensBefore),
     };
   }
   onSkipped({
@@ -131,6 +133,8 @@ function projectMessage(
       model: { providerId: message.provider, modelId: message.model },
       stopReason: assistantStopReason(message.stopReason),
       errorCode: assistantErrorCode(message.stopReason),
+      usage: readAssistantUsage(message.usage),
+      toolCalls: assistantToolCalls(message.content),
     };
     return item;
   }
@@ -216,6 +220,50 @@ function assistantContentToString(
       (block): block is { type: "text"; text: string } => block.type === "text",
     ),
   );
+}
+
+/**
+ * 只暴露 toolCall 的标识，不暴露 arguments。
+ * arguments 属于脱敏边界内的数据，不进公开协议。
+ */
+function assistantToolCalls(
+  content: Extract<AgentMessage, { role: "assistant" }>["content"],
+): AssistantItem["toolCalls"] {
+  return content
+    .filter(
+      (block): block is Extract<typeof block, { type: "toolCall" }> =>
+        block.type === "toolCall",
+    )
+    .slice(0, 64)
+    .map((block) => ({ toolCallId: block.id, name: block.name }));
+}
+
+/**
+ * Pi 的 `AssistantMessage.usage` 是必填字段，但历史 entry 可能缺失或结构不符，
+ * 读不到时返回 null，不编造 0 值。
+ */
+function readAssistantUsage(value: unknown): AiUsage | null {
+  if (!isRecord(value)) return null;
+  return {
+    inputTokens: readTokenCount(value.input),
+    outputTokens: readTokenCount(value.output),
+    cacheReadTokens: readTokenCount(value.cacheRead),
+    cacheWriteTokens: readTokenCount(value.cacheWrite),
+    cacheWrite1hTokens: readTokenCount(value.cacheWrite1h),
+    reasoningTokens: readTokenCount(value.reasoning),
+    totalTokens: readTokenCount(value.totalTokens),
+  };
+}
+
+function readTokenCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    return null;
+  }
+  return value;
+}
+
+function readTokensBefore(value: unknown): number | null {
+  return readTokenCount(value);
 }
 
 function textBlocks(blocks: { text: string }[]): string {

@@ -287,13 +287,15 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
     const events = parseSseEvents(body);
     expect(events.map((event) => event.type)).toEqual([
       "run.started",
+      "turn.started",
       "message.started",
       "message.delta",
       "message.completed",
+      "turn.completed",
       "run.completed",
     ]);
     const sequences = events.map((event) => event.sequence as number);
-    expect(sequences).toEqual([1, 2, 3, 4, 5]);
+    expect(sequences).toEqual([1, 2, 3, 4, 5, 6, 7]);
     expect(
       events.filter((event) => String(event.type).startsWith("run.")),
     ).toHaveLength(2);
@@ -1170,6 +1172,124 @@ it("transcript 写入侧挂载 runId（S5 约定）", async () => {
     expect(userItems.length).toBeGreaterThan(0);
     expect(userItems[0]?.runId).toMatch(/^[0-9a-f-]{36}$/);
     expect(userItems[0]?.content).toContain("挂 runId");
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("活跃 Run 返回 live 快照，终态后为 null，他人 Run 仍 404", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-live-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  // 用 gate 把 Run 挂在 running 状态，才能观察到活跃快照。
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const streamFn = (
+    _model: Model<Api>,
+    _context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    const stream = createAssistantMessageEventStream();
+    stream.push({ type: "start", partial: assistantMessage([], "pending") });
+    stream.push({
+      type: "text_delta",
+      contentIndex: 0,
+      delta: "部分输出",
+      partial: assistantMessage(
+        [{ type: "text", text: "部分输出" }],
+        "pending",
+      ),
+    });
+    void gate.then(() => {
+      stream.push({
+        type: "done",
+        reason: "stop",
+        message: assistantMessage(
+          [{ type: "text", text: "部分输出已完成" }],
+          "stop",
+        ),
+      });
+    });
+    return stream;
+  };
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    hasPermission: async () => true,
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    { agentSessionStore: store, piAgentExecutor: executor },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-live@example.com");
+    const other = await register(app, "run-live-other@example.com");
+    const { agentId } = await setupAgent(app, runtime, admin, "live-agent");
+    const { sessionId } = await createSession(app, user.cookie, "live");
+
+    const startedPromise = startRun(app, user.cookie, sessionId, {
+      agentId,
+      input: "看快照",
+    });
+
+    let runId: string | undefined;
+    await vi.waitFor(async () => {
+      const rows = runtime.db
+        .select()
+        .from(aiAgentRuns)
+        .where(eq(aiAgentRuns.sessionId, sessionId))
+        .all();
+      expect(rows.length).toBe(1);
+      expect(rows[0]?.status).toBe("running");
+      runId = rows[0]?.id;
+    });
+    if (!runId) throw new Error("Run 未创建");
+
+    // AC1：执行中的 Run 返回非空快照，部分文本与已推送 delta 一致
+    type LiveDetail = {
+      status: string;
+      live: {
+        lastSequence: number;
+        turn: number;
+        maxTurns: number;
+        messages: Array<{ content: string; completed: boolean }>;
+        tools: unknown[];
+      } | null;
+    };
+    await vi.waitFor(async () => {
+      const active = await getRun(app, user.cookie, sessionId, runId!);
+      expect(active.status).toBe(200);
+      const body = await readSuccess<LiveDetail>(active);
+      expect(body.data.status).toBe("running");
+      expect(body.data.live).not.toBeNull();
+      expect(body.data.live?.messages[0]?.content).toBe("部分输出");
+      expect(body.data.live?.messages[0]?.completed).toBe(false);
+      expect(body.data.live?.turn).toBe(1);
+      expect(body.data.live?.maxTurns).toBe(8);
+      expect(body.data.live?.lastSequence).toBeGreaterThan(0);
+    });
+
+    // AC3：他人读同一个 Run 仍 404，不泄露存在性
+    const foreign = await getRun(app, other.cookie, sessionId, runId);
+    expect(foreign.status).toBe(404);
+
+    release();
+    const started = await startedPromise;
+    const events = parseSseEvents(await readSse(started));
+    expect(events.some((event) => event.type === "run.completed")).toBe(true);
+
+    // AC2：终态后快照为 null，客户端回落 transcript
+    const finished = await getRun(app, user.cookie, sessionId, runId);
+    const finishedBody = await readSuccess<LiveDetail>(finished);
+    expect(finishedBody.data.status).toBe("completed");
+    expect(finishedBody.data.live ?? null).toBeNull();
   } finally {
     cleanup();
     await rm(directory, { recursive: true, force: true });

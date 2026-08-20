@@ -3,7 +3,7 @@ import type {
   AgentMessage,
   Entry,
 } from "@earendil-works/pi-agent-core";
-import type { ApiErrorCode, HarnessEvent } from "@starter/contracts";
+import type { AiUsage, ApiErrorCode, HarnessEvent } from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
 
 import type { AgentSessionHandle } from "./pi-session-store.js";
@@ -30,6 +30,7 @@ export interface PiEventMapperOptions {
   runId: string;
   lane: string;
   sequencer: EventSequencer;
+  maxTurns: number;
   getAssistantErrorCode?: () => ApiErrorCode | null;
   onEntryAppended?: (entry: Entry) => void;
   onToolExecutionStart?: (input: {
@@ -59,6 +60,7 @@ export class PiEventMapper {
   private activeAssistant: { id: string } | undefined;
   private _lastAssistantEntryId: string | null = null;
   private _lastAssistantMessage: AgentMessage | undefined;
+  private turn = 0;
 
   constructor(private readonly options: PiEventMapperOptions) {}
 
@@ -119,10 +121,24 @@ export class PiEventMapper {
           isError: event.isError,
         });
         return [];
+      case "turn_start":
+        this.turn += 1;
+        return [
+          this.event("turn.started", {
+            turn: this.turn,
+            maxTurns: this.options.maxTurns,
+          }),
+        ];
+      case "turn_end":
+        return [
+          this.event("turn.completed", {
+            turn: this.turn,
+            maxTurns: this.options.maxTurns,
+            toolCallCount: event.toolResults.length,
+          }),
+        ];
       case "agent_start":
       case "agent_end":
-      case "turn_start":
-      case "turn_end":
         return [];
     }
   }
@@ -187,6 +203,7 @@ export class PiEventMapper {
           content: assistantText(message),
           stopReason: toHarnessStopReason(message),
           errorCode: this.assistantErrorCode(message),
+          usage: readAssistantUsage(message),
         }),
       ];
     }
@@ -233,6 +250,23 @@ export class PiEventMapper {
         entryId: entry.id,
       }),
     ];
+  }
+
+  /**
+   * compaction 写入成功后由 executor 调用。
+   * compaction 发生在 `transformContext` 回调里，不在 Pi AgentEvent 流上，
+   * 所以需要一个显式出口复用同一个 sequencer，保证 sequence 单调递增。
+   */
+  contextCompactedEvent(info: {
+    entryId: string;
+    tokensBefore: number;
+    summary: string;
+  }): Extract<HarnessEvent, { type: "context.compacted" }> {
+    return this.event("context.compacted", {
+      entryId: info.entryId,
+      tokensBefore: info.tokensBefore,
+      summary: info.summary,
+    });
   }
 
   private assistantErrorCode(message: AgentMessage): ApiErrorCode | null {
@@ -322,6 +356,29 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
       },
     };
   }
+}
+
+function readAssistantUsage(
+  message: Extract<AgentMessage, { role: "assistant" }>,
+): AiUsage | null {
+  const usage = message.usage;
+  if (!isRecord(usage)) return null;
+  return {
+    inputTokens: readTokenCount(usage.input),
+    outputTokens: readTokenCount(usage.output),
+    cacheReadTokens: readTokenCount(usage.cacheRead),
+    cacheWriteTokens: readTokenCount(usage.cacheWrite),
+    cacheWrite1hTokens: readTokenCount(usage.cacheWrite1h),
+    reasoningTokens: readTokenCount(usage.reasoning),
+    totalTokens: readTokenCount(usage.totalTokens),
+  };
+}
+
+function readTokenCount(value: unknown): number | null {
+  if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+    return null;
+  }
+  return value;
 }
 
 function readToolDetails(value: unknown): PiToolResultDetails | null {

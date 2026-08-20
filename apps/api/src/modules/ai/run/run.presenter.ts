@@ -1,5 +1,6 @@
 import type {
   AgentRun,
+  AgentRunLiveSnapshot,
   AgentRunSnapshot,
   ApiErrorCode,
   StarterRunData,
@@ -8,7 +9,14 @@ import { agentRunSnapshotSchema } from "@starter/contracts";
 
 import type { AiAgentRunRecord } from "./run.repository.js";
 
-export function toAgentRun(record: AiAgentRunRecord): AgentRun {
+/**
+ * `live` 是进程内运行时视图，不是持久事实。
+ * Run 进入终态或进程重启后为 null，客户端改读 transcript。
+ */
+export function toAgentRun(
+  record: AiAgentRunRecord,
+  live: AgentRunLiveSnapshot | null = null,
+): AgentRun {
   const snapshot = parseSnapshot(record.snapshotJson);
   return {
     id: record.id,
@@ -24,6 +32,7 @@ export function toAgentRun(record: AiAgentRunRecord): AgentRun {
     createdAt: record.createdAt.toISOString(),
     startedAt: record.startedAt?.toISOString() ?? null,
     finishedAt: record.finishedAt?.toISOString() ?? null,
+    live,
   };
 }
 

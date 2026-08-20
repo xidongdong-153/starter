@@ -53,16 +53,25 @@ function makeAssistantMessage(
 ): AgentMessage {
   return {
     role: "assistant",
-    content: [{ type: "text", text }],
+    content: [
+      { type: "text", text },
+      // toolCall block 带 arguments，用于验证投影只取标识、不泄露入参
+      {
+        type: "toolCall",
+        id: "tc-1",
+        name: "read_skill",
+        arguments: { skillId: "secret-skill-id" },
+      },
+    ],
     api: "anthropic",
     provider: "anthropic",
     model: "claude-sonnet-4-0",
     usage: {
-      input: 1,
-      output: 1,
+      input: 11,
+      output: 22,
       cacheRead: 0,
       cacheWrite: 0,
-      totalTokens: 2,
+      totalTokens: 33,
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
     },
     stopReason,
@@ -362,6 +371,8 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       model: { providerId: string; modelId: string };
       stopReason: string;
       errorCode: string | null;
+      usage: { inputTokens: number; outputTokens: number; totalTokens: number };
+      toolCalls: Array<{ toolCallId: string; name: string }>;
     };
     expect(assistant).toMatchObject({
       status: "completed",
@@ -369,6 +380,16 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       errorCode: null,
       model: { providerId: "anthropic", modelId: "claude-sonnet-4-0" },
     });
+    // usage 投影（来自 Pi assistant entry 的 usage 字段）
+    expect(assistant.usage).toMatchObject({
+      inputTokens: 11,
+      outputTokens: 22,
+      totalTokens: 33,
+    });
+    // toolCalls 只有标识，不含 arguments，且 toolCallId 与 tool_activity item 对得上
+    expect(assistant.toolCalls).toEqual([
+      { toolCallId: "tc-1", name: "read_skill" },
+    ]);
     const tool = body.data.items[3] as {
       toolCallId: string;
       name: string;
@@ -381,8 +402,16 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       status: "succeeded",
       safeSummary: "traslated ok",
     });
-    const system = body.data.items[4] as { kind: string; summary: string };
-    expect(system).toMatchObject({ kind: "compaction", summary: "压缩摘要" });
+    const system = body.data.items[4] as {
+      kind: string;
+      summary: string;
+      tokensBefore: number;
+    };
+    expect(system).toMatchObject({
+      kind: "compaction",
+      summary: "压缩摘要",
+      tokensBefore: 100,
+    });
 
     // limit=2 分页：第一页 2 项，nextCursor = 第 2 条 raw entry 的 seq
     const page1 = await readSuccess<{

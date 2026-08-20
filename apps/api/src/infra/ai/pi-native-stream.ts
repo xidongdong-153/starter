@@ -207,7 +207,7 @@ async function pumpStream(
       signal,
       timeoutMs,
       maxRetries: 0,
-      maxTokens: Math.min(model.maxTokens, 2048),
+      maxTokens: model.maxTokens,
       ...(options.sessionId ? { sessionId: options.sessionId } : {}),
     });
     let terminal = false;
