@@ -56,6 +56,16 @@ S5 投影读取顺序固定：
 
 两者都缺失时，该 item 不投影并记录结构化日志（entryType、entryId、reason、sessionId、requestId），不输出 null、不编造 Run 归属。compaction system item 的 runId 契约允许 null，直接输出 null。
 
+### 3.2 assistant 与 system item 的可选字段
+
+三个字段都从已持久化的 Pi entry 读，不新增数据源，都是 optional：
+
+- `assistant_message.usage`：读 Pi `AssistantMessage.usage`，字段名映射为 `AiUsage`（`input` -> `inputTokens`、`totalTokens` -> `totalTokens` 等）。非非负整数一律输出 null，不补 0。
+- `assistant_message.toolCalls`：从 `message.content` filter `type === 'toolCall'`，只取 `{ toolCallId, name }`，最多 64 条。**不取 `arguments`**，入参属于脱敏边界内的数据。`toolCallId` 与对应 `tool_activity` item 的 `toolCallId` 一致，客户端靠它建关联。
+- `system.tokensBefore`：读 `CompactionEntry.tokensBefore`，同样只接受非负整数。
+
+`content` 字段语义不变，仍然只拼 text block，不改成 blocks 结构。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | HTTP | Error code |
@@ -86,6 +96,7 @@ S5 投影读取顺序固定：
 - `defaultAgentId`：不存在 400、非 enabled 409、enabled 成功。
 - 主库失败补偿删除 Pi Session；补偿失败日志带 sessionId 与 cause（用 fake repository + fake session store 直接测 service）。
 - transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、只有多读到一条 raw entry 时才返回 nextCursor、原始 entry 数量刚好等于 limit 时 nextCursor 为 null、四种 item、`starter.run.v1`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
+- assistant item 的 `usage` 和 `toolCalls`、system item 的 `tokensBefore` 都能读到；toolCall block 带 `arguments` 时投影结果不得包含入参，`toolCallId` 与对应 `tool_activity` item 一致。
 - 一致性检查两方向 orphan 且不修改数据。
 
 ## 7. Wrong vs Correct

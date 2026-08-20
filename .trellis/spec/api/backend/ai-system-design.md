@@ -208,6 +208,12 @@ Executor 通过原生 `pi-ai` stream 调 Provider：
 
 assistant message 的写入和 `message.completed` 事件使用同一个 message entry id。user、assistant 和 tool result message 会附加 `runId`，Session transcript projector 依靠它把 message 归属到 Run。
 
+Agent loop 的轮次边界和上下文压缩都是可观测的：
+
+- 每一轮发布 `turn.started` 和 `turn.completed`，带当前轮次和 `maxTurns`；轮次计数由 `PiEventMapper` 维护。
+- compaction 写入 Pi entry 成功后发布 `context.compacted`，带 `entryId`、`tokensBefore` 和 summary。发布失败不影响 compaction 结果，也不改变 Run 终态。
+- `message.completed` 携带该次 assistant message 的 token 用量；读不到用量时省略该字段，不补 0 值。
+
 ### 4.3 Tool 阶段
 
 模型请求 Tool 时，Pi Agent 触发 Tool adapter。Tool adapter 在执行 handler 前再次执行：
@@ -220,7 +226,7 @@ assistant message 的写入和 `message.completed` 事件使用同一个 message
 
 Tool handler 只得到已校验输入、用户 ID、request ID 和 AbortSignal。arguments、原始 result 和 Provider payload 不写入 SQLite；公开事件最多携带 `safeSummary`。
 
-Tool 失败通常会生成安全的 tool result，让 Pi Agent 决定下一轮；Tool timeout 或父 Run abort 会终止当前 Run。每个已 begin 的 Tool audit 都必须 finalize，不能留下未解释的 running 记录。
+Tool 失败会生成安全的 tool result，让 Pi Agent 决定下一轮，包括工具自身超时——超时的 `modelText` 带上实际 timeout 毫秒数，模型才能判断重试还是换参数。只有用户取消和 Run 总时长耗尽会终止当前 Run。每个已 begin 的 Tool audit 都必须 finalize，不能留下未解释的 running 记录。
 
 ## 5. 输出、事件和记录的关系
 
@@ -229,6 +235,7 @@ Tool 失败通常会生成安全的 tool result，让 Pi Agent 决定下一轮�
 | 结果 | 用途 | 保存位置 | 是否作为公开 API 输出 |
 | --- | --- | --- | --- |
 | `HarnessEvent` | 实时展示运行过程 | 进程内有界事件队列 | 是，通过 SSE |
+| Run 活跃快照 | 断线重连后恢复进行中的视图 | 进程内，按 runId 存放 | 是，通过 `GET /runs/{runId}` 的 `live` 字段 |
 | Pi transcript entry | 保存完整 Session 历史和 Run 终态事实 | 独立 Pi Session SQLite | 通过 transcript 投影间接读取 |
 | Starter 主库记录 | 查询、权限、状态和审计 | Starter SQLite | 通过 Run/usage API 返回白名单字段 |
 
@@ -279,16 +286,38 @@ flowchart TD
 
 ```text
 run.started
+turn.started
 message.started
 message.delta
 message.completed
 tool.started
 tool.progress
 tool.completed
+context.compacted
+turn.completed
 run.completed
 run.failed
 run.aborted
 ```
+
+`turn.started` / `turn.completed` 标记 Agent loop 的轮次边界，携带 `turn` 和 `maxTurns`，由 `PiEventMapper` 映射 Pi 的 `turn_start` / `turn_end`。
+
+`context.compacted` 在 compaction entry 写入成功后发布，携带 `entryId`、`tokensBefore` 和 `summary`。compaction 发生在 `transformContext` 回调里、不在 Pi AgentEvent 流上，所以由 `PiEventMapper.contextCompactedEvent()` 提供显式出口，复用同一个 `EventSequencer` 保证 sequence 单调。发事件失败不影响已写入的 compaction 结果。
+
+`tool.progress` 的生产者是工具自身：`AiToolExecutionContext.reportProgress(safeSummary)` 经 `pi-tool-adapter.ts` 接到 Pi 的 `onUpdate`，再由 `PiEventMapper` 把 `tool_execution_update` 映射成事件。上报内容只能是已脱敏摘要（最多 1000 字符），`modelText` 留空，不把中间结果喂给模型，也不产生额外审计记录。
+
+`message.completed` 的 `data.usage` 是可选字段，来自 Pi `AssistantMessage.usage`；读不到时省略，不编造 0 值。
+
+### 5.1.1 活跃 Run 快照
+
+`GET /api/ai/sessions/{sessionId}/runs/{runId}` 的响应带一个可选 `live` 字段，它是活跃 Run 的进程内运行时视图，不是持久事实：
+
+- 由 Run Service 在事件进入对外队列的同一处累积（`run.service.ts` 的 `publish`），折叠规则与 `apps/admin/src/features/ai/harness/stream-reducer.ts` 同构。
+- 判据是 Run row 状态，不是 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。
+- Run 进入终态或进程重启后为 `null`，客户端此时回落到 transcript。
+- `messages` 和 `tools` 各有 64 条上限，超限丢最旧的，避免长 Run 的内存无界增长。
+
+它解决的是「刷新页面后正在生成的内容消失」：assistant message 要等 `message_end` 才写入 Pi DB，在此之前既不在事件队列历史里、也不在 transcript 里。快照不持久化，也不改变 HarnessEvent 仍然只存在于进程内有界队列这一约束。
 
 SSE 的 `id` 是 `eventId`，`event` 是 HarnessEvent.type，`data` 是完整事件 JSON。heartbeat 是 SSE comment，不创建 HarnessEvent。
 
@@ -436,8 +465,8 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 | lane 已占用 | 返回 409 `AI.SESSION_BUSY` | 不创建第二个 Run | 等待当前 Run 终态 |
 | Pi Session 读写失败 | Run failed | 主库 Run 终态 + 日志 | 修复存储后重新启动 Run |
 | Provider 失败或超时 | Run failed | Pi assistant 终态、模型 audit、Run terminal entry | 按 retryable 字段决定是否重试 |
-| Tool 参数或权限失败 | 通常继续 Agent loop | Tool audit + safe tool result | Agent 根据安全结果决定下一轮 |
-| Tool timeout 或 Run abort | Run aborted/failed | Tool audit + Run terminal entry | 用户显式发起新的 Run |
+| Tool 参数、权限或执行失败（含工具超时） | 继续 Agent loop | Tool audit + safe tool result | Agent 根据安全结果决定下一轮 |
+| Run abort 或 Run 总时长耗尽 | Run aborted/failed | Tool audit + Run terminal entry | 用户显式发起新的 Run |
 | SSE 连接断开 | Run 不变，继续执行 | Pi transcript + 主库终态 | 客户端重新读取 Run/transcript |
 | 进程在终态前退出 | Run 暂存非终态 | Pi terminal entry 或无 entry | API 启动时 recovery scan |
 | 主库终态更新失败 | 不发布 terminal event | Pi terminal entry + 日志 | 下一次启动恢复 |

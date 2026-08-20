@@ -47,6 +47,8 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 终态顺序固定：等待 executor result -> 写 `starter.run.v1` -> 条件更新主库 -> 发布唯一 terminal event -> release registry。
 - 启动恢复读取 `starter.run.v1` 时，必须同时核对 `runId`、`sessionId`、`lane`、`agentId` 和 `agentRevision`；任一字段与主库 Run 不一致都按损坏处理并标记 `AI.RUN_INTERRUPTED`。
 - 事件队列是有界 `AsyncEventQueue`（`MAX_PENDING_EVENTS = 1024`），超限时关闭 transport，不阻塞 Agent loop、不 abort Run。
+- Run Service 同时负责累积对外的活跃 Run 快照（`GET /runs/{runId}` 的 `live` 字段），Executor 和 `ActiveRunRegistry` 都不参与。所有事件必须经过 `publish` 进入队列：它先折叠快照、再 push，绕过它会让快照漏掉首尾状态。
+- 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
 - SSE 的 `id` 是 eventId、`event` 是 `HarnessEvent.type`、`data` 是完整事件 JSON；heartbeat 用 comment，不创建 HarnessEvent。
 
 ## 4. Validation & Error Matrix
@@ -86,6 +88,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 他人 Session 或 Run 一律 404（读、abort、steer、follow-up、启动都不暴露存在性）。
 - 启动恢复：无 terminal entry -> interrupted；唯一合法且 `runId`、`sessionId`、`lane`、`agentId`、`agentRevision` 全部匹配的 entry -> 投影终态；重复 entry、身份字段不匹配 -> corrupted/interrupted；schema 解析失败 -> corrupted/interrupted。
 - transcript 写入侧挂载 runId（message 顶层字段，S5 读取规则兼容）。
+- 活跃快照：Run 执行中 `GET /runs/{runId}` 的 `live` 非空且部分 assistant 文本与已推送 delta 一致；终态后 `live` 为 null；他人 Run 仍 404。用挂住的 streamFn 让 Run 停在生成中间态来断言。
 - 测试通过 `createTestApp({}, { agentSessionStore, piAgentExecutor })` 注入 fake executor，控制 streamFn 行为，不依赖真实模型。
 
 ## 7. Wrong vs Correct

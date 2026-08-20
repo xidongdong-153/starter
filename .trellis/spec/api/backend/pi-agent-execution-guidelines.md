@@ -40,6 +40,9 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 - 原生 stream adapter 只使用现有 `Models` 的模型、Provider auth、provider env、timeout 和 AbortSignal；失败编码为 Pi `error`/`aborted` event。旧 `AiGatewayEvent` 不能作为 `StreamFn` 输入 Agent。
 - `ai_model_calls` 的新记录使用 `scenario='agent_run'`、`run_id=<runId>`。审计 begin/finalize 是 best-effort，不能把 secret、原始错误、prompt 或 response 写入日志或事件。
 - Tool 的模型参数来自 `z.toJSONSchema`；`AgentTool.execute` 前仍执行原 Zod schema parse，并合并 Tool timeout、Run deadline 和 AbortSignal。公开事件和 transcript projection 只允许 `safeSummary`，最多 1000 字符。
+- 工具失败不等于 Run 失败。只有用户取消和 Run 总时长耗尽会设 `terminate: true` 并调 `onTerminalFailure`；工具自身超时、抛错、参数无效、未注册和权限不足一律 `terminate: false`，把失败原因作为 tool result 交回模型，让它自己决定下一步。超时的 `modelText` 带上实际 timeout 毫秒数，模型才知道重试时要换参数。
+- Tool 进度通道：`AiToolExecutionContext.reportProgress(safeSummary)` 由 adapter 注入，内部转成 Pi 的 `onUpdate`，`PiEventMapper` 再把 `tool_execution_update` 映射成 `tool.progress`。上报内容只能是脱敏摘要，`modelText` 留空，空字符串忽略，不产生额外审计。`reportProgress` 是可选字段，工具内部用 `?.` 调用，单元测试可以不提供。
+- 轮次与 compaction 可观测：`PiEventMapper` 把 Pi 的 `turn_start` / `turn_end` 映射成 `turn.started` / `turn.completed`（带 `maxTurns`，从 `PiEventMapperOptions` 传入）；`compactIfNeeded` 写入 entry 成功后通过 `onCompacted` 回调发 `context.compacted`，事件由 `PiEventMapper.contextCompactedEvent()` 构造以复用同一个 sequencer。回调必须包 try/catch，发事件失败不能影响已写入的 compaction 结果。
 - compaction 只能调用 Pi 的 `estimateContextTokens`、`shouldCompact`、`prepareCompaction` 和 `compact`；摘要或 entry 写入失败时 Run 失败且原 transcript 保留。
 
 ## 4. Validation & Error Matrix
@@ -53,7 +56,8 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 | Provider 认证失败、上游失败、timeout 或 abort | 原生 stream 返回安全 Pi error；模型审计终态分别为 `auth_failed`、`upstream_failed`、`timed_out`、`cancelled` |
 | 模型不在当前 `Models` catalog | `AI.MODEL_NOT_FOUND`，不创建 Provider 请求审计 |
 | Tool 未注册、参数无效或权限不足 | Tool result 使用 `not_found`、`invalid_arguments` 或 `forbidden`，继续由 Pi Agent 处理下一轮 |
-| Tool timeout 或父 signal abort | Tool 审计 finalize 为 `timed_out` 或 `cancelled`，当前 Run 终止 |
+| Tool timeout | Tool 审计 finalize 为 `timed_out`，`terminate: false`，tool result 交回模型继续下一轮 |
+| 父 signal abort 或 Run deadline 耗尽 | Tool 审计 finalize 为 `cancelled` 或 `timed_out`，`terminate: true`，当前 Run 终止 |
 | 审计 begin/finalize 写入失败 | 记录 operation、requestId 和审计 ID；不改变模型或 Tool 的安全结果 |
 
 ## 5. Good / Base / Bad Cases
@@ -66,9 +70,9 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 
 ## 6. Tests Required
 
-- `apps/api/src/test/pi-agent-executor.test.ts`：两段式 start gate、多轮 Tool、sequence、Session failure、pre-abort、模型不存在、compaction、无效参数和 Tool 审计。
+- `apps/api/src/test/pi-agent-executor.test.ts`：两段式 start gate、多轮 Tool、sequence、Session failure、pre-abort、模型不存在、compaction（含 `context.compacted` 事件的 entryId 与 tokensBefore）、轮次事件成对、`tool.progress` 只带脱敏摘要、工具超时后模型继续回复且 Run 为 completed、无效参数和 Tool 审计。
 - `apps/api/src/test/pi-native-stream.test.ts`：正常 done、认证/上游失败、timeout、abort、模型不存在、审计失败隔离和 first-cause 终态。
-- `apps/api/src/test/pi-tool-adapter.test.ts`：Zod parse、permission、timeout、取消、安全 result 和一次性审计。
+- `apps/api/src/test/pi-tool-adapter.test.ts`：Zod parse、permission、timeout、取消、安全 result、一次性审计，`reportProgress` 经 `onUpdate` 上报且空摘要被忽略，以及工具超时 `terminate: false` 不调 `onTerminalFailure`、用户取消 `terminate: true` 仍终止 Run。
 - `apps/api/src/test/active-run-registry.test.ts`：lane 冲突、runId/lane 双索引、controls 转发和幂等 release。
 - `apps/api/src/test/pi-session-store.test.ts`：预置 message ID、compaction entry 与旧 transcript 回放兼容。
 - 提交前依次运行 `pnpm check-types`、`pnpm lint`、`pnpm format:check`、`pnpm test`、`pnpm build` 和 `git diff --check`。
