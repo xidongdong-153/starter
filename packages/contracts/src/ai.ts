@@ -460,6 +460,29 @@ const agentTranscriptItemBaseShape = {
   createdAt: isoDateTimeSchema,
 }
 
+export const aiUsageSchema = z.object({
+  inputTokens: z.number().int().min(0).nullable(),
+  outputTokens: z.number().int().min(0).nullable(),
+  cacheReadTokens: z.number().int().min(0).nullable(),
+  cacheWriteTokens: z.number().int().min(0).nullable(),
+  cacheWrite1hTokens: z.number().int().min(0).nullable(),
+  reasoningTokens: z.number().int().min(0).nullable(),
+  totalTokens: z.number().int().min(0).nullable(),
+})
+
+export type AiUsage = z.infer<typeof aiUsageSchema>
+
+export const aiCostSchema = z.object({
+  currency: z.literal('USD'),
+  input: z.number().min(0),
+  output: z.number().min(0),
+  cacheRead: z.number().min(0),
+  cacheWrite: z.number().min(0),
+  total: z.number().min(0),
+})
+
+export type AiCost = z.infer<typeof aiCostSchema>
+
 export const agentToolStatusSchema = z.enum([
   'succeeded',
   'not_found',
@@ -489,6 +512,16 @@ export const agentTranscriptAssistantMessageSchema = z.strictObject({
   model: strictAiModelRefSchema,
   stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
   errorCode: apiErrorCodeSchema.nullable(),
+  usage: aiUsageSchema.nullish(),
+  toolCalls: z
+    .array(
+      z.strictObject({
+        toolCallId: z.string().min(1).max(240),
+        name: z.string().min(1).max(240),
+      }),
+    )
+    .max(64)
+    .optional(),
 })
 
 export const agentTranscriptToolActivitySchema = z.strictObject({
@@ -508,6 +541,7 @@ export const agentTranscriptSystemSchema = z.strictObject({
   runId: uuidSchema.nullable(),
   kind: z.literal('compaction'),
   summary: z.string(),
+  tokensBefore: z.number().int().min(0).nullish(),
 })
 
 export const agentTranscriptItemSchema = z.discriminatedUnion('type', [
@@ -543,6 +577,33 @@ export const agentRunSnapshotSchema = z.strictObject({
 
 export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>
 
+export const agentRunLiveSnapshotSchema = z.strictObject({
+  lastSequence: z.number().int().min(0),
+  turn: z.number().int().min(0),
+  maxTurns: z.number().int().min(1).max(32),
+  messages: z
+    .array(
+      z.strictObject({
+        messageId: uuidSchema,
+        content: z.string(),
+        completed: z.boolean(),
+      }),
+    )
+    .max(64),
+  tools: z
+    .array(
+      z.strictObject({
+        toolCallId: z.string().min(1).max(240),
+        name: z.string().min(1).max(240),
+        status: z.union([agentToolStatusSchema, z.literal('running')]),
+        safeSummary: z.string().max(1000).nullable(),
+      }),
+    )
+    .max(64),
+})
+
+export type AgentRunLiveSnapshot = z.infer<typeof agentRunLiveSnapshotSchema>
+
 export const agentRunSchema = z
   .strictObject({
     id: uuidSchema,
@@ -558,6 +619,7 @@ export const agentRunSchema = z
     createdAt: isoDateTimeSchema,
     startedAt: isoDateTimeSchema.nullable(),
     finishedAt: isoDateTimeSchema.nullable(),
+    live: agentRunLiveSnapshotSchema.nullish(),
   })
   .superRefine((run, context) => {
     if (run.snapshot.agentId !== run.agentId) {
@@ -583,6 +645,9 @@ export const agentRunSchema = z
       if (run.finalEntryId !== null) issue('finalEntryId', '非终态 Run 不能包含 finalEntryId')
       if (run.errorCode !== null) issue('errorCode', '非终态 Run 不能包含 errorCode')
       return
+    }
+    if (run.live) {
+      context.addIssue({ code: 'custom', path: ['live'], message: '终态 Run 不能包含 live 快照' })
     }
     if (run.finishedAt === null) issue('finishedAt', '终态 Run 必须包含 finishedAt')
     if (run.status === 'completed') {
@@ -657,6 +722,8 @@ export const harnessMessageCompletedEventSchema = z.strictObject({
     content: z.string(),
     stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
     errorCode: apiErrorCodeSchema.nullable(),
+    /** 该次 assistant message 的 token 用量；读不到时省略，不编造 0 值。 */
+    usage: aiUsageSchema.nullish(),
   }),
 })
 
@@ -689,6 +756,35 @@ export const harnessToolCompletedEventSchema = z.strictObject({
     errorCode: apiErrorCodeSchema.nullable(),
     safeSummary: z.string().max(1000).nullable(),
     entryId: uuidSchema,
+  }),
+})
+
+export const harnessTurnStartedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('turn.started'),
+  data: z.strictObject({
+    turn: z.number().int().min(1),
+    maxTurns: z.number().int().min(1).max(32),
+  }),
+})
+
+export const harnessTurnCompletedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('turn.completed'),
+  data: z.strictObject({
+    turn: z.number().int().min(1),
+    maxTurns: z.number().int().min(1).max(32),
+    toolCallCount: z.number().int().min(0),
+  }),
+})
+
+export const harnessContextCompactedEventSchema = z.strictObject({
+  ...harnessEventEnvelopeShape,
+  type: z.literal('context.compacted'),
+  data: z.strictObject({
+    entryId: uuidSchema,
+    tokensBefore: z.number().int().min(0),
+    summary: z.string(),
   }),
 })
 
@@ -730,6 +826,9 @@ export const harnessEventSchema = z.discriminatedUnion('type', [
   harnessToolStartedEventSchema,
   harnessToolProgressEventSchema,
   harnessToolCompletedEventSchema,
+  harnessTurnStartedEventSchema,
+  harnessTurnCompletedEventSchema,
+  harnessContextCompactedEventSchema,
   harnessRunCompletedEventSchema,
   harnessRunFailedEventSchema,
   harnessRunAbortedEventSchema,
@@ -775,29 +874,6 @@ export const starterRunEntrySchema = z.strictObject({
 })
 
 export type StarterRunEntry = z.infer<typeof starterRunEntrySchema>
-
-export const aiUsageSchema = z.object({
-  inputTokens: z.number().int().min(0).nullable(),
-  outputTokens: z.number().int().min(0).nullable(),
-  cacheReadTokens: z.number().int().min(0).nullable(),
-  cacheWriteTokens: z.number().int().min(0).nullable(),
-  cacheWrite1hTokens: z.number().int().min(0).nullable(),
-  reasoningTokens: z.number().int().min(0).nullable(),
-  totalTokens: z.number().int().min(0).nullable(),
-})
-
-export type AiUsage = z.infer<typeof aiUsageSchema>
-
-export const aiCostSchema = z.object({
-  currency: z.literal('USD'),
-  input: z.number().min(0),
-  output: z.number().min(0),
-  cacheRead: z.number().min(0),
-  cacheWrite: z.number().min(0),
-  total: z.number().min(0),
-})
-
-export type AiCost = z.infer<typeof aiCostSchema>
 
 export const aiModelCallResultSchema = z.enum([
   'running',
