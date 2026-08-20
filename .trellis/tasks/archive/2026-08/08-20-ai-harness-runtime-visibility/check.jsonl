@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "api 质量门槛与验收命令"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "第 6 节列出 Run 必须覆盖的测试项；新增事件不得破坏既有 SSE 顺序断言"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "第 12 节验收命令与重点验收点"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "错误码与错误响应规范"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享指南"}

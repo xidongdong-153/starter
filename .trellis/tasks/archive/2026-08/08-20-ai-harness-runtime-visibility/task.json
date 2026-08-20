@@ -1,0 +1,39 @@
+{
+  "id": "ai-harness-runtime-visibility",
+  "name": "ai-harness-runtime-visibility",
+  "title": "AI Harness 运行时可观测性修复",
+  "description": "补齐 Agent Run 的活跃快照、轮次/compaction 事件、usage 与 toolCall 投影，并移除 Agent Run 单轮 2048 输出上限",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "api",
+  "priority": "P2",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-08-20",
+  "completedAt": "2026-08-20",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [],
+  "parent": null,
+  "relatedFiles": [
+    "packages/contracts/src/ai.ts",
+    "apps/api/src/modules/ai/run/run.service.ts",
+    "apps/api/src/modules/ai/run/run.route.ts",
+    "apps/api/src/modules/ai/run/run.openapi.ts",
+    "apps/api/src/modules/ai/session/session.presenter.ts",
+    "apps/api/src/infra/agent/pi-event-mapper.ts",
+    "apps/api/src/infra/agent/agent-executor.ts",
+    "apps/api/src/infra/agent/pi-tool-adapter.ts",
+    "apps/api/src/infra/ai/pi-native-stream.ts",
+    "apps/api/src/modules/ai/tool/tool-registry.ts"
+  ],
+  "notes": "",
+  "meta": {
+    "verified_at": "2026-08-20"
+  }
+}

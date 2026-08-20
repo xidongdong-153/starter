@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "AI 系统总设计：数据流边界、三类结果职责划分、改代码顺序；本任务不得越过其边界约束"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run Service 是事件与终态唯一所有者；快照累积与新事件必须落在 run.service.ts"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Executor / mapper / tool adapter 边界；turn 与 compaction 事件的映射位置"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "transcript 投影规则与 cursor 语义；本任务给 assistant/system item 加字段"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 包规范：schema 组织与导出约定"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "api backend 规范索引"}
