@@ -50,12 +50,13 @@ export function archiveAgentSession(sessionId: string): Promise<AgentSession> {
 
 export function getAgentTranscript(
   sessionId: string,
-  query: AgentTranscriptQuery = { lane: 'main', limit: 50 },
+  query: AgentTranscriptQuery = { lane: 'main', limit: 50, direction: 'backward' },
 ): Promise<AgentTranscript> {
   const params = new URLSearchParams()
   if (query.lane) params.set('lane', query.lane)
   if (query.cursor !== undefined) params.set('cursor', String(query.cursor))
   if (query.limit !== undefined) params.set('limit', String(query.limit))
+  if (query.direction) params.set('direction', query.direction)
   return unwrapApiData(
     apiRpc.api.ai.sessions[':sessionId'].transcript.$get({
       param: { sessionId },
@@ -80,12 +81,20 @@ export function abortAgentRun(sessionId: string, runId: string): Promise<AgentRu
   )
 }
 
+/**
+ * 启动一次 Agent Run 并消费 SSE。
+ *
+ * 返回 `terminal` 说明是否收到了终态事件。服务端事件队列有上限（超限直接关流），
+ * 连接也可能中途断开，两种情况都不代表 Run 失败：Run 仍在后台跑，
+ * 调用方此时转轮询 `GET /runs/{runId}`。
+ * 只有启动阶段失败（HTTP 错误、没有响应体、一个事件都没收到就断流）和用户主动取消才抛出。
+ */
 export async function startAgentRun(
   sessionId: string,
   input: StartAgentRunInput,
   signal: AbortSignal,
   onEvent: (event: HarnessEvent) => void,
-): Promise<void> {
+): Promise<{ terminal: boolean }> {
   const response = await fetchApi(`/api/ai/sessions/${sessionId}/runs`, {
     method: 'POST',
     body: JSON.stringify(input),
@@ -99,6 +108,7 @@ export async function startAgentRun(
 
   const decoder = new TextDecoder()
   let terminalEventReceived = false
+  let receivedEventCount = 0
   const parser = createParser({
     maxBufferSize: 2 * 1024 * 1024,
     onEvent(message) {
@@ -106,6 +116,7 @@ export async function startAgentRun(
       try {
         const result = harnessEventSchema.safeParse(JSON.parse(message.data) as unknown)
         if (result.success) {
+          receivedEventCount += 1
           if (
             result.data.type === 'run.completed' ||
             result.data.type === 'run.failed' ||
@@ -123,15 +134,22 @@ export async function startAgentRun(
   const reader = response.body.getReader()
   try {
     while (true) {
-      const { done, value } = await reader.read()
-      if (done) break
-      parser.feed(decoder.decode(value, { stream: true }))
+      let chunk: Awaited<ReturnType<typeof reader.read>>
+      try {
+        chunk = await reader.read()
+      } catch (error) {
+        // 用户主动取消照旧抛出，页面按取消处理，不能误判成断线。
+        if (signal.aborted) throw error
+        // 已经收到过事件、还没收到终态：连接中途断了，Run 还在后台跑，交给调用方轮询。
+        if (receivedEventCount > 0 && !terminalEventReceived) return { terminal: false }
+        throw error
+      }
+      if (chunk.done) break
+      parser.feed(decoder.decode(chunk.value, { stream: true }))
     }
     parser.feed(decoder.decode())
     parser.reset({ consume: true })
-    if (!terminalEventReceived && !signal.aborted) {
-      throw new ApiRequestError(response.status, 'Agent Run 流意外中断，可以重试。')
-    }
+    return { terminal: terminalEventReceived }
   } finally {
     reader.releaseLock()
   }

@@ -6,15 +6,32 @@ import {
   useUpdateAiPreferenceMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai/ai.query'
+import { useAgentRunQuery, useAgentTranscriptQuery } from '@admin/api/ai/harness.query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClientWrapper, createTestQueryClient } from './helpers'
 
-const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
-  checkAiProvider: vi.fn(),
-  updateAiPreference: vi.fn(),
-  updateAiProviderConfig: vi.fn(),
+const { checkAiProvider, updateAiPreference, updateAiProviderConfig, getAgentRun, getAgentTranscript } = vi.hoisted(
+  () => ({
+    checkAiProvider: vi.fn(),
+    updateAiPreference: vi.fn(),
+    updateAiProviderConfig: vi.fn(),
+    getAgentRun: vi.fn(),
+    getAgentTranscript: vi.fn(),
+  }),
+)
+
+vi.mock('@admin/api/ai/harness.api', () => ({
+  abortAgentRun: vi.fn(),
+  archiveAgentSession: vi.fn(),
+  createAgentSession: vi.fn(),
+  getAgentRun,
+  getAgentSession: vi.fn(),
+  getAgentSessions: vi.fn(),
+  getAgentTranscript,
+  startAgentRun: vi.fn(),
+  updateAgentSession: vi.fn(),
 }))
 
 vi.mock('@admin/api/ai/ai.api', () => ({
@@ -55,6 +72,8 @@ beforeEach(() => {
   checkAiProvider.mockReset()
   updateAiPreference.mockReset()
   updateAiProviderConfig.mockReset()
+  getAgentRun.mockReset()
+  getAgentTranscript.mockReset()
 })
 
 describe('ai query 状态', () => {
@@ -127,5 +146,50 @@ describe('ai query 状态', () => {
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(2))
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.preference() })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.models() })
+  })
+})
+
+describe('harness query 分页与轮询', () => {
+  const sessionId = '01958c80-8df7-7ce2-8f90-1234567890a1'
+  const runId = '01958c80-8df7-7ce2-8f90-1234567890a2'
+
+  it('transcript 首屏取最新一页，加载更早时带上 nextCursor', async () => {
+    getAgentTranscript
+      .mockResolvedValueOnce({ items: [], nextCursor: 12 })
+      .mockResolvedValueOnce({ items: [], nextCursor: null })
+    const queryClient = createTestQueryClient()
+    const { result } = renderHook(() => useAgentTranscriptQuery(sessionId), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true))
+    expect(getAgentTranscript).toHaveBeenCalledWith(sessionId, { lane: 'main', limit: 50, direction: 'backward' })
+    expect(result.current.hasNextPage).toBe(true)
+
+    await result.current.fetchNextPage()
+
+    await waitFor(() => expect(getAgentTranscript).toHaveBeenCalledTimes(2))
+    expect(getAgentTranscript).toHaveBeenLastCalledWith(sessionId, {
+      lane: 'main',
+      limit: 50,
+      direction: 'backward',
+      cursor: 12,
+    })
+    await waitFor(() => expect(result.current.hasNextPage).toBe(false))
+  })
+
+  it('默认不轮询 Run 查询，传入间隔后按间隔重新拉取', async () => {
+    getAgentRun.mockResolvedValue({ id: runId, status: 'running', live: null })
+    const queryClient = createTestQueryClient()
+    const once = renderHook(() => useAgentRunQuery(sessionId, runId), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+    await waitFor(() => expect(once.result.current.isSuccess).toBe(true))
+    expect(getAgentRun).toHaveBeenCalledTimes(1)
+
+    renderHook(() => useAgentRunQuery(sessionId, runId, { refetchInterval: 20 }), {
+      wrapper: createQueryClientWrapper(createTestQueryClient()),
+    })
+    await waitFor(() => expect(getAgentRun.mock.calls.length).toBeGreaterThanOrEqual(3))
   })
 })

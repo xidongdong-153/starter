@@ -1,4 +1,3 @@
-import type { AgentTranscriptItem } from '@starter/contracts'
 import type { GetRef } from 'antd'
 
 import {
@@ -13,17 +12,20 @@ import {
   startAgentRun,
   useUpdateAgentSessionMutation,
 } from '@admin/api/ai'
+import { AgentTimeline, AgentTimelineItemView } from '@admin/features/ai/components/timeline/AgentTimeline'
 import type { HarnessStreamState } from '@admin/features/ai/harness/stream-reducer'
 import { createEmptyHarnessStreamState, reduceHarnessEvent } from '@admin/features/ai/harness/stream-reducer'
+import type { AgentTimelineItem } from '@admin/features/ai/harness/timeline'
+import { fromLiveSnapshot, fromTranscript } from '@admin/features/ai/harness/timeline'
 import { useMobile } from '@admin/hooks/useMobile'
 import { formatDate, formatRelativeTime } from '@admin/utils/dayjs'
 import { App as AntdApp, Alert, Button, Drawer, Empty, Input, Modal, Select, Spin, Tag, Tooltip } from 'antd'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
   Archive,
   ArrowDown,
-  Bot,
+  ChevronUp,
   CircleAlert,
   LoaderCircle,
   MessageCircle,
@@ -35,196 +37,13 @@ import {
   Send,
   Square,
   Trash2,
-  User,
-  Wrench,
 } from 'lucide-react'
-import { MarkdownRenderer } from '../components/MarkdownRenderer'
 
 const { TextArea } = Input
 type TextAreaRef = GetRef<typeof Input.TextArea>
 const sessionPage = { page: 1, pageSize: 50 }
-
-function TranscriptItemView({ item }: { item: AgentTranscriptItem }) {
-  const { t } = useTranslation()
-
-  if (item.type === 'user_message') {
-    return (
-      <article className="flex justify-end">
-        <div className="items-end flex max-w-[min(840px,94%)] flex-col gap-1.5">
-          <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
-            <span className="text-fg-muted/60 text-[11px]">{formatDate(item.createdAt, 'HH:mm')}</span>
-            <span className="font-medium">{t('ai.sessions.user')}</span>
-            <div className="bg-primary/15 text-primary border-primary/20 flex size-5.5 items-center justify-center rounded-full border">
-              <User className="size-3.5" />
-            </div>
-          </div>
-          <div className="bg-primary/10 border-primary/20 rounded-2xl rounded-tr-xs border px-4 py-3 sm:px-5 sm:py-3.5">
-            <p className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-relaxed">{item.content}</p>
-          </div>
-        </div>
-      </article>
-    )
-  }
-
-  if (item.type === 'assistant_message') {
-    const isDone = item.status === 'completed'
-    const tagColor = isDone
-      ? 'success'
-      : item.status === 'aborted' || item.status === 'interrupted'
-        ? 'warning'
-        : 'error'
-    return (
-      <article className="flex justify-start">
-        <div className="items-start flex max-w-[min(840px,94%)] flex-col gap-1.5">
-          <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
-            <div className="bg-surface-muted text-primary border-border-subtle flex size-5.5 items-center justify-center rounded-full border shadow-2xs">
-              <Bot className="size-3.5" />
-            </div>
-            <span className="font-medium">{t('ai.sessions.assistant')}</span>
-            {!isDone ? (
-              <Tag color={tagColor} className="m-0 text-[11px]">
-                {t(`ai.sessions.status.${item.status}`)}
-              </Tag>
-            ) : null}
-            <span className="text-fg-muted/70 hidden font-mono text-[11px] sm:inline">
-              {item.model.providerId}/{item.model.modelId}
-            </span>
-            <span className="text-fg-muted/60 text-[11px]">{formatDate(item.createdAt, 'HH:mm')}</span>
-          </div>
-          <div className="border-border-subtle bg-surface rounded-2xl rounded-tl-xs border px-4 py-3 sm:px-5 sm:py-3.5 shadow-2xs">
-            <MarkdownRenderer content={item.content} />
-          </div>
-          {item.errorCode ? (
-            <p className="text-danger border-danger/30 bg-danger/5 m-0 mt-2 rounded-lg border p-2 text-xs">
-              {item.errorCode}
-            </p>
-          ) : null}
-        </div>
-      </article>
-    )
-  }
-
-  if (item.type === 'tool_activity') {
-    return <ToolActivityItem item={item} />
-  }
-
-  return (
-    <div className="border-border-subtle bg-surface-muted/50 text-fg-muted my-2 flex items-center gap-2 rounded-xl border px-3 py-2 text-xs">
-      <Archive className="size-3.5 shrink-0" />
-      <span>{t('ai.sessions.tool.compaction')}</span>
-      <span className="text-fg-muted/70 min-w-0 flex-1 truncate">{item.summary}</span>
-    </div>
-  )
-}
-
-function ToolActivityItem({ item }: { item: Extract<AgentTranscriptItem, { type: 'tool_activity' }> }) {
-  const { t } = useTranslation()
-  const [expanded, setExpanded] = useState(false)
-  const isSuccess = item.status === 'succeeded'
-  const isError = [
-    'failed',
-    'not_found',
-    'invalid_arguments',
-    'forbidden',
-    'timed_out',
-    'cancelled',
-    'interrupted',
-  ].includes(item.status)
-
-  return (
-    <div className="border-border-subtle bg-surface-muted/50 my-2 overflow-hidden rounded-xl border text-xs shadow-2xs">
-      <div
-        className={`flex items-center justify-between px-3 py-2 ${
-          item.safeSummary ? 'cursor-pointer select-none hover:bg-surface-muted/80' : ''
-        }`}
-        onClick={() => item.safeSummary && setExpanded(!expanded)}
-      >
-        <div className="flex min-w-0 items-center gap-2">
-          <Wrench className="text-primary size-3.5 shrink-0" />
-          <span className="text-fg font-mono font-medium">{item.name}</span>
-          <Tag color={isSuccess ? 'success' : isError ? 'error' : 'default'} className="m-0 text-[11px]">
-            {t(`ai.sessions.tool.status.${item.status}`)}
-          </Tag>
-        </div>
-        {item.safeSummary ? (
-          <span className="text-fg-muted text-[11px]">
-            {expanded ? t('ai.sessions.expand') : t('ai.sessions.collapse')}
-          </span>
-        ) : null}
-      </div>
-      {expanded && item.safeSummary ? (
-        <div className="border-border-subtle/80 bg-surface/50 chat-scrollbar max-h-48 overflow-y-auto border-t px-3 py-2 text-xs leading-5">
-          <p className="text-fg-muted m-0 whitespace-pre-wrap font-mono">{item.safeSummary}</p>
-        </div>
-      ) : null}
-    </div>
-  )
-}
-
-function StreamingToolList({ tools }: { tools: HarnessStreamState['tools'] }) {
-  const { t } = useTranslation()
-  const [selectedTool, setSelectedTool] = useState<string | null>(null)
-  const selected = tools.find((item) => item.toolCallId === selectedTool)
-
-  if (tools.length === 0) return null
-
-  return (
-    <div className="border-border-subtle bg-surface-muted/50 mt-3 overflow-hidden rounded-xl border text-xs">
-      <div className="flex items-center justify-between px-3 py-2">
-        <div className="flex min-w-0 items-center gap-2">
-          <Wrench className="text-primary size-3.5 shrink-0" />
-          <span className="text-fg-muted font-medium">{t('ai.sessions.tool.title')}</span>
-          <span className="text-fg-muted/60 text-[11px]">{tools.length}</span>
-        </div>
-        {tools.some((item) => item.safeSummary) ? (
-          <span className="text-fg-muted text-[11px]">
-            {selectedTool ? t('ai.sessions.collapse') : t('ai.sessions.expand')}
-          </span>
-        ) : null}
-      </div>
-      <div className="border-border-subtle/60 flex gap-1.5 overflow-x-auto border-t px-2.5 py-2">
-        {tools.map((tool) => {
-          const isError = [
-            'failed',
-            'not_found',
-            'invalid_arguments',
-            'forbidden',
-            'timed_out',
-            'cancelled',
-            'interrupted',
-          ].includes(tool.status)
-          const done = tool.status !== 'running'
-          return (
-            <button
-              key={tool.toolCallId}
-              type="button"
-              onClick={() => setSelectedTool((current) => (current === tool.toolCallId ? null : tool.toolCallId))}
-              className={`flex shrink-0 cursor-pointer items-center gap-1.5 rounded-lg border px-2 py-1 transition-colors ${
-                selectedTool === tool.toolCallId
-                  ? 'border-primary/40 bg-primary/10'
-                  : 'border-border-subtle bg-surface hover:border-primary/30'
-              }`}
-            >
-              {done ? (
-                <span className={isError ? 'text-danger size-2.5' : 'text-success size-2.5'}>
-                  {isError ? '●' : '●'}
-                </span>
-              ) : (
-                <LoaderCircle className="text-primary size-3 animate-spin" />
-              )}
-              <span className="text-fg font-mono text-[11px]">{tool.name}</span>
-            </button>
-          )
-        })}
-      </div>
-      {selected?.safeSummary ? (
-        <div className="border-border-subtle/80 bg-surface/50 chat-scrollbar max-h-40 overflow-y-auto border-t px-3 py-2">
-          <p className="text-fg-muted m-0 whitespace-pre-wrap font-mono">{selected.safeSummary}</p>
-        </div>
-      ) : null}
-    </div>
-  )
-}
+/** SSE 提前结束后改用轮询读取 Run 状态和 live 快照的间隔。 */
+const RUN_POLL_INTERVAL_MS = 2000
 
 function SessionList({
   sessions,
@@ -361,6 +180,8 @@ export function AgentSessions() {
   const [activeRunId, setActiveRunId] = useState<string | null>(null)
   const [showScrollBottom, setShowScrollBottom] = useState(false)
   const [pendingUserText, setPendingUserText] = useState<string | null>(null)
+  /** SSE 提前结束后转轮询：只是当前页面的运行时视图状态，不持久化。 */
+  const [polling, setPolling] = useState(false)
 
   const controllerRef = useRef<AbortController | null>(null)
   const streamTokenRef = useRef(0)
@@ -369,7 +190,9 @@ export function AgentSessions() {
 
   const sessionDetailQuery = useAgentSessionQuery(selectedId)
   const transcriptQuery = useAgentTranscriptQuery(selectedId)
-  const runQuery = useAgentRunQuery(selectedId, streamState.runId ?? activeRunId)
+  const runQuery = useAgentRunQuery(selectedId, streamState.runId ?? activeRunId, {
+    refetchInterval: polling ? RUN_POLL_INTERVAL_MS : false,
+  })
 
   const selectedSession = sessionDetailQuery.data
   const agents = agentsQuery.data?.items ?? []
@@ -410,16 +233,38 @@ export function AgentSessions() {
     setShowScrollBottom(scrollHeight - (scrollTop + clientHeight) > 100)
   }
 
+  // transcript 首屏是最新一页，往后每页更早，渲染时倒序拼接成时间正序
+  const transcriptPages = transcriptQuery.data?.pages
+  const transcriptItems = useMemo(
+    () =>
+      (transcriptPages ?? [])
+        .slice()
+        .reverse()
+        .flatMap((page) => page.items),
+    [transcriptPages],
+  )
+  const transcriptTimeline = useMemo(() => fromTranscript(transcriptItems), [transcriptItems])
+  // 轮询期间用服务端 live 快照覆盖流式视图；live 为 null 时保留已有时间线，不清空
+  const liveSnapshot = polling ? (runQuery.data?.live ?? null) : null
+  const liveTimeline = useMemo(() => (liveSnapshot ? fromLiveSnapshot(liveSnapshot) : null), [liveSnapshot])
+  const streamTimeline = liveTimeline ?? streamState.timeline
+  const streamTurn = liveSnapshot ? liveSnapshot.turn : streamState.turn
+  const streamMaxTurns = liveSnapshot ? liveSnapshot.maxTurns : streamState.maxTurns
+
+  /** 流式内容的变化指纹，用于在生成过程中保持视图贴底。 */
+  const streamSignature = streamTimeline
+    .map((item) => {
+      if (item.kind === 'message') return item.blocks.map((block) => block.text).join('')
+      if (item.kind === 'tool') return `${item.key}:${item.status}`
+      return item.key
+    })
+    .join('|')
+
   useEffect(() => {
     if (outputRef.current && !showScrollBottom) {
       outputRef.current.scrollTop = outputRef.current.scrollHeight
     }
-  }, [
-    streamState.messages.length,
-    streamState.messages.map((m) => m.content).join(''),
-    transcriptQuery.data?.items.length,
-    showScrollBottom,
-  ])
+  }, [streamTimeline.length, streamSignature, transcriptItems.length, showScrollBottom])
 
   const refreshAfterRun = async () => {
     await Promise.all([
@@ -429,6 +274,26 @@ export function AgentSessions() {
       sessionsQuery.refetch(),
     ])
   }
+
+  const finishRun = async () => {
+    setPolling(false)
+    setStreaming(false)
+    setPendingUserText(null)
+    await refreshAfterRun()
+    setStreamState(createEmptyHarnessStreamState())
+  }
+
+  // 轮询兜底：SSE 提前结束后靠 GET /runs/{runId} 跟进，Run 进终态或查询失败就停
+  useEffect(() => {
+    if (!polling) return
+    const run = runQuery.data
+    if (run && (run.status === 'starting' || run.status === 'running')) return
+    if (!run && !runQuery.isError) return
+    if (runQuery.isError) {
+      setStreamError(runQuery.error instanceof Error ? runQuery.error.message : t('ai.sessions.runFailed'))
+    }
+    void finishRun()
+  }, [polling, runQuery.data?.status, runQuery.isError])
 
   const handleStreamEvent = (event: Parameters<typeof reduceHarnessEvent>[1], token: number, sessionId: string) => {
     if (streamTokenRef.current !== token || selectedId !== sessionId) return
@@ -461,19 +326,25 @@ export function AgentSessions() {
     setActiveRunId(null)
     setStreaming(true)
     try {
-      await startAgentRun(sessionId, { agentId, lane: 'main', input: text }, controller.signal, (event) =>
-        handleStreamEvent(event, token, sessionId),
+      const result = await startAgentRun(
+        sessionId,
+        { agentId, lane: 'main', input: text },
+        controller.signal,
+        (event) => handleStreamEvent(event, token, sessionId),
       )
       if (streamTokenRef.current === token && selectedId === sessionId) {
-        // Run 已终态：以服务端持久化结果替换临时流式视图
-        setPendingUserText(null)
-        await refreshAfterRun()
-        setStreaming(false)
-        setStreamState(createEmptyHarnessStreamState())
+        if (result.terminal) {
+          // Run 已终态：以服务端持久化结果替换临时流式视图
+          await finishRun()
+        } else {
+          // SSE 提前结束（事件队列超限等）：Run 还在后台跑，保留已有时间线并转轮询
+          setPolling(true)
+        }
       }
     } catch (error) {
       if (streamTokenRef.current !== token || (error instanceof DOMException && error.name === 'AbortError')) return
       setStreaming(false)
+      setPolling(false)
       setPendingUserText(null)
       setStreamError(error instanceof Error ? error.message : t('ai.sessions.runFailed'))
       // SSE 断开不调用 abort：读取服务端持久化结果恢复，用 transcript 替换临时视图
@@ -508,6 +379,7 @@ export function AgentSessions() {
       setStreamState(createEmptyHarnessStreamState())
       setStreamError(null)
       setPendingUserText(null)
+      setPolling(false)
       setSelectedId(session.id)
       setMobileListOpen(false)
     } catch (error) {
@@ -530,6 +402,7 @@ export function AgentSessions() {
           setStreamState(createEmptyHarnessStreamState())
           setStreamError(null)
           setPendingUserText(null)
+          setPolling(false)
           setSelectedId(null)
         }
         message.success(t('ai.sessions.archived'))
@@ -565,6 +438,7 @@ export function AgentSessions() {
     setStreamError(null)
     setPendingUserText(null)
     setStreaming(false)
+    setPolling(false)
     setActiveRunId(null)
     setSelectedId(sessionId)
     setMobileListOpen(false)
@@ -577,7 +451,9 @@ export function AgentSessions() {
     }
   }
 
-  const transcriptItems = transcriptQuery.data?.items ?? []
+  const pendingUserItem: AgentTimelineItem | null = pendingUserText
+    ? { key: 'pending-user', kind: 'user', content: pendingUserText, createdAt: null }
+    : null
   const terminalStatus = streamState.terminal?.status
   const streamActive = streaming || streamState.runId !== null
   const canSend = Boolean(selectedId && !selectedSession?.archivedAt && !streaming && input.trim() && selectedAgentId)
@@ -769,72 +645,56 @@ export function AgentSessions() {
                   <Empty description={t('ai.sessions.transcriptEmpty')} />
                 </div>
               ) : (
-                <div className="mx-auto max-w-4xl space-y-6">
-                  {transcriptItems.map((item) => (
-                    <TranscriptItemView key={item.id} item={item} />
-                  ))}
-
-                  {pendingUserText ? (
-                    <article className="flex justify-end">
-                      <div className="items-end flex max-w-[min(840px,94%)] flex-col gap-1.5">
-                        <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
-                          <span>{t('ai.sessions.user')}</span>
-                          <div className="bg-primary/15 text-primary border-primary/20 flex size-5.5 items-center justify-center rounded-full border">
-                            <User className="size-3.5" />
-                          </div>
-                        </div>
-                        <div className="bg-primary/10 border-primary/20 rounded-2xl rounded-tr-xs border px-4 py-3 sm:px-5 sm:py-3.5">
-                          <p className="text-fg m-0 whitespace-pre-wrap break-words text-sm leading-relaxed">
-                            {pendingUserText}
-                          </p>
-                        </div>
-                      </div>
-                    </article>
+                <div className="mx-auto max-w-4xl space-y-4">
+                  {transcriptQuery.hasNextPage ? (
+                    <div className="flex justify-center">
+                      <Button
+                        size="small"
+                        type="text"
+                        icon={<ChevronUp className="size-3.5" />}
+                        loading={transcriptQuery.isFetchingNextPage}
+                        onClick={() => void transcriptQuery.fetchNextPage()}
+                      >
+                        {t('ai.sessions.loadEarlier')}
+                      </Button>
+                    </div>
                   ) : null}
 
-                  {streamState.messages.length > 0 || streamState.tools.length > 0 ? (
-                    <article className="flex justify-start">
-                      <div className="items-start flex max-w-[min(840px,94%)] flex-col gap-1.5">
-                        <div className="text-fg-muted flex items-center gap-2 px-1 text-xs">
-                          <div className="bg-surface-muted text-primary border-border-subtle flex size-5.5 items-center justify-center rounded-full border shadow-2xs">
-                            <Bot className="size-3.5" />
-                          </div>
-                          <span className="font-medium">{t('ai.sessions.assistant')}</span>
-                          {!streamState.terminal ? (
-                            <Tag
-                              color="processing"
-                              icon={<LoaderCircle className="size-3 animate-spin" />}
-                              className="m-0 text-[11px]"
-                            >
-                              {t('ai.sessions.streaming')}
-                            </Tag>
-                          ) : null}
-                          {terminalStatus ? (
-                            <Tag
-                              color={terminalStatus === 'completed' ? 'success' : 'error'}
-                              className="m-0 text-[11px]"
-                            >
-                              {t(`ai.sessions.runStatus.${terminalStatus}`)}
-                            </Tag>
-                          ) : null}
-                        </div>
-                        <div className="border-border-subtle bg-surface rounded-2xl rounded-tl-xs border px-4 py-3 sm:px-5 sm:py-3.5 shadow-2xs">
-                          {streamState.messages.map((item) => (
-                            <div key={item.messageId}>
-                              {item.content ? (
-                                <MarkdownRenderer content={item.content} />
-                              ) : (
-                                <div className="flex items-center gap-2 text-sm text-fg-muted">
-                                  <LoaderCircle className="text-primary size-4 animate-spin" />
-                                  <span>{t('ai.sessions.generating')}...</span>
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                          <StreamingToolList tools={streamState.tools} />
-                        </div>
-                      </div>
-                    </article>
+                  <AgentTimeline items={transcriptTimeline} />
+
+                  {pendingUserItem ? <AgentTimelineItemView item={pendingUserItem} /> : null}
+
+                  <AgentTimeline items={streamTimeline} />
+
+                  {streamActive || terminalStatus ? (
+                    <div className="text-fg-muted flex flex-wrap items-center gap-2 px-1 text-[11px]">
+                      {streamMaxTurns !== null && streamTurn > 0 ? (
+                        <Tag className="m-0 text-[11px]">
+                          {t('ai.sessions.turnProgress', {
+                            turn: streamTurn,
+                            maxTurns: streamMaxTurns,
+                          })}
+                        </Tag>
+                      ) : null}
+                      {!streamState.terminal ? (
+                        <Tag
+                          color="processing"
+                          icon={<LoaderCircle className="size-3 animate-spin" />}
+                          className="m-0 text-[11px]"
+                        >
+                          {t('ai.sessions.streaming')}
+                        </Tag>
+                      ) : null}
+                      {terminalStatus ? (
+                        <Tag color={terminalStatus === 'completed' ? 'success' : 'error'} className="m-0 text-[11px]">
+                          {t(`ai.sessions.runStatus.${terminalStatus}`)}
+                        </Tag>
+                      ) : null}
+                      {streamState.terminal?.reason === 'max_turns' ? (
+                        <span className="text-warning">{t('ai.sessions.maxTurnsNotice')}</span>
+                      ) : null}
+                      {polling ? <span className="text-warning">{t('ai.sessions.pollingNotice')}</span> : null}
+                    </div>
                   ) : null}
                 </div>
               )}
