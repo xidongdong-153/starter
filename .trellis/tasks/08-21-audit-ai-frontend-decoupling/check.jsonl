@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"核对设计是否覆盖当前 Run 生命周期、事件语义、状态归属和恢复行为"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"核对设计是否违反 Provider、Tool、凭据和审计安全边界"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查后续拆分任务的验证命令和测试范围"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"检查公共协议不得依赖数据库、Pi 类型或前端 view model"}
+{"file":".trellis/spec/admin/frontend/index.md","reason":"检查 Admin 保持消费者角色，不反向进入 API 协议"}

@@ -13,6 +13,7 @@ import {
 } from "@api/modules/ai/session/index.js";
 import type { AiAgentSessionRepository } from "@api/modules/ai/session/session.repository.js";
 import { generateId } from "@api/shared/id.js";
+import { starterRuntimeAccess } from "@api/modules/ai/principal.js";
 import {
   createTestApp,
   readFailure,
@@ -691,7 +692,7 @@ it("主库写入失败补偿删除 Pi Session；补偿失败记录日志", async
       logger,
     });
     await expect(
-      service.create({}, generateId(), "req-1"),
+      service.create({}, starterRuntimeAccess(generateId()), "req-1"),
     ).rejects.toMatchObject({
       code: ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
       status: 500,
@@ -717,7 +718,9 @@ it("主库写入失败补偿删除 Pi Session；补偿失败记录日志", async
       sessionStore: failingDeleteStore,
       logger: logger2,
     });
-    await expect(service2.create({}, generateId())).rejects.toMatchObject({
+    await expect(
+      service2.create({}, starterRuntimeAccess(generateId())),
+    ).rejects.toMatchObject({
       status: 500,
     });
     expect(failingDeleteStore.deleteSession).toHaveBeenCalled();

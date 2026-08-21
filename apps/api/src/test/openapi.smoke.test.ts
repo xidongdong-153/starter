@@ -9,9 +9,11 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
 
     const document = (await response.json()) as {
       openapi: string;
+      info: { description?: string };
+      tags?: Array<{ name: string; description?: string }>;
       paths: Record<
         string,
-        Record<string, { responses?: Record<string, unknown> }>
+        Record<string, { responses?: Record<string, unknown>; tags?: string[] }>
       >;
       components?: { securitySchemes?: Record<string, unknown> };
     };
@@ -116,6 +118,26 @@ it("openAPI 文档和 Scalar 页面可用", async () => {
     expect(document.paths["/api/ai/usage/calls"]?.get).toBeDefined();
     expect(document.paths["/api/ai/system-prompts/{id}"]?.put).toBeDefined();
     expect(document.paths["/api/ai/skills/{id}"]?.put).toBeDefined();
+    expect(document.info.description).toContain("控制面、运行面和兼容面");
+    expect(document.tags?.map((tag) => tag.name)).toEqual(
+      expect.arrayContaining(["AI Control", "AI Runtime", "AI Compatibility"]),
+    );
+    expect(document.paths["/api/ai/admin/providers"]?.get?.tags).toEqual([
+      "AI Control",
+    ]);
+    expect(document.paths["/api/ai/admin/agents"]?.get?.tags).toEqual([
+      "AI Control",
+    ]);
+    expect(document.paths["/api/ai/sessions"]?.post?.tags).toEqual([
+      "AI Runtime",
+    ]);
+    expect(document.paths["/api/ai/agents"]?.get?.tags).toEqual(["AI Runtime"]);
+    expect(document.paths["/api/ai/models"]?.get?.tags).toEqual([
+      "AI Compatibility",
+    ]);
+    expect(document.paths["/api/ai/preferences"]?.put?.tags).toEqual([
+      "AI Compatibility",
+    ]);
     expect(document.components?.securitySchemes?.cookieAuth).toBeDefined();
 
     const reference = await app.request("/reference");

@@ -22,12 +22,20 @@ import type {
   ApiErrorCode,
 } from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
+import type {
+  PrincipalContext,
+  ResourceScope,
+} from "@api/modules/ai/principal.js";
 
 export interface PiModelCallAudit {
   beginModelCall: (input: {
     id?: string;
     runId: string;
     userId: string;
+    scope?: ResourceScope;
+    principalKind?: PrincipalContext["kind"];
+    appId?: string | null;
+    externalUserId?: string | null;
     requestId: string;
     model: AiModelRef;
     timeoutMs: number;
@@ -53,6 +61,10 @@ export interface PiNativeStreamOptions {
   audit?: PiModelCallAudit;
   runId: string;
   userId: string;
+  scope?: ResourceScope;
+  principalKind?: PrincipalContext["kind"];
+  appId?: string | null;
+  externalUserId?: string | null;
   requestId: string;
   sessionId?: string;
   onModelCallStarted?: (id: string | null) => void;
@@ -169,6 +181,10 @@ async function pumpStream(
         options.audit?.beginModelCall({
           runId: options.runId,
           userId: options.userId,
+          scope: options.scope,
+          principalKind: options.principalKind,
+          appId: options.appId,
+          externalUserId: options.externalUserId,
           requestId: options.requestId,
           model: { providerId: model.provider, modelId: model.id },
           timeoutMs,

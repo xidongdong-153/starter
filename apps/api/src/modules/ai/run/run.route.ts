@@ -4,6 +4,7 @@ import { streamSSE } from "hono/streaming";
 
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import { createSuccessResponse } from "@api/shared/response.js";
+import { toRuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import {
   abortAgentRunRoute,
@@ -22,19 +23,19 @@ export function createAiAgentRunRoute(deps: {
   requireAuth: AiRouteMiddleware;
 }) {
   const { service, requireAuth } = deps;
+  const access = (c: { var: HonoEnv["Variables"] }) =>
+    toRuntimeAccessContext(c.var.principal, c.var.resourceScope);
 
   return new OpenAPIHono<HonoEnv>()
     .openapi({ ...startAgentRunRoute, middleware: requireAuth }, async (c) => {
-      const sessionId = c.req.valid("param").sessionId;
       const result = await service.startRun({
-        ownerId: c.var.currentUserId,
-        sessionId,
+        access: access(c),
+        sessionId: c.req.valid("param").sessionId,
         input: c.req.valid("json"),
         requestId: c.var.requestId,
       });
       c.header("Cache-Control", "no-cache");
       c.header("X-Accel-Buffering", "no");
-
       return streamSSE(c, async (stream) => {
         const heartbeat = setInterval(() => {
           void stream.write(": heartbeat\n\n").catch(() => undefined);
@@ -66,7 +67,7 @@ export function createAiAgentRunRoute(deps: {
             });
           }
         } catch {
-          // 连接关闭或写入失败：只停止向该连接写数据，不 abort Run。
+          // transport 断开只结束当前订阅，不中止 Run。
         } finally {
           clearInterval(heartbeat);
         }
@@ -76,7 +77,7 @@ export function createAiAgentRunRoute(deps: {
       c.json(
         createSuccessResponse(
           service.get(
-            c.var.currentUserId,
+            access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
           ),
@@ -89,7 +90,7 @@ export function createAiAgentRunRoute(deps: {
       c.json(
         createSuccessResponse(
           service.abort(
-            c.var.currentUserId,
+            access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
           ),
@@ -102,7 +103,7 @@ export function createAiAgentRunRoute(deps: {
       c.json(
         createSuccessResponse(
           service.steer(
-            c.var.currentUserId,
+            access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
             c.req.valid("json").text,
@@ -116,7 +117,7 @@ export function createAiAgentRunRoute(deps: {
       c.json(
         createSuccessResponse(
           service.followUp(
-            c.var.currentUserId,
+            access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
             c.req.valid("json").text,

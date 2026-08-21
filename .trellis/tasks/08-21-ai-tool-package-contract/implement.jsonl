@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"Tool Registry、schema、timeout、审计和安全边界"}
+{"file":".trellis/spec/api/backend/pi-agent-execution-guidelines.md","reason":"Pi adapter、Agent loop、事件和取消行为"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 对 Tool、terminal 和错误的约束"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"Tool permission 和资源权限规则"}

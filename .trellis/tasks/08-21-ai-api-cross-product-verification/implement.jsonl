@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"运行数据流、SSE、恢复和事实来源"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 状态、错误、并发和终态规则"}
+{"file":".trellis/spec/api/backend/agent-session-guidelines.md","reason":"Session、transcript 和 cursor 规则"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"跨产品验证和 API 质量门禁"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"调用样例只能使用公共 contracts"}

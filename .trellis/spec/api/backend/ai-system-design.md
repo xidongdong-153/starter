@@ -498,7 +498,27 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - 不使用 fallback、localStorage 或前端缓存恢复业务状态。
 - 不提前加入租户、分布式队列、跨节点 active registry 或 Web 聊天产品层。
 
-## 11. 改代码时的顺序
+## 11. OpenAPI 面分类
+
+AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`：
+
+- `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit 和模型连通性测试。
+- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript 和 HarnessEvent SSE。
+- `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
+
+运行面 SSE 使用 `text/event-stream`：
+
+```text
+id: <HarnessEvent.eventId>
+event: <HarnessEvent.type>
+data: <完整 HarnessEvent JSON>
+```
+
+`sequence` 在单个 Run 内递增；SSE 连接断开不触发 abort。客户端重连时查询 Run 的 live snapshot，Run 进入终态后读取 Transcript。live 只表示当前进程内的 starting/running 视图，主库 Run 状态、Pi terminal entry 和 Transcript 才是持久事实。
+
+`packages/contracts/src/ai.ts` 是 Runtime DTO、Transcript、Run snapshot 和 HarnessEvent 的唯一公共 schema 来源。Admin/Web 不得本地复制事件联合或把 Provider secret、`ownerId`、Pi 类型和 UI reducer 字段加入运行协议。
+
+## 12. 改代码时的顺序
 
 ### 修改跨端协议
 
@@ -546,7 +566,7 @@ apps/api/src/infra/ai/
 
 检查 secret 脱敏、timeout、AbortSignal、模型白名单和审计 begin/finalize。不要把 Provider 类型或原始错误带到 contracts。
 
-## 12. 验收命令
+## 13. 验收命令
 
 AI 系统修改后依次运行：
 
@@ -579,7 +599,7 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。
 - 主库 Run 终态、Pi terminal entry 和恢复逻辑的字段一致。
 
-## 13. 相关规范
+## 14. 相关规范
 
 - `agent-run-guidelines.md`：Run API、并发、SSE、终态和启动恢复。
 - `agent-session-guidelines.md`：Session 归属、双库创建补偿、transcript 投影和 cursor。

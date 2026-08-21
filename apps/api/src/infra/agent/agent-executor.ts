@@ -36,6 +36,10 @@ import type {
 } from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
 
+import type {
+  PrincipalContext,
+  ResourceScope,
+} from "@api/modules/ai/principal.js";
 import type { AiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
 import { createPiNativeStreamFn } from "@api/infra/ai/pi-native-stream.js";
 import type {
@@ -71,6 +75,8 @@ export interface AgentExecutorInput {
   runId: string;
   sessionId: string;
   lane: string;
+  principal?: PrincipalContext;
+  scope?: ResourceScope;
   userId: string;
   requestId: string;
   input: string;
@@ -245,6 +251,20 @@ export class PiAgentExecutor {
         const toolAdapter = createPiToolAdapter(
           selectTools(this.options.tools, config.toolNames),
           {
+            principal: input.principal ?? {
+              kind: "starter_user",
+              principalId: input.userId,
+              tenantId: "starter",
+              projectId: "starter",
+              externalUserId: input.userId,
+              appId: null,
+            },
+            scope: input.scope ?? {
+              tenantId: "starter",
+              projectId: "starter",
+              subjectType: null,
+              subjectId: null,
+            },
             userId: input.userId,
             requestId: input.requestId,
             hasPermission: this.options.hasPermission ?? (async () => false),
@@ -486,6 +506,10 @@ export class PiAgentExecutor {
       timeoutMs: this.options.requestTimeoutMs ?? 60_000,
       runId: input.runId,
       userId: input.userId,
+      scope: input.scope,
+      principalKind: input.principal?.kind,
+      appId: input.principal?.appId,
+      externalUserId: input.principal?.externalUserId,
       requestId: input.requestId,
       sessionId: input.sessionId,
       getProviderRequestEnv: this.options.getProviderRequestEnv,

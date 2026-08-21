@@ -14,6 +14,10 @@ import type { PiModelCallAudit } from "@api/infra/ai/pi-native-stream.js";
 import type { PiToolExecutionAudit } from "@api/infra/agent/pi-tool-adapter.js";
 import { ApiErrorCodes } from "@starter/contracts";
 
+import type {
+  PrincipalContext,
+  ResourceScope,
+} from "@api/modules/ai/principal.js";
 import { generateId } from "@api/shared/id.js";
 
 import {
@@ -57,6 +61,10 @@ const EMPTY_USAGE: AiUsage = {
 export interface AiModelCallAuditContext {
   requestId: string;
   userId: string;
+  scope?: ResourceScope;
+  appId?: string | null;
+  principalKind?: PrincipalContext["kind"];
+  externalUserId?: string | null;
   scenario: "model_test" | "agent_run" | "legacy";
   runId?: string;
   timeoutMs: number;
@@ -91,6 +99,11 @@ export function createAiUsageAuditService(
         id,
         requestId: context.requestId,
         userId: context.userId,
+        appId: context.appId ?? null,
+        tenantId: context.scope?.tenantId ?? "starter",
+        projectId: context.scope?.projectId ?? "starter",
+        externalUserId: context.externalUserId ?? null,
+        principalKind: context.principalKind ?? "starter_user",
         scenario: context.scenario,
         runId: context.runId ?? null,
         providerId: input.model.providerId,
@@ -166,6 +179,11 @@ export function createAiUsageAuditService(
         id,
         requestId: input.requestId,
         userId: input.userId,
+        appId: input.appId ?? null,
+        tenantId: input.scope?.tenantId ?? "starter",
+        projectId: input.scope?.projectId ?? "starter",
+        externalUserId: input.externalUserId ?? null,
+        principalKind: input.principalKind ?? "starter_user",
         scenario: "agent_run",
         runId: input.runId,
         providerId: input.model.providerId,

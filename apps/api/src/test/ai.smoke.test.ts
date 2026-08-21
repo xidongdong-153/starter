@@ -611,12 +611,16 @@ it("配置、模型白名单、用户偏好和 SSE 使用同一套 AI 服务端�
     });
     expect(Object.keys(successfulCall ?? {}).sort()).toEqual(
       [
+        "appId",
         "cost",
         "durationMs",
         "errorCode",
+        "externalUserId",
         "finishedAt",
         "id",
         "modelId",
+        "principalKind",
+        "projectId",
         "providerId",
         "requestId",
         "result",
@@ -624,6 +628,7 @@ it("配置、模型白名单、用户偏好和 SSE 使用同一套 AI 服务端�
         "scenario",
         "startedAt",
         "stopReason",
+        "tenantId",
         "timeoutMs",
         "usage",
         "userId",

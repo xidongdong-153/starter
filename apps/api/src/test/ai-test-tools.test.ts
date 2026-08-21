@@ -1,7 +1,11 @@
 import { expect, it } from "vitest";
 
-import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import {
+  createAiToolRegistry,
+  defineAiTool,
+} from "@api/modules/ai/tool/tool-registry.js";
 import { createTestAiTools } from "@api/modules/ai/tool/test-tools.js";
+import { z } from "zod";
 
 import { createTestApp } from "./helpers.js";
 
@@ -18,6 +22,29 @@ it("测试工具集注册：7 个工具名称与 schema 全部合法", () => {
     "slow_tool",
     "admin_secret",
   ]);
+  expect(registry.list().every((tool) => tool.version === "1.0.0")).toBe(true);
+  expect(registry.list().every((tool) => tool.scope === "platform")).toBe(true);
+});
+
+it("registry 按 name@version 唯一并校验 scope", () => {
+  const base = {
+    name: "lookup",
+    description: "lookup",
+    inputSchema: z.object({}),
+    timeoutMs: 1000,
+    scope: { tenantId: "tenant-a", projectId: "project-a" },
+    requiredPermission: null,
+    async execute() {
+      return { modelText: "ok", safeSummary: null };
+    },
+  } as const;
+  const first = defineAiTool({ ...base, version: "1.0.0" });
+  const second = defineAiTool({ ...base, version: "2.0.0" });
+  expect(createAiToolRegistry([first, second]).list()).toHaveLength(2);
+  expect(() => createAiToolRegistry([first, first])).toThrow("lookup@1.0.0");
+  expect(() => defineAiTool({ ...base, version: "latest" })).toThrow(
+    "版本无效",
+  );
 });
 
 it("env 开关启用时 runtime 注册测试工具，不配置时为空", () => {

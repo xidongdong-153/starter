@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"Run、Session、Pi transcript、终态和恢复事实"}
+{"file":".trellis/spec/api/backend/agent-session-guidelines.md","reason":"双库 Session、lane branch、归属和 transcript 分页规则"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 并发、终态、SSE、恢复和 owner 校验规则"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"AI schema、migration、索引和事务规则"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"scope 与现有资源权限边界"}

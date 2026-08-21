@@ -17,6 +17,11 @@ export interface BeginAiModelCallInput {
   id: string;
   requestId: string;
   userId: string;
+  appId?: string | null;
+  tenantId?: string;
+  projectId?: string;
+  externalUserId?: string | null;
+  principalKind?: string;
   scenario: "model_test" | "agent_run" | "legacy";
   runId: string | null;
   providerId: string;
@@ -147,6 +152,13 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
   function listModelCalls(query: AiModelCallAuditQuery) {
     const conditions = [];
     if (query.userId) conditions.push(eq(aiModelCalls.userId, query.userId));
+    if (query.appId) conditions.push(eq(aiModelCalls.appId, query.appId));
+    if (query.tenantId)
+      conditions.push(eq(aiModelCalls.tenantId, query.tenantId));
+    if (query.projectId)
+      conditions.push(eq(aiModelCalls.projectId, query.projectId));
+    if (query.externalUserId)
+      conditions.push(eq(aiModelCalls.externalUserId, query.externalUserId));
     if (query.providerId)
       conditions.push(eq(aiModelCalls.providerId, query.providerId));
     if (query.modelId) conditions.push(eq(aiModelCalls.modelId, query.modelId));

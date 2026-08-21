@@ -9,6 +9,69 @@ export const aiProviderIdSchema = z
   .max(80)
   .regex(/^[a-z][a-z0-9-]*$/)
 
+export const aiScopeIdSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(120)
+  .regex(/^\w[\w.:-]*$/)
+
+export const aiExternalUserIdSchema = z.string().trim().min(1).max(240)
+export type AiExternalUserId = z.infer<typeof aiExternalUserIdSchema>
+export const aiSubjectTypeSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(80)
+  .regex(/^[a-z][a-z0-9._-]*$/)
+export type AiSubjectType = z.infer<typeof aiSubjectTypeSchema>
+export const aiSubjectIdSchema = z.string().trim().min(1).max(240)
+export type AiSubjectId = z.infer<typeof aiSubjectIdSchema>
+
+export const createAiApplicationSchema = z.strictObject({
+  name: z.string().trim().min(1).max(120),
+  tenantId: aiScopeIdSchema,
+  projectId: aiScopeIdSchema,
+})
+export type CreateAiApplicationInput = z.infer<typeof createAiApplicationSchema>
+
+export const aiApplicationSchema = z.strictObject({
+  appId: uuidSchema,
+  name: z.string().min(1).max(120),
+  tenantId: aiScopeIdSchema,
+  projectId: aiScopeIdSchema,
+  status: z.enum(['active', 'revoked']),
+  secretPrefix: z.string().min(8).max(32),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  lastUsedAt: isoDateTimeSchema.nullable(),
+  revokedAt: isoDateTimeSchema.nullable(),
+})
+export type AiApplication = z.infer<typeof aiApplicationSchema>
+
+export const aiApplicationSecretSchema = z.strictObject({
+  application: aiApplicationSchema,
+  secret: z.string().min(32).max(240),
+})
+export type AiApplicationSecret = z.infer<typeof aiApplicationSecretSchema>
+
+export const aiApplicationParamsSchema = z.strictObject({ appId: uuidSchema })
+
+export const aiRuntimeSubjectHeadersSchema = z
+  .strictObject({
+    externalUserId: aiExternalUserIdSchema,
+    subjectType: aiSubjectTypeSchema.optional(),
+    subjectId: aiSubjectIdSchema.optional(),
+  })
+  .superRefine((value, context) => {
+    if ((value.subjectType === undefined) !== (value.subjectId === undefined)) {
+      context.addIssue({
+        code: 'custom',
+        message: 'subjectType 和 subjectId 必须同时提供',
+      })
+    }
+  })
+
 export const aiModelIdSchema = z.string().trim().min(1).max(240)
 
 export const aiModelRefSchema = z.object({
@@ -250,7 +313,9 @@ export type AiSkill = z.infer<typeof aiSkillSchema>
 
 export const aiToolSummarySchema = z.strictObject({
   name: z.string().trim().min(1).max(64),
+  version: z.string().trim().min(1).max(64),
   description: z.string().min(1).max(1000),
+  scope: z.union([z.literal('platform'), z.strictObject({ tenantId: aiScopeIdSchema, projectId: aiScopeIdSchema })]),
 })
 export type AiToolSummary = z.infer<typeof aiToolSummarySchema>
 
@@ -983,6 +1048,11 @@ export const aiModelCallAuditSchema = z
     id: uuidSchema,
     requestId: z.string().min(1).max(200),
     userId: z.string().min(1).max(200),
+    appId: z.string().nullable(),
+    principalKind: z.enum(['starter_user', 'product_app']),
+    tenantId: z.string().min(1).max(200),
+    projectId: z.string().min(1).max(200),
+    externalUserId: z.string().nullable(),
     scenario: z.enum(['model_test', 'agent_run', 'legacy']),
     runId: uuidSchema.nullable(),
     providerId: aiProviderIdSchema,
@@ -1030,6 +1100,10 @@ export const aiModelCallAuditQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(20),
   userId: z.string().trim().min(1).max(200).optional(),
+  appId: z.string().trim().min(1).max(200).optional(),
+  tenantId: z.string().trim().min(1).max(200).optional(),
+  projectId: z.string().trim().min(1).max(200).optional(),
+  externalUserId: z.string().trim().min(1).max(200).optional(),
   providerId: aiProviderIdSchema.optional(),
   modelId: aiModelIdSchema.optional(),
   result: aiModelCallAuditResultSchema.optional(),

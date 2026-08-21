@@ -24,7 +24,8 @@ import {
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
 
-const tags = ["AI"];
+const controlTags = ["AI Control"];
+const runtimeTags = ["AI Runtime"];
 const security = [{ cookieAuth: [] }];
 const agentParams = z.strictObject({ agentId: uuidSchema });
 const agentQuery = agentDefinitionListQuerySchema;
@@ -32,7 +33,7 @@ const agentQuery = agentDefinitionListQuerySchema;
 export const listPublicAgentDefinitionsRoute = createRoute({
   method: "get",
   path: "/api/ai/agents",
-  tags,
+  tags: runtimeTags,
   security,
   request: { query: agentQuery },
   responses: {
@@ -48,7 +49,7 @@ export const listPublicAgentDefinitionsRoute = createRoute({
 export const getPublicAgentDefinitionRoute = createRoute({
   method: "get",
   path: "/api/ai/agents/{agentId}",
-  tags,
+  tags: runtimeTags,
   security,
   request: { params: agentParams },
   responses: {
@@ -65,7 +66,7 @@ export const getPublicAgentDefinitionRoute = createRoute({
 export const listAdminAgentDefinitionsRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/agents",
-  tags,
+  tags: controlTags,
   security,
   request: { query: agentQuery },
   responses: {
@@ -83,7 +84,7 @@ export const listAdminAgentDefinitionsRoute = createRoute({
 export const listAdminAiToolsRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/tools",
-  tags,
+  tags: controlTags,
   security,
   responses: {
     200: apiSuccessResponse(
@@ -99,7 +100,7 @@ export const listAdminAiToolsRoute = createRoute({
 export const getAdminAgentDefinitionRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/agents/{agentId}",
-  tags,
+  tags: controlTags,
   security,
   request: { params: agentParams },
   responses: {
@@ -118,7 +119,7 @@ export const getAdminAgentDefinitionRoute = createRoute({
 export const createAdminAgentDefinitionRoute = createRoute({
   method: "post",
   path: "/api/ai/admin/agents",
-  tags,
+  tags: controlTags,
   security,
   request: {
     body: {
@@ -143,7 +144,7 @@ export const createAdminAgentDefinitionRoute = createRoute({
 export const updateAdminAgentDefinitionRoute = createRoute({
   method: "patch",
   path: "/api/ai/admin/agents/{agentId}",
-  tags,
+  tags: controlTags,
   security,
   request: {
     params: agentParams,
@@ -170,7 +171,7 @@ export const updateAdminAgentDefinitionRoute = createRoute({
 export const updateAdminAgentDefinitionStatusRoute = createRoute({
   method: "patch",
   path: "/api/ai/admin/agents/{agentId}/status",
-  tags,
+  tags: controlTags,
   security,
   request: {
     params: agentParams,

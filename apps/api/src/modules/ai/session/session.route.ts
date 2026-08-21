@@ -3,6 +3,7 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import { createSuccessResponse } from "@api/shared/response.js";
+import { toRuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import {
   createAgentSessionRoute,
@@ -22,6 +23,8 @@ export function createAiAgentSessionRoute(deps: {
   requireAuth: AiRouteMiddleware;
 }) {
   const { service, requireAuth } = deps;
+  const access = (c: { var: HonoEnv["Variables"] }) =>
+    toRuntimeAccessContext(c.var.principal, c.var.resourceScope);
 
   return new OpenAPIHono<HonoEnv>()
     .openapi(
@@ -31,7 +34,7 @@ export function createAiAgentSessionRoute(deps: {
           createSuccessResponse(
             await service.create(
               c.req.valid("json"),
-              c.var.currentUserId,
+              access(c),
               c.var.requestId,
             ),
             c.var.requestId,
@@ -42,7 +45,7 @@ export function createAiAgentSessionRoute(deps: {
     .openapi({ ...listAgentSessionsRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          service.list(c.var.currentUserId, c.req.valid("query")),
+          service.list(access(c), c.req.valid("query")),
           c.var.requestId,
         ),
         200,
@@ -51,7 +54,7 @@ export function createAiAgentSessionRoute(deps: {
     .openapi({ ...getAgentSessionRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          service.get(c.var.currentUserId, c.req.valid("param").sessionId),
+          service.get(access(c), c.req.valid("param").sessionId),
           c.var.requestId,
         ),
         200,
@@ -63,7 +66,7 @@ export function createAiAgentSessionRoute(deps: {
         c.json(
           createSuccessResponse(
             await service.update(
-              c.var.currentUserId,
+              access(c),
               c.req.valid("param").sessionId,
               c.req.valid("json"),
             ),
@@ -75,7 +78,7 @@ export function createAiAgentSessionRoute(deps: {
     .openapi({ ...deleteAgentSessionRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          service.archive(c.var.currentUserId, c.req.valid("param").sessionId),
+          service.archive(access(c), c.req.valid("param").sessionId),
           c.var.requestId,
         ),
         200,
@@ -87,7 +90,7 @@ export function createAiAgentSessionRoute(deps: {
         c.json(
           createSuccessResponse(
             await service.transcript(
-              c.var.currentUserId,
+              access(c),
               c.req.valid("param").sessionId,
               c.req.valid("query"),
               c.var.requestId,

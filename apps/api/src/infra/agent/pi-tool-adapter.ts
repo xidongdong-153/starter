@@ -14,7 +14,12 @@ import type {
 import { ApiErrorCodes } from "@starter/contracts";
 import { z } from "zod";
 
+import type {
+  PrincipalContext,
+  ResourceScope,
+} from "@api/modules/ai/principal.js";
 import type { RegisteredAiTool } from "@api/modules/ai/tool/tool-registry.js";
+import { isAiToolAvailableInScope } from "@api/modules/ai/tool/tool-registry.js";
 
 export interface PiToolResultDetails {
   status: AgentToolStatus;
@@ -45,6 +50,8 @@ export interface PiToolExecutionAudit {
 }
 
 export interface PiToolAdapterOptions {
+  principal: PrincipalContext;
+  scope: ResourceScope;
   userId: string;
   requestId: string;
   hasPermission: (userId: string, permission: Permission) => Promise<boolean>;
@@ -257,6 +264,20 @@ function createAgentTool(
         );
       }
 
+      if (!isAiToolAvailableInScope(tool, options.scope)) {
+        finalizeAudit("forbidden", ApiErrorCodes.AI_TOOL_FORBIDDEN);
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "forbidden",
+          ApiErrorCodes.AI_TOOL_FORBIDDEN,
+          "The tool is not available in this resource scope.",
+          false,
+          options,
+          signal,
+        );
+      }
+
       if (tool.requiredPermission) {
         let allowed = false;
         try {
@@ -310,6 +331,8 @@ function createAgentTool(
           Promise.resolve().then(() =>
             tool.execute(
               {
+                principal: options.principal,
+                scope: options.scope,
                 userId: options.userId,
                 requestId: options.requestId,
                 signal: toolSignal,

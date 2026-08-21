@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/agent-session-guidelines.md","reason":"检查 Session scope、Pi 双库和 transcript 恢复"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"检查 Run scope、并发、终态和 recovery"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 migration、索引和回滚"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行 API 质量门禁"}

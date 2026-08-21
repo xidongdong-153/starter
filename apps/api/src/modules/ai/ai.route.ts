@@ -14,7 +14,16 @@ import {
   createAiAgentDefinitionRoute,
   createAiAgentDefinitionService,
 } from "./agent/index.js";
+
 import { createPiAgentExecutor } from "@api/infra/agent/index.js";
+import {
+  createAiApplicationRepository,
+  createAiApplicationRouteGroup,
+  createAiApplicationService,
+  createRequireProductApp,
+} from "./application/index.js";
+import { createRequireAiRuntimePrincipal } from "./principal.guard.js";
+
 import {
   createAiAgentRunRepository,
   createAiAgentRunRoute,
@@ -57,6 +66,15 @@ export function createAiRoute(runtime: AppRuntime) {
     runtime.db,
     PermissionKeys.AI_USAGE_READ,
   );
+  const applicationService = createAiApplicationService({
+    repository: createAiApplicationRepository(runtime.db),
+    logger: runtime.logger.child({ module: "ai-application" }),
+  });
+  const requireProductApp = createRequireProductApp(applicationService);
+  const requireRuntimePrincipal = createRequireAiRuntimePrincipal({
+    requireStarterUser: requireAuth,
+    requireProductApp,
+  });
   const usageAuditService = createAiUsageAuditService(
     createAiUsageAuditRepository(runtime.db),
     runtime.logger.child({ module: "ai-usage-audit" }),
@@ -89,8 +107,9 @@ export function createAiRoute(runtime: AppRuntime) {
     skillRepository,
     toolRegistry,
   });
+  const sessionRepository = createAiAgentSessionRepository(runtime.db);
   const sessionService = createAiAgentSessionService({
-    repository: createAiAgentSessionRepository(runtime.db),
+    repository: sessionRepository,
     sessionStore: runtime.agentSessionStore,
     logger: runtime.logger.child({ module: "ai-session" }),
   });
@@ -125,8 +144,8 @@ export function createAiRoute(runtime: AppRuntime) {
       requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
     });
   const runService = createAiAgentRunService({
-    repository: createAiAgentRunRepository(runtime.db),
-    sessionRepository: createAiAgentSessionRepository(runtime.db),
+    repository: createAiAgentRunRepository(runtime.db, sessionRepository),
+    sessionRepository,
     sessionStore: runtime.agentSessionStore,
     agentService: agentDefinitionService,
     registry: runtime.activeRunRegistry,
@@ -147,9 +166,17 @@ export function createAiRoute(runtime: AppRuntime) {
   return new OpenAPIHono<HonoEnv>()
     .route(
       "/",
+      createAiApplicationRouteGroup({
+        service: applicationService,
+        requireAuth,
+        requireManage,
+      }),
+    )
+    .route(
+      "/",
       createAiAgentSessionRoute({
         service: sessionService,
-        requireAuth,
+        requireAuth: requireRuntimePrincipal,
       }),
     )
     .route(
@@ -182,7 +209,7 @@ export function createAiRoute(runtime: AppRuntime) {
       "/",
       createAiAgentRunRoute({
         service: runService,
-        requireAuth,
+        requireAuth: requireRuntimePrincipal,
       }),
     )
     .route(

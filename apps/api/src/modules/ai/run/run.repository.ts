@@ -1,7 +1,9 @@
 import { and, eq, sql } from "drizzle-orm";
 
 import type { AppDatabase } from "@api/infra/db/client.js";
+import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 import { aiAgentRuns, aiAgentSessions } from "@api/modules/ai/ai.schema.js";
+import type { AiAgentSessionRepository } from "../session/session.repository.js";
 
 export type AiAgentRunRecord = typeof aiAgentRuns.$inferSelect;
 
@@ -26,22 +28,20 @@ export interface AiAgentRunTerminalInput {
 
 export interface AiAgentRunRepository {
   create: (input: AiAgentRunCreateInput) => AiAgentRunRecord;
-  findOwned: (
+  findInScope: (
     runId: string,
     sessionId: string,
-    ownerId: string,
+    access: RuntimeAccessContext,
   ) => AiAgentRunRecord | undefined;
   findById: (id: string) => AiAgentRunRecord | undefined;
-  /** starting -> running 条件更新；返回是否更新成功。 */
   markRunning: (id: string, now: Date) => boolean;
-  /** 非终态条件更新到终态；返回是否更新成功。已存在终态时返回 false。 */
   updateTerminal: (input: AiAgentRunTerminalInput) => boolean;
-  /** 非终态 Run 列表，供启动恢复扫描。 */
   listNonTerminal: () => AiAgentRunRecord[];
 }
 
 export function createAiAgentRunRepository(
   db: AppDatabase,
+  sessionRepository?: AiAgentSessionRepository,
 ): AiAgentRunRepository {
   function create(input: AiAgentRunCreateInput): AiAgentRunRecord {
     db.insert(aiAgentRuns)
@@ -60,23 +60,23 @@ export function createAiAgentRunRepository(
     return findById(input.id)!;
   }
 
-  function findOwned(
+  function findInScope(
     runId: string,
     sessionId: string,
-    ownerId: string,
+    access: RuntimeAccessContext,
   ): AiAgentRunRecord | undefined {
+    if (
+      sessionRepository &&
+      !sessionRepository.findInScope(sessionId, access)
+    ) {
+      return undefined;
+    }
     const row = db
       .select({ run: aiAgentRuns })
       .from(aiAgentRuns)
-      .innerJoin(
-        aiAgentSessions,
-        and(
-          eq(aiAgentRuns.sessionId, aiAgentSessions.id),
-          eq(aiAgentRuns.sessionId, sessionId),
-        ),
-      )
+      .innerJoin(aiAgentSessions, eq(aiAgentRuns.sessionId, aiAgentSessions.id))
       .where(
-        and(eq(aiAgentRuns.id, runId), eq(aiAgentSessions.ownerId, ownerId)),
+        and(eq(aiAgentRuns.id, runId), eq(aiAgentRuns.sessionId, sessionId)),
       )
       .get();
     return row?.run;
@@ -124,7 +124,7 @@ export function createAiAgentRunRepository(
 
   return {
     create,
-    findOwned,
+    findInScope,
     findById,
     markRunning,
     updateTerminal,

@@ -410,7 +410,12 @@ it("agent 工具列表只返回名称和描述，不返回 schema 或 handler", 
     const body = await readSuccess<Array<Record<string, unknown>>>(response);
     expect(body.data.some((tool) => tool.name === "read_skill")).toBe(true);
     for (const tool of body.data) {
-      expect(Object.keys(tool).sort()).toEqual(["description", "name"]);
+      expect(Object.keys(tool).sort()).toEqual([
+        "description",
+        "name",
+        "scope",
+        "version",
+      ]);
       expect(tool).not.toHaveProperty("inputSchema");
       expect(tool).not.toHaveProperty("execute");
     }

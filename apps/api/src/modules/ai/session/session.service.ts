@@ -10,6 +10,7 @@ import type {
 import { ApiErrorCodes } from "@starter/contracts";
 
 import type { AgentSessionStore } from "@api/infra/agent/index.js";
+import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 import { AppError } from "@api/shared/app-error.js";
 import { generateId } from "@api/shared/id.js";
 
@@ -24,27 +25,22 @@ export interface SessionConsistencyReport {
 export interface AiAgentSessionService {
   create: (
     input: CreateAgentSessionInput,
-    ownerId: string,
+    access: RuntimeAccessContext,
     requestId?: string,
   ) => Promise<AgentSession>;
   list: (
-    ownerId: string,
+    access: RuntimeAccessContext,
     query: AgentSessionListQuery,
-  ) => {
-    items: AgentSession[];
-    total: number;
-    page: number;
-    pageSize: number;
-  };
-  get: (ownerId: string, sessionId: string) => AgentSession;
+  ) => { items: AgentSession[]; total: number; page: number; pageSize: number };
+  get: (access: RuntimeAccessContext, sessionId: string) => AgentSession;
   update: (
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     input: UpdateAgentSessionInput,
   ) => Promise<AgentSession>;
-  archive: (ownerId: string, sessionId: string) => AgentSession;
+  archive: (access: RuntimeAccessContext, sessionId: string) => AgentSession;
   transcript: (
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     query: AgentTranscriptQuery,
     requestId?: string,
@@ -78,8 +74,11 @@ export function createAiAgentSessionService(input: {
     }
   }
 
-  function requireActiveSession(ownerId: string, sessionId: string) {
-    const record = repository.findOwned(sessionId, ownerId);
+  function requireActiveSession(
+    access: RuntimeAccessContext,
+    sessionId: string,
+  ) {
+    const record = repository.findInScope(sessionId, access);
     if (!record || record.archivedAt !== null) throw notFound();
     return record;
   }
@@ -90,13 +89,12 @@ export function createAiAgentSessionService(input: {
 
   async function create(
     input: CreateAgentSessionInput,
-    ownerId: string,
+    access: RuntimeAccessContext,
     requestId?: string,
   ): Promise<AgentSession> {
     const title = input.title ?? "新会话";
     const defaultAgentId = input.defaultAgentId ?? null;
     await assertDefaultAgent(defaultAgentId);
-
     const id = generateId();
     try {
       await sessionStore.createSession({ id });
@@ -111,11 +109,10 @@ export function createAiAgentSessionService(input: {
         500,
       );
     }
-
     try {
       const record = repository.create({
         id,
-        ownerId,
+        access,
         title,
         defaultAgentId,
         now: new Date(),
@@ -126,11 +123,7 @@ export function createAiAgentSessionService(input: {
         await sessionStore.deleteSession(id);
       } catch (deleteError) {
         logger.error(
-          {
-            err: deleteError,
-            sessionId: id,
-            requestId,
-          },
+          { err: deleteError, sessionId: id, requestId },
           "Agent Session 创建补偿删除失败，存在孤儿 Pi Session",
         );
       }
@@ -146,17 +139,9 @@ export function createAiAgentSessionService(input: {
     }
   }
 
-  function list(
-    ownerId: string,
-    query: AgentSessionListQuery,
-  ): {
-    items: AgentSession[];
-    total: number;
-    page: number;
-    pageSize: number;
-  } {
-    const result = repository.listOwnedActive(
-      ownerId,
+  function list(access: RuntimeAccessContext, query: AgentSessionListQuery) {
+    const result = repository.listActiveInScope(
+      access,
       query.page,
       query.pageSize,
     );
@@ -168,23 +153,21 @@ export function createAiAgentSessionService(input: {
     };
   }
 
-  function get(ownerId: string, sessionId: string): AgentSession {
-    return toAgentSession(requireActiveSession(ownerId, sessionId));
+  function get(access: RuntimeAccessContext, sessionId: string): AgentSession {
+    return toAgentSession(requireActiveSession(access, sessionId));
   }
 
   async function update(
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     input: UpdateAgentSessionInput,
   ): Promise<AgentSession> {
-    // 先确认资源存在且未归档（不存在/他人/已归档统一 404），再校验输入
-    requireActiveSession(ownerId, sessionId);
-    if (input.defaultAgentId !== undefined) {
+    requireActiveSession(access, sessionId);
+    if (input.defaultAgentId !== undefined)
       await assertDefaultAgent(input.defaultAgentId);
-    }
-    const record = repository.updateOwned({
+    const record = repository.updateInScope({
       id: sessionId,
-      ownerId,
+      access,
       ...(input.title !== undefined ? { title: input.title } : {}),
       ...(input.defaultAgentId !== undefined
         ? { defaultAgentId: input.defaultAgentId }
@@ -195,20 +178,22 @@ export function createAiAgentSessionService(input: {
     return toAgentSession(record);
   }
 
-  function archive(ownerId: string, sessionId: string): AgentSession {
-    const result = repository.archiveOwned(sessionId, ownerId, new Date());
+  function archive(
+    access: RuntimeAccessContext,
+    sessionId: string,
+  ): AgentSession {
+    const result = repository.archiveInScope(sessionId, access, new Date());
     if (result.status === "not_found") throw notFound();
     return toAgentSession(result.record);
   }
 
   async function transcript(
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     query: AgentTranscriptQuery,
     requestId?: string,
   ): Promise<AgentTranscript> {
-    requireActiveSession(ownerId, sessionId);
-
+    requireActiveSession(access, sessionId);
     const backward = query.direction === "backward";
     let entries;
     try {
@@ -230,21 +215,15 @@ export function createAiAgentSessionService(input: {
         500,
       );
     }
-
-    // hasMore 只看多读的那一条 raw entry 是否存在，与投影后的 item 数量无关。
     const hasMore = entries.length > query.limit;
     const pageEntries = hasMore ? entries.slice(0, query.limit) : entries;
-    // backward 读到的是从新到旧，投影前先反转成时间正序。
     const visibleEntries = backward ? [...pageEntries].reverse() : pageEntries;
-    const items = projectTranscript(visibleEntries, query.lane, (info) => {
+    const items = projectTranscript(visibleEntries, query.lane, (info) =>
       logger.warn(
         { ...info, sessionId, requestId },
         "Agent transcript 跳过不可投影 entry",
-      );
-    });
-
-    // backward 的 nextCursor 指向本页最早一条 raw entry，用来继续往更早翻；
-    // forward 指向本页最后一条，用来继续往更新翻。
+      ),
+    );
     const cursorEntry = backward
       ? visibleEntries[0]
       : visibleEntries[visibleEntries.length - 1];
@@ -259,29 +238,15 @@ export function createAiAgentSessionService(input: {
     try {
       piIds = await sessionStore.listSessions();
     } catch (cause) {
-      logger.error(
-        { err: cause },
-        "Agent Session 一致性检查读取 Pi metadata 失败",
-      );
-      throw new AppError(
-        ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
-        "Agent Session 读取失败",
-        500,
-      );
+      logger.error({ err: cause }, "Agent Session 一致性检查失败");
+      throw cause;
     }
-    const piIdSet = new Set(piIds);
-    const missingInPi = [...mainIds].filter((id) => !piIdSet.has(id));
-    const missingInMain = piIds.filter((id) => !mainIds.has(id));
-    return { missingInPi, missingInMain };
+    const piSet = new Set(piIds);
+    return {
+      missingInPi: [...mainIds].filter((id) => !piSet.has(id)),
+      missingInMain: piIds.filter((id) => !mainIds.has(id)),
+    };
   }
 
-  return {
-    create,
-    list,
-    get,
-    update,
-    archive,
-    transcript,
-    checkConsistency,
-  };
+  return { create, list, get, update, archive, transcript, checkConsistency };
 }

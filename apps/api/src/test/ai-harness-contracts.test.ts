@@ -230,6 +230,26 @@ describe("agent harness contracts", () => {
         snapshot: { ...SNAPSHOT, agentRevision: 3 },
       }).success,
     ).toBe(false);
+    expect(
+      agentRunSchema.safeParse({
+        ...runs[2],
+        live: {
+          lastSequence: 1,
+          turn: 1,
+          maxTurns: 8,
+          timeline: [],
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      agentRunSchema.safeParse({ ...runs[2], ownerId: "starter-user" }).success,
+    ).toBe(false);
+    expect(
+      agentRunSchema.safeParse({
+        ...runs[2],
+        snapshot: { ...SNAPSHOT, providerApiKey: "secret" },
+      }).success,
+    ).toBe(false);
   });
 
   it("解析四种 transcript item", () => {
@@ -570,6 +590,11 @@ describe("agent harness contracts", () => {
       id: IDS.event,
       requestId: "request-1",
       userId: "user-1",
+      appId: null,
+      principalKind: "starter_user",
+      tenantId: "starter",
+      projectId: "starter",
+      externalUserId: null,
       scenario: "agent_run",
       runId: IDS.run,
       providerId: "openai",

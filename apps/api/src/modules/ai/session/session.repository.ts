@@ -1,6 +1,7 @@
-import { and, desc, eq, isNull, sql } from "drizzle-orm";
+import { and, desc, eq, isNull, sql, type SQL } from "drizzle-orm";
 
 import type { AppDatabase } from "@api/infra/db/client.js";
+import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 import {
   aiAgentDefinitions,
   aiAgentSessions,
@@ -20,34 +21,62 @@ export type AiAgentSessionArchiveResult =
   | { status: "already_archived"; record: AiAgentSessionRecord }
   | { status: "not_found" };
 
+function accessWhere(access: RuntimeAccessContext): SQL {
+  const { principal, scope } = access;
+  if (principal.kind === "starter_user") {
+    return and(
+      eq(aiAgentSessions.principalKind, "starter_user"),
+      eq(aiAgentSessions.ownerId, principal.principalId),
+      eq(aiAgentSessions.tenantId, scope.tenantId),
+      eq(aiAgentSessions.projectId, scope.projectId),
+    )!;
+  }
+  return and(
+    eq(aiAgentSessions.principalKind, "product_app"),
+    eq(aiAgentSessions.appId, principal.appId!),
+    eq(aiAgentSessions.tenantId, scope.tenantId),
+    eq(aiAgentSessions.projectId, scope.projectId),
+    eq(aiAgentSessions.externalUserId, principal.externalUserId!),
+    scope.subjectType === null
+      ? isNull(aiAgentSessions.subjectType)
+      : eq(aiAgentSessions.subjectType, scope.subjectType),
+    scope.subjectId === null
+      ? isNull(aiAgentSessions.subjectId)
+      : eq(aiAgentSessions.subjectId, scope.subjectId),
+  )!;
+}
+
 export interface AiAgentSessionRepository {
   create: (input: {
     id: string;
-    ownerId: string;
+    access: RuntimeAccessContext;
     title: string;
     defaultAgentId: string | null;
     now: Date;
   }) => AiAgentSessionRecord;
-  findOwned: (id: string, ownerId: string) => AiAgentSessionRecord | undefined;
-  listOwnedActive: (
-    ownerId: string,
+  findForRecovery: (id: string) => AiAgentSessionRecord | undefined;
+  findInScope: (
+    id: string,
+    access: RuntimeAccessContext,
+  ) => AiAgentSessionRecord | undefined;
+  listActiveInScope: (
+    access: RuntimeAccessContext,
     page: number,
     pageSize: number,
   ) => AiAgentSessionListResult;
-  updateOwned: (input: {
+  updateInScope: (input: {
     id: string;
-    ownerId: string;
+    access: RuntimeAccessContext;
     title?: string;
     defaultAgentId?: string | null;
     now: Date;
   }) => AiAgentSessionRecord | undefined;
-  archiveOwned: (
+  archiveInScope: (
     id: string,
-    ownerId: string,
+    access: RuntimeAccessContext,
     now: Date,
   ) => AiAgentSessionArchiveResult;
   findDefaultAgentStatus: (id: string) => DefaultAgentStatus;
-  /** 主库全部 Session id（含已归档），供一致性检查与 Pi 侧对比。 */
   listAllIds: () => string[];
 }
 
@@ -56,16 +85,25 @@ export function createAiAgentSessionRepository(
 ): AiAgentSessionRepository {
   function create(input: {
     id: string;
-    ownerId: string;
+    access: RuntimeAccessContext;
     title: string;
     defaultAgentId: string | null;
     now: Date;
   }): AiAgentSessionRecord {
+    const { principal, scope } = input.access;
     return db
       .insert(aiAgentSessions)
       .values({
         id: input.id,
-        ownerId: input.ownerId,
+        ownerId:
+          principal.kind === "starter_user" ? principal.principalId : null,
+        principalKind: principal.kind,
+        tenantId: scope.tenantId,
+        projectId: scope.projectId,
+        externalUserId: principal.externalUserId ?? principal.principalId,
+        appId: principal.appId,
+        subjectType: scope.subjectType,
+        subjectId: scope.subjectId,
         title: input.title,
         defaultAgentId: input.defaultAgentId,
         createdAt: input.now,
@@ -75,28 +113,31 @@ export function createAiAgentSessionRepository(
       .get();
   }
 
-  function findOwned(
+  function findForRecovery(id: string): AiAgentSessionRecord | undefined {
+    return db
+      .select()
+      .from(aiAgentSessions)
+      .where(eq(aiAgentSessions.id, id))
+      .get();
+  }
+
+  function findInScope(
     id: string,
-    ownerId: string,
+    access: RuntimeAccessContext,
   ): AiAgentSessionRecord | undefined {
     return db
       .select()
       .from(aiAgentSessions)
-      .where(
-        and(eq(aiAgentSessions.id, id), eq(aiAgentSessions.ownerId, ownerId)),
-      )
+      .where(and(eq(aiAgentSessions.id, id), accessWhere(access)))
       .get();
   }
 
-  function listOwnedActive(
-    ownerId: string,
+  function listActiveInScope(
+    access: RuntimeAccessContext,
     page: number,
     pageSize: number,
   ): AiAgentSessionListResult {
-    const where = and(
-      eq(aiAgentSessions.ownerId, ownerId),
-      isNull(aiAgentSessions.archivedAt),
-    );
+    const where = and(accessWhere(access), isNull(aiAgentSessions.archivedAt));
     const countRow = db
       .select({ count: sql<number>`count(*)` })
       .from(aiAgentSessions)
@@ -114,9 +155,9 @@ export function createAiAgentSessionRepository(
     return { items, total };
   }
 
-  function updateOwned(input: {
+  function updateInScope(input: {
     id: string;
-    ownerId: string;
+    access: RuntimeAccessContext;
     title?: string;
     defaultAgentId?: string | null;
     now: Date;
@@ -133,7 +174,7 @@ export function createAiAgentSessionRepository(
       .where(
         and(
           eq(aiAgentSessions.id, input.id),
-          eq(aiAgentSessions.ownerId, input.ownerId),
+          accessWhere(input.access),
           isNull(aiAgentSessions.archivedAt),
         ),
       )
@@ -141,9 +182,9 @@ export function createAiAgentSessionRepository(
       .get();
   }
 
-  function archiveOwned(
+  function archiveInScope(
     id: string,
-    ownerId: string,
+    access: RuntimeAccessContext,
     now: Date,
   ): AiAgentSessionArchiveResult {
     const updated = db
@@ -152,14 +193,14 @@ export function createAiAgentSessionRepository(
       .where(
         and(
           eq(aiAgentSessions.id, id),
-          eq(aiAgentSessions.ownerId, ownerId),
+          accessWhere(access),
           isNull(aiAgentSessions.archivedAt),
         ),
       )
       .returning()
       .get();
     if (updated) return { status: "archived", record: updated };
-    const existing = findOwned(id, ownerId);
+    const existing = findInScope(id, access);
     if (!existing) return { status: "not_found" };
     return { status: "already_archived", record: existing };
   }
@@ -184,10 +225,11 @@ export function createAiAgentSessionRepository(
 
   return {
     create,
-    findOwned,
-    listOwnedActive,
-    updateOwned,
-    archiveOwned,
+    findForRecovery,
+    findInScope,
+    listActiveInScope,
+    updateInScope,
+    archiveInScope,
     findDefaultAgentStatus,
     listAllIds,
   };

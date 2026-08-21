@@ -1,0 +1,4 @@
+{"file":".trellis/spec/web/frontend/index.md","reason":"检查 Web 路由、页面和数据请求组织"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"运行 Web 质量检查"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"检查公共协议消费边界"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"检查 Chat 处理 Run 事件、断线和 Transcript 恢复是否符合 API 事实"}

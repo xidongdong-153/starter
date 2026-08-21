@@ -1,0 +1,6 @@
+{"file":"apps/api/src/test/ai-cross-product-runtime.test.ts","reason":"验证非 Admin 产品后端通过 Bearer credential 完成 Session → Run → SSE → terminal → Transcript，并覆盖 chunk、heartbeat、断流恢复、scope 隔离和 revoke"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"核对 HarnessEvent、SSE transport、live snapshot 与 Transcript 恢复约定"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"核对 Run 状态、终态唯一性、断流和恢复行为"}
+{"file":".trellis/spec/api/backend/agent-session-guidelines.md","reason":"核对 Session scope、Pi 双库和 transcript 读取边界"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"核对产品调用、credential、Tool 和敏感信息边界"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行 API 全量质量门禁"}

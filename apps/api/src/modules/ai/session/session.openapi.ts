@@ -19,7 +19,7 @@ import {
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
 
-const tags = ["AI"];
+const tags = ["AI Runtime"];
 const security = [{ cookieAuth: [] }];
 const sessionParams = z.strictObject({ sessionId: uuidSchema });
 

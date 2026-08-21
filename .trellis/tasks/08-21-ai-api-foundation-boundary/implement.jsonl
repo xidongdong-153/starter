@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"AI Run、Session、HarnessEvent、Transcript、恢复和 Admin 同构现状"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"Provider、Tool、凭据、审计和接口安全边界"}
+{"file":".trellis/spec/api/backend/authentication-guidelines.md","reason":"现有身份适配和 Better Auth 绑定点"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"权限与资源访问校验规则"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"公开 contracts 的依赖方向和数据边界"}

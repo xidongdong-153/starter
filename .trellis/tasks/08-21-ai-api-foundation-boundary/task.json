@@ -1,0 +1,32 @@
+{
+  "id": "ai-api-foundation-boundary",
+  "name": "ai-api-foundation-boundary",
+  "title": "整理 AI API 基座控制面与运行面",
+  "description": "定义并实现 AI API 的控制面、Agent Run 运行面、公开 Harness 协议和产品调用边界。Admin 与 Web 子任务依赖本任务的稳定接口。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "api",
+  "priority": "P1",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-08-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-21-ai-api-contract-surface",
+    "08-21-ai-api-principal-scope",
+    "08-21-ai-api-runtime-resource-scope",
+    "08-21-ai-tool-package-contract",
+    "08-21-ai-api-cross-product-verification"
+  ],
+  "parent": "08-21-audit-ai-frontend-decoupling",
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

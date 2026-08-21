@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/authentication-guidelines.md","reason":"Better Auth adapter、session 和身份生命周期规则"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"控制面权限与资源 owner 校验边界"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"新 credential 表、migration 和事务规则"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"Provider credential 与 App credential 的边界"}

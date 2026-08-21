@@ -13,10 +13,12 @@ import {
   defaultAgentDefinitionConfig,
 } from "@starter/contracts";
 
+import type { RuntimeAccessContext } from "../principal.js";
 import type {
   AiToolRegistry,
   RegisteredAiTool,
 } from "../tool/tool-registry.js";
+import { isAiToolAvailableInScope } from "../tool/tool-registry.js";
 import type { AiPromptService } from "../prompt/prompt.service.js";
 import type {
   AiSkillRecord,
@@ -77,8 +79,16 @@ export interface AiAgentDefinitionService {
     input: UpdateAgentDefinitionStatusInput,
     actorId: string,
   ) => Promise<AgentDefinitionDetail>;
-  resolve: (id: string) => Promise<ResolvedAgentDefinition>;
-  listTools: () => Array<{ name: string; description: string }>;
+  resolve: (
+    id: string,
+    access: RuntimeAccessContext,
+  ) => Promise<ResolvedAgentDefinition>;
+  listTools: () => Array<{
+    name: string;
+    version: string;
+    description: string;
+    scope: "platform" | { tenantId: string; projectId: string };
+  }>;
 }
 
 export function createAiAgentDefinitionService(input: {
@@ -247,7 +257,10 @@ export function createAiAgentDefinitionService(input: {
     );
   }
 
-  async function resolve(id: string): Promise<ResolvedAgentDefinition> {
+  async function resolve(
+    id: string,
+    access: RuntimeAccessContext,
+  ): Promise<ResolvedAgentDefinition> {
     const record = requireRecord(id);
     if (record.status !== "enabled") {
       throw new AppError(
@@ -275,7 +288,9 @@ export function createAiAgentDefinitionService(input: {
     });
     const tools = config.toolNames.map((name) => {
       const tool = toolRegistry.find(name);
-      if (!tool) throw invalidConfig();
+      if (!tool || !isAiToolAvailableInScope(tool, access.scope)) {
+        throw invalidConfig("tool");
+      }
       return tool;
     });
 
@@ -335,10 +350,18 @@ export function createAiAgentDefinitionService(input: {
     return record;
   }
 
-  function listTools(): Array<{ name: string; description: string }> {
-    return toolRegistry
-      .list()
-      .map(({ name, description }) => ({ name, description }));
+  function listTools(): Array<{
+    name: string;
+    version: string;
+    description: string;
+    scope: "platform" | { tenantId: string; projectId: string };
+  }> {
+    return toolRegistry.list().map(({ name, version, description, scope }) => ({
+      name,
+      version,
+      description,
+      scope,
+    }));
   }
 
   return {

@@ -1,0 +1,30 @@
+{
+  "id": "audit-ai-frontend-decoupling",
+  "name": "audit-ai-frontend-decoupling",
+  "title": "审查 AI 模块与前端解耦边界",
+  "description": "",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "admin",
+  "priority": "P2",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-08-21",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-21-ai-api-foundation-boundary",
+    "08-21-admin-ai-control-plane-only",
+    "08-21-web-ai-chat-consumer-validation"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

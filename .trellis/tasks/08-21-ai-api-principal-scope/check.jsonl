@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/authentication-guidelines.md","reason":"检查 Better Auth 兼容路径和 product app 认证边界"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"检查 Admin 权限与 app scope 不混用"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 credential migration、hash 和审计事务"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行 API 质量门禁"}

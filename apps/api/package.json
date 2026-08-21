@@ -46,6 +46,7 @@
     "better-auth": "catalog:",
     "better-sqlite3": "catalog:",
     "drizzle-orm": "catalog:",
+    "eventsource-parser": "catalog:",
     "hono": "catalog:",
     "nodemailer": "catalog:",
     "pino": "catalog:",

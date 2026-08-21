@@ -18,7 +18,7 @@ import {
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
 
-const tags = ["AI"];
+const tags = ["AI Control"];
 const security = [{ cookieAuth: [] }];
 
 const systemPromptParams = z.object({ id: uuidSchema });

@@ -13,6 +13,63 @@ import { user } from "@api/modules/auth/auth.schema.js";
 
 const timestamp = (name: string) => integer(name, { mode: "timestamp_ms" });
 
+export const aiAppCredentials = sqliteTable(
+  "ai_app_credentials",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    projectId: text("project_id").notNull(),
+    secretHash: text("secret_hash").notNull(),
+    secretPrefix: text("secret_prefix").notNull(),
+    status: text("status").notNull().default("active"),
+    createdBy: text("created_by")
+      .notNull()
+      .references(() => user.id, {
+        onDelete: "restrict",
+      }),
+    updatedBy: text("updated_by")
+      .notNull()
+      .references(() => user.id, {
+        onDelete: "restrict",
+      }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    lastUsedAt: timestamp("last_used_at"),
+    revokedAt: timestamp("revoked_at"),
+  },
+  (table) => [
+    index("ai_app_credentials_scope_idx").on(
+      table.tenantId,
+      table.projectId,
+      table.status,
+    ),
+    index("ai_app_credentials_prefix_idx").on(table.secretPrefix),
+    check(
+      "ai_app_credentials_status_check",
+      sql`${table.status} IN ('active', 'revoked')`,
+    ),
+  ],
+);
+
+export const aiAppCredentialAuditEvents = sqliteTable(
+  "ai_app_credential_audit_events",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id").notNull(),
+    actorId: text("actor_id").notNull(),
+    action: text("action").notNull(),
+    tenantId: text("tenant_id").notNull(),
+    projectId: text("project_id").notNull(),
+    requestId: text("request_id"),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("ai_app_credential_audit_app_idx").on(table.appId, table.createdAt),
+    index("ai_app_credential_audit_created_idx").on(table.createdAt, table.id),
+  ],
+);
+
 export const aiProviderConfigs = sqliteTable(
   "ai_provider_configs",
   {
@@ -253,9 +310,18 @@ export const aiAgentSessions = sqliteTable(
   "ai_agent_sessions",
   {
     id: text("id").primaryKey(),
-    ownerId: text("owner_id")
-      .notNull()
-      .references(() => user.id, { onDelete: "cascade" }),
+    ownerId: text("owner_id").references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    principalKind: text("principal_kind").notNull().default("starter_user"),
+    tenantId: text("tenant_id").notNull().default("starter"),
+    projectId: text("project_id").notNull().default("starter"),
+    externalUserId: text("external_user_id").notNull().default("starter"),
+    appId: text("app_id").references(() => aiAppCredentials.id, {
+      onDelete: "restrict",
+    }),
+    subjectType: text("subject_type"),
+    subjectId: text("subject_id"),
     title: text("title").notNull(),
     defaultAgentId: text("default_agent_id").references(
       () => aiAgentDefinitions.id,
@@ -272,7 +338,24 @@ export const aiAgentSessions = sqliteTable(
       table.updatedAt,
       table.id,
     ),
+    index("ai_agent_sessions_scope_user_archived_idx").on(
+      table.tenantId,
+      table.projectId,
+      table.externalUserId,
+      table.archivedAt,
+      table.updatedAt,
+      table.id,
+    ),
+    index("ai_agent_sessions_app_idx").on(table.appId),
     index("ai_agent_sessions_default_agent_idx").on(table.defaultAgentId),
+    check(
+      "ai_agent_sessions_principal_check",
+      sql`(${table.principalKind} = 'starter_user' AND ${table.ownerId} IS NOT NULL AND ${table.appId} IS NULL) OR (${table.principalKind} = 'product_app' AND ${table.ownerId} IS NULL AND ${table.appId} IS NOT NULL)`,
+    ),
+    check(
+      "ai_agent_sessions_subject_pair_check",
+      sql`(${table.subjectType} IS NULL AND ${table.subjectId} IS NULL) OR (${table.subjectType} IS NOT NULL AND ${table.subjectId} IS NOT NULL)`,
+    ),
   ],
 );
 
@@ -337,6 +420,11 @@ export const aiModelCalls = sqliteTable(
     id: text("id").primaryKey(),
     requestId: text("request_id").notNull(),
     userId: text("user_id").notNull(),
+    appId: text("app_id"),
+    tenantId: text("tenant_id").notNull().default("starter"),
+    projectId: text("project_id").notNull().default("starter"),
+    externalUserId: text("external_user_id"),
+    principalKind: text("principal_kind").notNull().default("starter_user"),
     scenario: text("scenario").notNull(),
     runId: text("run_id").references(() => aiAgentRuns.id, {
       onDelete: "set null",
@@ -365,7 +453,13 @@ export const aiModelCalls = sqliteTable(
     costCurrency: text("cost_currency"),
   },
   (table) => [
-    index("ai_model_calls_started_idx").on(table.startedAt, table.id),
+    index("ai_model_calls_scope_started_idx").on(
+      table.tenantId,
+      table.projectId,
+      table.externalUserId,
+      table.startedAt,
+      table.id,
+    ),
     index("ai_model_calls_user_started_idx").on(table.userId, table.startedAt),
     index("ai_model_calls_provider_model_started_idx").on(
       table.providerId,
@@ -384,6 +478,10 @@ export const aiModelCalls = sqliteTable(
       table.runId,
       table.startedAt,
       table.id,
+    ),
+    check(
+      "ai_model_calls_principal_kind_check",
+      sql`${table.principalKind} IN ('starter_user', 'product_app')`,
     ),
     check(
       "ai_model_calls_scenario_check",

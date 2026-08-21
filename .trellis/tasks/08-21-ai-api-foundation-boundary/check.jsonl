@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"检查 Run 生命周期、事件协议、恢复和数据流"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"检查 Provider、Tool、secret 和审计边界"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查 API 子任务质量门禁"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"检查 contracts 不依赖数据库和前端内部类型"}

@@ -21,6 +21,20 @@ function createAudit() {
 
 function options(audit: ReturnType<typeof createAudit>, allowed = true) {
   return {
+    principal: {
+      kind: "starter_user" as const,
+      principalId: "user-1",
+      tenantId: "starter",
+      projectId: "starter",
+      externalUserId: "user-1",
+      appId: null,
+    },
+    scope: {
+      tenantId: "starter",
+      projectId: "starter",
+      subjectType: null,
+      subjectId: null,
+    },
     userId: "user-1",
     requestId: "request-1",
     hasPermission: vi.fn(

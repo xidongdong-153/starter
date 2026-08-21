@@ -13,7 +13,7 @@ import {
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
 
-const tags = ["AI"];
+const tags = ["AI Control"];
 const security = [{ cookieAuth: [] }];
 
 export const listAiUsageAuditRoute = createRoute({

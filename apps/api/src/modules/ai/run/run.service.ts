@@ -22,6 +22,7 @@ import {
 import type { ExecutorTerminalResult } from "@api/infra/agent/agent-executor.js";
 import { AppError } from "@api/shared/app-error.js";
 import { generateId } from "@api/shared/id.js";
+import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import type { AiAgentDefinitionService } from "../agent/agent.service.js";
 import type { AiAgentSessionRepository } from "../session/session.repository.js";
@@ -55,21 +56,29 @@ export interface RunRecoveryReport {
 
 export interface AiAgentRunService {
   startRun: (input: {
-    ownerId: string;
+    access: RuntimeAccessContext;
     sessionId: string;
     input: StartAgentRunInput;
     requestId: string;
   }) => Promise<StartRunResult>;
-  get: (ownerId: string, sessionId: string, runId: string) => AgentRun;
-  abort: (ownerId: string, sessionId: string, runId: string) => AgentRun;
+  get: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ) => AgentRun;
+  abort: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ) => AgentRun;
   steer: (
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
     text: string,
   ) => AgentRun;
   followUp: (
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
     text: string,
@@ -119,13 +128,13 @@ export function createAiAgentRunService(input: {
   }
 
   async function startRun(startInput: {
-    ownerId: string;
+    access: RuntimeAccessContext;
     sessionId: string;
     input: StartAgentRunInput;
     requestId: string;
   }): Promise<StartRunResult> {
-    const { ownerId, sessionId, requestId } = startInput;
-    const session = requireActiveSession(ownerId, sessionId);
+    const { access, sessionId, requestId } = startInput;
+    const session = requireActiveSession(access, sessionId);
     const agentId = startInput.input.agentId ?? session.defaultAgentId;
     if (!agentId) {
       throw new AppError(
@@ -135,7 +144,7 @@ export function createAiAgentRunService(input: {
       );
     }
 
-    const resolved = await agentService.resolve(agentId);
+    const resolved = await agentService.resolve(agentId, access);
     const lane = startInput.input.lane ?? "main";
     const runId = generateId();
     const snapshot = buildSnapshot(resolved.id, resolved.revision, resolved);
@@ -216,7 +225,9 @@ export function createAiAgentRunService(input: {
         runId,
         sessionId,
         lane,
-        userId: ownerId,
+        principal: access.principal,
+        scope: access.scope,
+        userId: access.principal.externalUserId ?? access.principal.principalId,
         requestId,
         input: startInput.input.input,
         sequencer,
@@ -291,8 +302,12 @@ export function createAiAgentRunService(input: {
     return { runId, events };
   }
 
-  function get(ownerId: string, sessionId: string, runId: string): AgentRun {
-    const record = requireOwnedRun(ownerId, sessionId, runId);
+  function get(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ): AgentRun {
+    const record = requireScopedRun(access, sessionId, runId);
     return toAgentRun(record, readLiveSnapshot(record));
   }
 
@@ -311,8 +326,12 @@ export function createAiAgentRunService(input: {
     return toAgentRunLiveSnapshot(state);
   }
 
-  function abort(ownerId: string, sessionId: string, runId: string): AgentRun {
-    const run = requireOwnedRun(ownerId, sessionId, runId);
+  function abort(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ): AgentRun {
+    const run = requireScopedRun(access, sessionId, runId);
     const handle = registry.get(runId);
     if (!handle) throw runNotActive();
     handle.abort();
@@ -320,12 +339,12 @@ export function createAiAgentRunService(input: {
   }
 
   function steer(
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
     text: string,
   ): AgentRun {
-    const run = requireOwnedRun(ownerId, sessionId, runId);
+    const run = requireScopedRun(access, sessionId, runId);
     const handle = registry.get(runId);
     if (!handle) throw runNotActive();
     handle.steer(text);
@@ -333,12 +352,12 @@ export function createAiAgentRunService(input: {
   }
 
   function followUp(
-    ownerId: string,
+    access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
     text: string,
   ): AgentRun {
-    const run = requireOwnedRun(ownerId, sessionId, runId);
+    const run = requireScopedRun(access, sessionId, runId);
     const handle = registry.get(runId);
     if (!handle) throw runNotActive();
     handle.followUp(text);
@@ -356,6 +375,34 @@ export function createAiAgentRunService(input: {
     for (const run of runs) {
       const runId = run.id;
       if (registry.getBySessionLane(run.sessionId, run.lane)) continue;
+
+      const session = sessionRepository.findForRecovery(run.sessionId);
+      if (!session) {
+        report.interrupted += 1;
+        markInterrupted(run);
+        continue;
+      }
+      const recoveryAccess: RuntimeAccessContext = {
+        principal: {
+          kind: session.principalKind as RuntimeAccessContext["principal"]["kind"],
+          principalId: session.ownerId ?? session.externalUserId ?? session.id,
+          tenantId: session.tenantId,
+          projectId: session.projectId,
+          externalUserId: session.externalUserId,
+          appId: session.appId,
+        },
+        scope: {
+          tenantId: session.tenantId,
+          projectId: session.projectId,
+          subjectType: session.subjectType,
+          subjectId: session.subjectId,
+        },
+      };
+      if (!sessionRepository.findInScope(session.id, recoveryAccess)) {
+        report.interrupted += 1;
+        markInterrupted(run);
+        continue;
+      }
 
       let entries;
       try {
@@ -570,14 +617,21 @@ export function createAiAgentRunService(input: {
     release(registry, runId, context.lease);
   }
 
-  function requireActiveSession(ownerId: string, sessionId: string) {
-    const record = sessionRepository.findOwned(sessionId, ownerId);
+  function requireActiveSession(
+    access: RuntimeAccessContext,
+    sessionId: string,
+  ) {
+    const record = sessionRepository.findInScope(sessionId, access);
     if (!record || record.archivedAt !== null) throw notFound();
     return record;
   }
 
-  function requireOwnedRun(ownerId: string, sessionId: string, runId: string) {
-    const record = repository.findOwned(runId, sessionId, ownerId);
+  function requireScopedRun(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ) {
+    const record = repository.findInScope(runId, sessionId, access);
     if (!record) throw notFound();
     return record;
   }

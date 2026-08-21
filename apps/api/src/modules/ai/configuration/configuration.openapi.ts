@@ -25,7 +25,9 @@ import {
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
 
-const tags = ["AI"];
+const controlTags = ["AI Control"];
+const compatibilityTags = ["AI Compatibility"];
+const tags = controlTags;
 const security = [{ cookieAuth: [] }];
 const providerResponse = apiSuccessResponse(
   adminAiProviderSchema,
@@ -203,7 +205,7 @@ export const updateAdminAiDefaultRoute = createRoute({
 export const listUserAiModelsRoute = createRoute({
   method: "get",
   path: "/api/ai/models",
-  tags,
+  tags: compatibilityTags,
   security,
   responses: {
     200: apiSuccessResponse(
@@ -218,7 +220,7 @@ export const listUserAiModelsRoute = createRoute({
 export const getAiPreferenceRoute = createRoute({
   method: "get",
   path: "/api/ai/preferences",
-  tags,
+  tags: compatibilityTags,
   security,
   responses: {
     200: apiSuccessResponse(
@@ -233,7 +235,7 @@ export const getAiPreferenceRoute = createRoute({
 export const updateAiPreferenceRoute = createRoute({
   method: "put",
   path: "/api/ai/preferences",
-  tags,
+  tags: compatibilityTags,
   security,
   request: {
     body: {

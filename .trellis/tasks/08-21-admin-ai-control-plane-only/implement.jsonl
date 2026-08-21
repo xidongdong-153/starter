@@ -1,0 +1,4 @@
+{"file":".trellis/spec/admin/frontend/index.md","reason":"Admin 页面、路由、状态和权限规范"}
+{"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"Admin 删除页面后的质量门禁"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"前端消费公共 contracts 的规则"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"确认 Admin 依赖的是公开运行协议，不是 API 内部实现"}

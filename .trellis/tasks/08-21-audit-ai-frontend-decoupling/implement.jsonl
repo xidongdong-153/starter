@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"现有 AI Agent、Session、Run、SSE、Transcript 和 Admin 同构约束的系统事实"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"Provider、Tool Registry、审计、凭据和公开/内部接口边界"}
+{"file":".trellis/spec/api/backend/authentication-guidelines.md","reason":"当前 Better Auth 与请求身份边界，审查 Starter 绑定点"}
+{"file":".trellis/spec/api/backend/authorization-guidelines.md","reason":"当前 Starter 权限键和资源访问校验边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查控制面、运行面、contracts 和前端消费者之间的跨层依赖"}

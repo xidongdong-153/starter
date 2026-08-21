@@ -1,0 +1,4 @@
+{"file":".trellis/spec/web/frontend/index.md","reason":"Web 页面、数据请求和路由规范"}
+{"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web Chat 的类型、Lint、Format 和构建门禁"}
+{"file":".trellis/spec/contracts/frontend/index.md","reason":"Web 使用公开 contracts，不导入 Admin 私有类型"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"Agent Run、HarnessEvent、断线恢复和 Transcript 公开语义"}
