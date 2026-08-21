@@ -2,7 +2,7 @@ import type { ThemeConfig } from 'antd'
 
 import { theme } from 'antd'
 
-import { hexToRgba } from './color.js'
+import { hexToRgba, mixColors } from './color.js'
 
 /**
  * Rose Pine 主题的 Ant Design 配置。
@@ -14,7 +14,6 @@ const LIGHT_SURFACE_ALPHA = {
   elevated: 0.92,
   field: 0.74,
   layout: 0.9,
-  tableContainer: 0.62,
   tableHeader: 0.5,
   table: 0.78,
   tableActive: 0.62,
@@ -26,7 +25,6 @@ const DARK_SURFACE_ALPHA = {
   elevated: 0.94,
   field: 0.8,
   layout: 0.9,
-  tableContainer: 0.56,
   tableHeader: 0.46,
   table: 0.8,
   tableActive: 0.58,
@@ -115,25 +113,28 @@ const DAWN_COMPONENTS = {
     colorBorder: DAWN_BORDER,
     colorPrimaryHover: DAWN_PRIMARY,
   },
+  // 单元格背景必须不透明：fixed 列靠 sticky 浮在其他单元格上方，
+  // 半透明会把横向滚动到下层的内容透出来（开关、文字重叠）。
+  // 这里保留原来的透明度数值，改成与页面底色混合后的实色。
   Table: {
-    colorBgContainer: hexToRgba(DAWN_BASE, LIGHT_SURFACE_ALPHA.tableContainer),
+    colorBgContainer: DAWN_BASE,
     colorBorder: DAWN_BORDER,
     colorBorderSecondary: DAWN_BORDER_SUBTLE,
-    headerBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableHeader),
-    headerSortActiveBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
-    headerSortHoverBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
-    bodySortBg: hexToRgba(DAWN_BASE, LIGHT_SURFACE_ALPHA.table),
-    expandIconBg: hexToRgba(DAWN_BASE, LIGHT_SURFACE_ALPHA.tableChrome),
+    headerBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableHeader),
+    headerSortActiveBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
+    headerSortHoverBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
+    bodySortBg: DAWN_BASE,
+    expandIconBg: DAWN_BASE,
     filterDropdownBg: hexToRgba(DAWN_SURFACE, LIGHT_SURFACE_ALPHA.elevated),
     filterDropdownMenuBg: hexToRgba(DAWN_SURFACE, LIGHT_SURFACE_ALPHA.elevated),
-    fixedHeaderSortActiveBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
-    footerBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.table),
-    headerFilterHoverBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableChrome),
+    fixedHeaderSortActiveBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableActive),
+    footerBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.table),
+    headerFilterHoverBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.tableChrome),
     headerSplitColor: hexToRgba(DAWN_BORDER, LIGHT_SURFACE_ALPHA.tableChrome),
-    rowHoverBg: hexToRgba(DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.field),
-    rowExpandedBg: hexToRgba(DAWN_BASE, LIGHT_SURFACE_ALPHA.table),
-    rowSelectedBg: hexToRgba(DAWN_PRIMARY, 0.1),
-    rowSelectedHoverBg: hexToRgba(DAWN_PRIMARY, 0.14),
+    rowHoverBg: mixColors(DAWN_BASE, DAWN_OVERLAY, LIGHT_SURFACE_ALPHA.field),
+    rowExpandedBg: DAWN_BASE,
+    rowSelectedBg: mixColors(DAWN_BASE, DAWN_PRIMARY, 0.1),
+    rowSelectedHoverBg: mixColors(DAWN_BASE, DAWN_PRIMARY, 0.14),
     stickyScrollBarBg: hexToRgba('#797593', 0.28),
   },
   Tabs: {
@@ -218,25 +219,26 @@ const MOON_COMPONENTS = {
     colorBorder: MOON_BORDER,
     colorPrimaryHover: MOON_PRIMARY,
   },
+  // 同 Dawn：fixed 列需要实色单元格背景，避免透出下层内容。
   Table: {
-    colorBgContainer: hexToRgba(MOON_BASE, DARK_SURFACE_ALPHA.tableContainer),
+    colorBgContainer: MOON_BASE,
     colorBorder: MOON_BORDER,
     colorBorderSecondary: MOON_BORDER_SUBTLE,
-    headerBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.tableHeader),
-    headerSortActiveBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
-    headerSortHoverBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
-    bodySortBg: hexToRgba(MOON_BASE, DARK_SURFACE_ALPHA.table),
-    expandIconBg: hexToRgba(MOON_BASE, DARK_SURFACE_ALPHA.tableChrome),
+    headerBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.tableHeader),
+    headerSortActiveBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
+    headerSortHoverBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
+    bodySortBg: MOON_BASE,
+    expandIconBg: MOON_BASE,
     filterDropdownBg: hexToRgba(MOON_OVERLAY, DARK_SURFACE_ALPHA.elevated),
     filterDropdownMenuBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.elevated),
-    fixedHeaderSortActiveBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
-    footerBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.table),
-    headerFilterHoverBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.tableChrome),
+    fixedHeaderSortActiveBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.tableActive),
+    footerBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.table),
+    headerFilterHoverBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.tableChrome),
     headerSplitColor: hexToRgba(MOON_BORDER_SUBTLE, DARK_SURFACE_ALPHA.tableChrome),
-    rowHoverBg: hexToRgba(MOON_SURFACE, DARK_SURFACE_ALPHA.field),
-    rowExpandedBg: hexToRgba(MOON_BASE, DARK_SURFACE_ALPHA.table),
-    rowSelectedBg: hexToRgba(MOON_PRIMARY, 0.12),
-    rowSelectedHoverBg: hexToRgba(MOON_PRIMARY, 0.16),
+    rowHoverBg: mixColors(MOON_BASE, MOON_SURFACE, DARK_SURFACE_ALPHA.field),
+    rowExpandedBg: MOON_BASE,
+    rowSelectedBg: mixColors(MOON_BASE, MOON_PRIMARY, 0.12),
+    rowSelectedHoverBg: mixColors(MOON_BASE, MOON_PRIMARY, 0.16),
     stickyScrollBarBg: hexToRgba('#6e6a86', 0.32),
   },
   Tabs: {

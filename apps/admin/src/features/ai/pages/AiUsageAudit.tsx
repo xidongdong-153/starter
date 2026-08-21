@@ -118,7 +118,7 @@ export function AiUsageAudit() {
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
       <AdminPageHeader
         title={t('ai.usage.title')}
         description={t('ai.usage.description')}
@@ -167,14 +167,15 @@ export function AiUsageAudit() {
           </Button>
         </Form.Item>
       </Form>
-      <section className="min-w-0">
+      <section className="flex min-h-0 flex-1 flex-col">
         <Table<AiModelCallAudit>
           rowKey="id"
+          className="guide-table-fill min-h-64"
           columns={columns}
           dataSource={callsQuery.data?.items ?? []}
           loading={callsQuery.isLoading}
           locale={{ emptyText: t('ai.usage.empty') }}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: '100%' }}
           onRow={(item) => ({ onClick: () => setSelectedCallId(item.id), className: 'cursor-pointer' })}
           pagination={{
             current: query.page,

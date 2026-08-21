@@ -166,7 +166,7 @@ export function PromptTemplates() {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       <AdminPageHeader
         title={t('menu.aiPromptTemplates')}
         description={t('ai.promptTemplates.pageDescription')}
@@ -176,14 +176,17 @@ export function PromptTemplates() {
           </Button>
         }
       />
-      <Table<PromptTemplate>
-        rowKey="id"
-        columns={columns}
-        dataSource={templates}
-        loading={templatesQuery.isLoading}
-        pagination={false}
-        scroll={{ x: 800 }}
-      />
+      <section className="flex min-h-0 flex-1 flex-col">
+        <Table<PromptTemplate>
+          rowKey="id"
+          className="guide-table-fill min-h-64"
+          columns={columns}
+          dataSource={templates}
+          loading={templatesQuery.isLoading}
+          pagination={false}
+          scroll={{ x: 800, y: '100%' }}
+        />
+      </section>
       <Modal
         title={editing ? t('ai.promptTemplates.edit') : t('ai.promptTemplates.create')}
         open={modalOpen}

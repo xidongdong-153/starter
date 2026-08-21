@@ -145,7 +145,7 @@ export function Skills() {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       <AdminPageHeader
         title={t('menu.aiSkills')}
         description={t('ai.skills.description')}
@@ -155,13 +155,17 @@ export function Skills() {
           </Button>
         }
       />
-      <Table<AiSkillSummary>
-        rowKey="id"
-        columns={columns}
-        dataSource={skills}
-        loading={skillsQuery.isLoading}
-        pagination={false}
-      />
+      <section className="flex min-h-0 flex-1 flex-col">
+        <Table<AiSkillSummary>
+          rowKey="id"
+          className="guide-table-fill min-h-64"
+          columns={columns}
+          dataSource={skills}
+          loading={skillsQuery.isLoading}
+          pagination={false}
+          scroll={{ y: '100%' }}
+        />
+      </section>
       <Modal
         title={editingId ? t('ai.skills.edit') : t('ai.skills.create')}
         open={modalOpen}

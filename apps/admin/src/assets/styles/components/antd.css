@@ -102,10 +102,11 @@
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--color-fg-muted);
-    background: color-mix(in srgb, var(--color-surface-muted) 64%, transparent);
+    background: color-mix(in srgb, var(--color-surface-muted) 64%, var(--color-surface));
   }
 
-  .ant-table-wrapper .ant-table-tbody > tr > td {
+  /* fixed 列是 sticky 单元格，背景必须不透明，否则会透出下层滚动内容 */
+  .ant-table-wrapper .ant-table-tbody > tr > td:not(.ant-table-cell-fix) {
     background: transparent;
   }
 
@@ -115,6 +116,50 @@
 
   .ant-table-wrapper .ant-pagination {
     margin-top: 1.125rem;
+  }
+
+  /*
+   * 让表格填满剩下的页面高度：表头固定，表体自己滚动，分页留在底部。
+   * 用法：外层容器给 flex min-h-0 flex-1 flex-col，Table 加 guide-table-fill 并传 scroll={{ y: '100%' }}。
+   */
+  .guide-table-fill.ant-table-wrapper,
+  .guide-table-fill > .ant-spin,
+  .guide-table-fill > .ant-spin > .ant-spin-container,
+  .guide-table-fill .ant-table,
+  .guide-table-fill .ant-table-container {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
+  }
+
+  .guide-table-fill .ant-table-body {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .guide-table-fill .ant-table-header,
+  .guide-table-fill .ant-pagination {
+    flex: none;
+  }
+
+  /* Tabs 里放 guide-table-fill 表格时，当前面板也要把高度传下去 */
+  .guide-tabs-fill.ant-tabs {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .guide-tabs-fill > .ant-tabs-body-holder {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .guide-tabs-fill .ant-tabs-body,
+  .guide-tabs-fill .ant-tabs-content-active {
+    display: flex;
+    flex: 1 1 auto;
+    flex-direction: column;
+    min-height: 0;
   }
 
   .ant-tag {

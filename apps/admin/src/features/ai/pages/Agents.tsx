@@ -41,6 +41,8 @@ import { Bot, Check, Pencil, Plus, Power, Save } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import { formatDate } from '@admin/utils/dayjs'
+
 interface AgentFormValues {
   name: string
   description: string
@@ -237,16 +239,19 @@ export function Agents() {
       dataIndex: 'updatedAt',
       key: 'updatedAt',
       title: t('ai.agents.columns.updatedAt'),
-      width: 210,
+      width: 190,
+      render: (updatedAt: string) => (
+        <span className="text-fg-muted whitespace-nowrap text-sm">{formatDate(updatedAt)}</span>
+      ),
     },
     {
       key: 'actions',
       title: t('common.actions'),
       fixed: 'right',
-      width: 190,
+      width: 130,
       render: (_, agent) => (
-        <Space size="small">
-          <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+        <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+          <Space size="small">
             <Tooltip title={t('common.edit')}>
               <Button
                 aria-label={t('common.edit')}
@@ -262,14 +267,14 @@ export function Agents() {
                 onClick={() => void changeStatus(agent)}
               />
             </Tooltip>
-          </PermissionGuard>
-        </Space>
+          </Space>
+        </PermissionGuard>
       ),
     },
   ]
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
       <AdminPageHeader
         title={t('ai.agents.title')}
         description={t('ai.agents.description')}
@@ -309,9 +314,10 @@ export function Agents() {
         />
       ) : null}
 
-      <section className="min-w-0">
+      <section className="flex min-h-0 flex-1 flex-col">
         <Table<AgentDefinitionDetail>
           rowKey="id"
+          className="guide-table-fill min-h-64"
           columns={columns}
           dataSource={agentsQuery.data?.items ?? []}
           loading={agentsQuery.isLoading}
@@ -330,7 +336,7 @@ export function Agents() {
               setPage(nextPage)
             },
           }}
-          scroll={{ x: 'max-content' }}
+          scroll={{ x: 'max-content', y: '100%' }}
         />
       </section>
 

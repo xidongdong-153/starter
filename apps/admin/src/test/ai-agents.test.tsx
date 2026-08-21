@@ -181,6 +181,20 @@ describe('agentDefinition 管理页', () => {
     expect(JSON.stringify(input)).not.toContain('hidden from Agent form payload')
   })
 
+  it('更新时间格式化展示，操作按钮成组渲染', () => {
+    const { container } = renderPage()
+
+    expect(screen.queryByText('2026-08-18T00:00:00.000Z')).toBeNull()
+    expect(screen.getByText(/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/)).toBeTruthy()
+
+    const actionSpaces = container.querySelectorAll('.ant-table-tbody .ant-space')
+    expect(actionSpaces).toHaveLength(1)
+    const items = Array.from(actionSpaces[0]?.children ?? []).filter((node) =>
+      node.classList.contains('ant-space-item'),
+    )
+    expect(items).toHaveLength(2)
+  })
+
   it('没有 ai:config:manage 时隐藏创建和编辑/状态操作', () => {
     mocks.useCurrentPermissionsQuery.mockReturnValue({
       data: { permissions: ['ai:config:read'] },

@@ -96,15 +96,19 @@ export function SystemPrompts() {
     {
       title: t('ai.systemPrompts.name'),
       dataIndex: 'name',
+      width: 240,
       render: (name: string, record) => (
-        <Space>
-          <Typography.Text strong>{name}</Typography.Text>
-          {record.id === globalPromptId && (
-            <Tag color="blue" icon={<Globe className="size-3" />}>
+        <div className="flex min-w-0 items-center gap-2">
+          <Typography.Text strong className="truncate">
+            {name}
+          </Typography.Text>
+          {record.id === globalPromptId ? (
+            <Tag color="blue" className="m-0 inline-flex shrink-0 items-center gap-1 text-xs">
+              <Globe className="size-3" />
               {t('ai.systemPrompts.globalDefault')}
             </Tag>
-          )}
-        </Space>
+          ) : null}
+        </div>
       ),
     },
     {
@@ -116,7 +120,7 @@ export function SystemPrompts() {
     {
       title: t('ai.systemPrompts.enabled'),
       dataIndex: 'enabled',
-      width: 80,
+      width: 96,
       render: (enabled: boolean, record) => (
         <Switch
           checked={enabled}
@@ -131,17 +135,28 @@ export function SystemPrompts() {
     {
       title: t('common.actions'),
       key: 'actions',
-      width: 220,
+      fixed: 'right',
+      width: 132,
       render: (_, record) => (
         <Space size="small">
-          {record.id !== globalPromptId && (
-            <Button size="small" icon={<Globe className="size-3.5" />} onClick={() => makeGlobal(record)}>
-              {t('ai.systemPrompts.setGlobal')}
-            </Button>
+          {record.id === globalPromptId ? null : (
+            <Tooltip title={t('ai.systemPrompts.setGlobal')}>
+              <Button
+                size="small"
+                aria-label={t('ai.systemPrompts.setGlobal')}
+                icon={<Globe className="size-3.5" />}
+                onClick={() => makeGlobal(record)}
+              />
+            </Tooltip>
           )}
-          <Button size="small" icon={<Pencil className="size-3.5" />} onClick={() => openEdit(record)}>
-            {t('common.edit')}
-          </Button>
+          <Tooltip title={t('common.edit')}>
+            <Button
+              size="small"
+              aria-label={t('common.edit')}
+              icon={<Pencil className="size-3.5" />}
+              onClick={() => openEdit(record)}
+            />
+          </Tooltip>
           <Popconfirm
             title={t('ai.systemPrompts.deleteConfirm')}
             onConfirm={() => remove(record)}
@@ -163,7 +178,7 @@ export function SystemPrompts() {
   ]
 
   return (
-    <div className="space-y-4">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
       <AdminPageHeader
         title={t('menu.aiSystemPrompts')}
         description={t('ai.systemPrompts.description')}
@@ -173,13 +188,17 @@ export function SystemPrompts() {
           </Button>
         }
       />
-      <Table<SystemPrompt>
-        rowKey="id"
-        columns={columns}
-        dataSource={prompts}
-        loading={promptsQuery.isLoading}
-        pagination={false}
-      />
+      <section className="flex min-h-0 flex-1 flex-col">
+        <Table<SystemPrompt>
+          rowKey="id"
+          className="guide-table-fill min-h-64"
+          columns={columns}
+          dataSource={prompts}
+          loading={promptsQuery.isLoading}
+          pagination={false}
+          scroll={{ x: 900, y: '100%' }}
+        />
+      </section>
       <Modal
         title={editing ? t('ai.systemPrompts.edit') : t('ai.systemPrompts.create')}
         open={modalOpen}

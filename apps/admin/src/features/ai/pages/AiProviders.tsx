@@ -451,7 +451,7 @@ export function AiProviders() {
   })
 
   return (
-    <div className="space-y-6">
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
       <AdminPageHeader
         title={t('ai.providers.title')}
         description={t('ai.providers.description')}
@@ -464,8 +464,9 @@ export function AiProviders() {
         ]}
       />
 
-      <div className="border-border-subtle bg-surface/85 rounded-2xl border p-5 shadow-sm backdrop-blur-xs sm:p-6">
+      <div className="border-border-subtle bg-surface/85 flex min-h-0 flex-1 flex-col rounded-2xl border p-5 shadow-sm backdrop-blur-xs sm:p-6">
         <Tabs
+          className="guide-tabs-fill"
           items={[
             {
               key: 'providers',
@@ -476,7 +477,7 @@ export function AiProviders() {
                 </span>
               ),
               children: (
-                <section className="space-y-4 pt-2">
+                <section className="flex min-h-0 flex-1 flex-col gap-4 pt-2">
                   {/* 筛选过滤工具栏 */}
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div className="flex flex-wrap items-center gap-3">
@@ -526,13 +527,14 @@ export function AiProviders() {
                   ) : null}
 
                   <Table
+                    className="guide-table-fill min-h-64"
                     columns={providerColumns}
                     dataSource={filteredProviders}
                     loading={providersQuery.isLoading}
                     locale={{ emptyText: <Empty description={t('ai.providers.empty')} /> }}
                     pagination={{ pageSize: 20, showSizeChanger: false }}
                     rowKey="providerId"
-                    scroll={{ x: 980 }}
+                    scroll={{ x: 980, y: '100%' }}
                     size="middle"
                   />
                 </section>
@@ -547,7 +549,7 @@ export function AiProviders() {
                 </span>
               ),
               children: (
-                <section className="space-y-6 pt-2">
+                <section className="flex min-h-0 flex-1 flex-col gap-6 pt-2">
                   {modelsError ? (
                     <Alert
                       showIcon
@@ -592,7 +594,7 @@ export function AiProviders() {
                   </div>
 
                   {/* 白名单表格与多维筛选 */}
-                  <div className="space-y-4">
+                  <div className="flex min-h-0 flex-1 flex-col gap-4">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div className="flex flex-wrap items-center gap-3">
                         <Input
@@ -658,6 +660,7 @@ export function AiProviders() {
                     </div>
 
                     <Table
+                      className="guide-table-fill min-h-64"
                       columns={modelColumns}
                       dataSource={filteredModels}
                       loading={modelsQuery.isLoading}
@@ -678,7 +681,7 @@ export function AiProviders() {
                             }
                           : undefined
                       }
-                      scroll={{ x: 980 }}
+                      scroll={{ x: 980, y: '100%' }}
                       size="middle"
                     />
                   </div>

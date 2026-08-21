@@ -75,4 +75,13 @@ describe('管理页面文案和无障碍入口', () => {
 
     expect(screen.getByRole('button', { name: '删除' })).toBeTruthy()
   })
+
+  it('系统提示词表格支持横向滚动，操作列固定在右侧', () => {
+    const { container } = renderPage('system-prompts')
+
+    expect(container.querySelector('.ant-table-scroll-horizontal')).toBeTruthy()
+    expect(container.querySelectorAll('.ant-table-tbody .ant-table-cell-fix-end')).toHaveLength(1)
+    expect(screen.getByRole('button', { name: '设为默认' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: '编辑' })).toBeTruthy()
+  })
 })
