@@ -1,0 +1,4 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"冻结 AI Run、Session、HarnessEvent、Snapshot、Transcript 和恢复事实"}
+{"file":".trellis/spec/api/backend/ai-integration-guidelines.md","reason":"冻结 Provider、Tool、secret、审计和兼容接口边界"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"确认公共 contracts 的依赖边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 API、contracts、Admin 和 Web 的数据流"}
