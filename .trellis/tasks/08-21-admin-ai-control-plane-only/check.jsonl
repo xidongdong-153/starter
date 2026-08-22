@@ -1,3 +1,4 @@
 {"file":".trellis/spec/admin/frontend/index.md","reason":"检查 AI 管理页面、路由、菜单和状态管理边界"}
 {"file":".trellis/spec/admin/frontend/quality-guidelines.md","reason":"运行 Admin 类型、Lint、Format 和测试检查"}
 {"file":".trellis/spec/contracts/frontend/index.md","reason":"检查删除 Harness 页面时公共协议不能被误删"}
+{"file":".trellis/spec/admin/frontend/authorization-guidelines.md","reason":"检查凭据页面权限门禁和 secret 不落缓存"}

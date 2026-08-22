@@ -60,7 +60,7 @@ pnpm --filter @starter/admin test
 - 图标按钮必须有 `aria-label` 或 `Tooltip`；仅有垃圾桶、复制或关闭图标的按钮不能依赖图标猜测用途。
 - 表格行通过 `onClick` 打开详情时，同时提供可聚焦的按钮或键盘操作；只设置 `cursor-pointer` 不算键盘可用。
 - 切换语言时同时更新 `document.documentElement.lang`，并检查页面可见文案和 HTML 语言属性一致。
-- 发送消息的键盘操作和点击按钮必须有相同结果；发送后输入值、字数统计和焦点状态都要重新检查。
+- 一次性 secret 只出现在展示弹窗里：断言列表只有 `secretPrefix`，断言弹窗关闭后 mutation 已 reset，query cache 里搜不到 secret 字符串。
 
 ## 变更后的检查重点
 

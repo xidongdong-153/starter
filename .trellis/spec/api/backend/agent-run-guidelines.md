@@ -92,7 +92,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - transcript 写入侧挂载 runId（message 顶层字段，S5 读取规则兼容）。
 - 活跃快照：Run 执行中 `GET /runs/{runId}` 的 `live` 非空且部分 assistant 文本与已推送 delta 一致；终态后 `live` 为 null；他人 Run 仍 404。用挂住的 streamFn 让 Run 停在生成中间态来断言。
 - 终态原因：撞 `maxTurns` 的 Run 的 `run.completed.data.reason` 为 `max_turns`，正常结束为 `model_finished`。
-- 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读 `test-fixtures/harness-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；Admin 侧读同一份 fixture 比对自己的 reducer。任一边漂移都会红。
+- 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读 `test-fixtures/harness-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；产品前端自己折叠事件时用同一份 fixture 校验。任一边漂移都会红。
 - 测试通过 `createTestApp({}, { agentSessionStore, piAgentExecutor })` 注入 fake executor，控制 streamFn 行为，不依赖真实模型。
 
 ## 7. Wrong vs Correct

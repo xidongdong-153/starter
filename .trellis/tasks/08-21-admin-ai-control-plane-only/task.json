@@ -3,7 +3,7 @@
   "name": "admin-ai-control-plane-only",
   "title": "Admin 仅保留 AI 管理控制面",
   "description": "移除 Admin 中 Agent 聊天和运行消费页面，仅保留 Provider、模型、Prompt、Skill、Agent、Tool 和用量等管理控制面功能。依赖 AI API 基座协议稳定。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "admin",

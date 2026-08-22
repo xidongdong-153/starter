@@ -16,7 +16,7 @@
 ```mermaid
 %%{init: {"theme": "dark"}}%%
 flowchart LR
-  Client["Admin / 用户端"]
+  Client["用户端"]
   Contracts["packages/contracts<br/>Zod schema / DTO / Event"]
   Route["Hono Route<br/>鉴权 / 请求校验 / SSE"]
   Service["AI Service<br/>Agent / Session / Run"]
@@ -24,11 +24,11 @@ flowchart LR
   Provider["pi-ai<br/>模型 / Provider / stream"]
   PiStore[("Pi Session SQLite<br/>transcript / tree / lane / compaction")]
   MainDB[("Starter SQLite<br/>Agent / Session / Run / audit")]
-  Admin["Admin Harness UI"]
+  Product["产品前端 / 产品后端"]
 
-  Client --> Admin
-  Admin --> Contracts
-  Admin --> Route
+  Client --> Product
+  Product --> Contracts
+  Product --> Route
   Contracts --> Route
   Route --> Service
   Service --> Agent
@@ -41,7 +41,7 @@ flowchart LR
   classDef boundary fill:#253b53,stroke:#8fb8d8,color:#fff
   classDef runtime fill:#3d304d,stroke:#c7a8e8,color:#fff
   classDef storage fill:#29463b,stroke:#9bd3ad,color:#fff
-  class Client,Admin,Contracts,Route boundary
+  class Client,Product,Contracts,Route boundary
   class Service,Agent,Provider runtime
   class PiStore,MainDB storage
 ```
@@ -50,7 +50,7 @@ flowchart LR
 
 1. `packages/contracts` 只定义跨端协议，不读取数据库、不导入 Pi 类型。
 2. `apps/api/src/infra/agent/` 才能直接接触 Pi 类型、Pi SQLite backend 和原生模型流。
-3. `apps/admin` 只调用 API 和消费 HarnessEvent，不直接读取 Pi SQLite、Starter SQLite 或进程内 active Run。
+3. 前端只调用 API 和消费 HarnessEvent，不直接读取 Pi SQLite、Starter SQLite 或进程内 active Run。`apps/admin` 只做管理控制面（Provider、模型、Prompt、Skill、Agent、Tool、应用凭据、用量），不提供 Agent 聊天或 Run 消费页面。
 
 ## 3. 模块职责
 
@@ -320,7 +320,7 @@ run.aborted
 
 `GET /api/ai/sessions/{sessionId}/runs/{runId}` 的响应带一个可选 `live` 字段，它是活跃 Run 的进程内运行时视图，不是持久事实：
 
-- 由 Run Service 在事件进入对外队列的同一处累积（`run.service.ts` 的 `publish`），折叠规则与 `apps/admin/src/features/ai/harness/stream-reducer.ts` 同构。
+- 由 Run Service 在事件进入对外队列的同一处累积（`run.service.ts` 的 `publish`），折叠规则以 `run.live-snapshot.ts` 为准；产品前端自己折叠时按同一规则实现。
 - 判据是 Run row 状态，不是 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。
 - Run 进入终态或进程重启后为 `null`，客户端此时回落到 transcript。
 - 内容是一条 `timeline`，元素按 `kind` 分 message、tool 和 compaction；message 元素内含有序 `blocks`（text 与 thinking）。timeline 上限 128 条、单条 message 的 blocks 上限 64，超限丢最旧的，避免长 Run 的内存无界增长。
@@ -491,7 +491,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 
 - 不在业务 Service 里复制 Pi Agent loop、Tool loop、compaction 或 Session reducer。
 - 不在 Route 里遍历 Executor 事件或直接访问 Pi Session。
-- 不在 Admin reducer 里把流式状态当作最终业务状态。
+- 不在产品前端的 reducer 里把流式状态当作最终业务状态。
 - 不在 Starter 主库复制完整 transcript。
 - 不把 HarnessEvent 当作可靠历史日志；持久事实以 Pi transcript、terminal entry 和主库索引为准。
 - 不把 `ai_model_calls` 当作 Run 状态来源；Run 状态以 `ai_agent_runs` 为准，模型调用只是审计记录。
@@ -526,8 +526,8 @@ data: <完整 HarnessEvent JSON>
 packages/contracts/src/ai.ts
   -> apps/api/src/modules/ai/* schema / route / presenter
   -> apps/api/src/modules/ai/* service / repository
-  -> apps/admin/src/api/ai.ts / query
-  -> Admin 页面和测试
+  -> 消费端 API 封装（控制面看 `apps/admin/src/api/ai/`，运行面看产品自己的封装）
+  -> 消费端页面和测试
 ```
 
 先更新 Zod schema、DTO、事件或错误码，再更新生产者和消费者。不要让某一端私自扩展事件字段。
@@ -550,7 +550,7 @@ apps/api/src/infra/agent/agent-executor.ts / pi-event-mapper.ts
   -> apps/api/src/modules/ai/run/run.service.ts
   -> run.route.ts / OpenAPI
   -> packages/contracts/src/ai.ts
-  -> Admin stream reducer / page
+  -> 产品前端的事件归并和页面
 ```
 
 Run Service 仍是 Run row、registry、sequence、terminal entry 和终态事件的唯一所有者。完成后检查 prepare/attach 失败清理、SSE 断开、abort、重复 terminal entry 和启动恢复。
@@ -593,7 +593,7 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 
 - 输入只能经过当前 AgentDefinition、模型状态和权限检查后进入 Pi Agent。
 - 每个公开事件符合 `harnessEventSchema`，sequence 单调递增，terminal event 只发布一次。
-- 流式视图和 transcript 视图同构：同一串事件在 `run.live-snapshot.ts` 和 Admin `stream-reducer.ts` 两边折叠出的 kind 序列、顺序和 blocks 序列必须一致，回归用例读同一份 `test-fixtures/harness-timeline-isomorphism.json`。
+- 流式视图和 transcript 视图同构：`run.live-snapshot.ts` 折叠出的 kind 序列、顺序和 blocks 序列必须与 `test-fixtures/harness-timeline-isomorphism.json` 里的期望快照一致；产品前端自己折叠时用同一份 fixture 校验。
 - Pi DB 有完整 message、Tool result、compaction 和 `starter.run.v1`；Starter 主库只有业务索引和审计元数据。
 - `ai_model_calls` 与 `ai_tool_executions` 不含 prompt、response、arguments、result 和 secret。
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。
