@@ -29,7 +29,7 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).not.toContain('/files')
     expect(keys).not.toContain('/settings/authorization')
     expect(keys).not.toContain('/settings/authorization-audit')
-    expect(keys).toContain('/ai/agent-sessions')
+    expect(keys).toContain('/ai/settings')
     expect(keys).not.toContain('/ai/providers')
     expect(keys).not.toContain('/settings/users')
   })
@@ -56,7 +56,6 @@ describe('buildNavigationMenuItems', () => {
   it('只持有 ai:config:read 时显示 Provider 管理入口', () => {
     const keys = buildKeys([PermissionKeys.AI_CONFIG_READ])
 
-    expect(keys).toContain('/ai/agent-sessions')
     expect(keys).toContain('/ai/settings')
     expect(keys).toContain('/ai/providers')
     expect(keys).toContain('/ai/agents')
@@ -95,7 +94,6 @@ describe('buildNavigationMenuItems', () => {
     )
 
     expect(settingsChildKeys).toContain('/settings/profile')
-    expect(settingsChildKeys).not.toContain('/ai/agent-sessions')
     expect(settingsChildKeys).not.toContain('/ai/settings')
     expect(settingsChildKeys).not.toContain('/ai/providers')
     expect(settingsChildKeys).not.toContain('/settings/authorization')
@@ -103,7 +101,7 @@ describe('buildNavigationMenuItems', () => {
     expect(settingsChildKeys).not.toContain('/settings/users')
   })
 
-  it('无权限时 ai 分组保留会话入口，但不含受保护项', () => {
+  it('无权限时 ai 分组保留模型设置入口，但不含受保护项', () => {
     const items = buildNavigationMenuItems(undefined)
     const aiGroup = items.find((item) => item && String(item.key) === 'ai')
 
@@ -113,7 +111,6 @@ describe('buildNavigationMenuItems', () => {
       aiGroup && 'children' in aiGroup && Array.isArray(aiGroup.children) ? (aiGroup.children as MenuItem[]) : [],
     )
 
-    expect(aiChildKeys).toContain('/ai/agent-sessions')
     expect(aiChildKeys).toContain('/ai/settings')
     expect(aiChildKeys).not.toContain('/ai/providers')
     expect(aiChildKeys).not.toContain('/ai/usage')

@@ -201,9 +201,9 @@ it("sequence 不递增的事件被忽略，timeline 超过上限丢最旧的", (
   expect(agentRunLiveSnapshotSchema.safeParse(snapshot).success).toBe(true);
 });
 
-// 同构回归用例的事件与期望快照放在仓库根的 test-fixtures/：admin 不能 import api 源码、
-// api 也不能把文件放到 rootDir 之外，两侧只能按路径读同一份 JSON。
-// 对应的前端断言在 apps/admin/src/test/harness-timeline.test.ts。
+// 同构回归用例的事件与期望快照放在仓库根的 test-fixtures/：api 不能把文件放到 rootDir 之外，
+// 产品前端也不能 import api 源码，需要两侧断言同一串事件时只能按路径读同一份 JSON。
+// 目前只有本文件在读它，Admin 已退出运行面，不再有前端侧断言。
 const fixturePath = new URL(
   "../../../../test-fixtures/harness-timeline-isomorphism.json",
   import.meta.url,

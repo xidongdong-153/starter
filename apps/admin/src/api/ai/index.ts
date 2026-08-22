@@ -55,28 +55,6 @@ export {
   useUpdateAiProviderConfigMutation,
 } from './ai.query'
 export {
-  abortAgentRun,
-  archiveAgentSession,
-  createAgentSession,
-  getAgentRun,
-  getAgentSession,
-  getAgentSessions,
-  getAgentTranscript,
-  startAgentRun,
-  updateAgentSession,
-} from './harness.api'
-export {
-  harnessQueryKeys,
-  useAbortAgentRunMutation,
-  useAgentRunQuery,
-  useAgentSessionQuery,
-  useAgentSessionsQuery,
-  useAgentTranscriptQuery,
-  useArchiveAgentSessionMutation,
-  useCreateAgentSessionMutation,
-  useUpdateAgentSessionMutation,
-} from './harness.query'
-export {
   createAiSkill,
   createPromptTemplate,
   createSystemPrompt,
