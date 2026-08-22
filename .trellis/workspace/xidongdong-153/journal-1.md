@@ -547,3 +547,54 @@ Web/Admin 各建薄 Hono RPC adapter，26 个普通 JSON operation 迁移到 hc<
 ### Next Steps
 
 - 新会话评审并单独批准 S1 后运行 task.py start 08-18-pi-session-storage-foundation
+
+
+## Session 10: Admin 仅保留 AI 管理控制面
+
+**Date**: 2026-08-21
+**Task**: 08-21-admin-ai-control-plane-only
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+Admin 退出 AI 运行面：删掉 Agent Sessions 聊天页和整套 harness 消费代码；同时补上控制面缺的应用凭据管理页，对接 API 已有的 `/api/ai/admin/applications*`。
+
+### Main Changes
+
+- 删除 11 个文件：`features/ai/pages/AgentSessions.tsx`、`features/ai/harness/{stream-reducer,timeline}.ts`、`features/ai/components/timeline/`（5 个）、`components/{MarkdownRenderer,CodeBlock}.tsx`、`api/ai/{harness.api,harness.query}.ts`，以及 `test/{agent-sessions,harness-stream-reducer,harness-timeline}` 三个测试
+- 新增 `/ai/applications`：`api/ai/application.{api,query}.ts`、`features/ai/pages/AiApplications.tsx`、`test/ai-applications.test.tsx`，路由权限 `AI_CONFIG_MANAGE`
+- 一次性 secret 只放组件 state，弹窗关闭时清 state 并 `reset()` mutation，列表只显示 `secretPrefix`
+- scope 字段用 contracts 的 `aiScopeIdSchema.safeParse` 做 validator，创建后不可改
+- spec 同步 4 份：`api/backend/{ai-system-design,agent-run-guidelines}.md` 把运行面消费者改成产品前端，`admin/frontend/{component,quality}-guidelines.md` 删会话时间线规则、补一次性凭据展示与 Modal onOk 校验写法
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `b54db6e` | refactor(admin)!: drop agent chat and harness consumers |
+| `2009d76` | feat(admin): add ai application credential page |
+| `130157f` | docs(spec): move ai runtime consumer from admin to product |
+
+### Testing
+
+- [OK] `pnpm check-types` 9/9、`pnpm lint` 6/6、`pnpm format:check` 6/6
+- [OK] admin 19 文件 105 用例、api 38 文件 255 用例、`pnpm build` 5/5、`git diff --check` 干净
+- [OK] 两个 code commit 分别单独跑过 admin 类型/Lint/测试，没有不可编译的中间提交
+- [SKIP] 浏览器手工验收：真实接口连通、clipboard 复制和移动端布局只有 jsdom 断言
+
+### Pitfalls
+
+- `Modal onOk` 里调 `form.validateFields()` 必须自己 catch，rejection 会变成 unhandled 直接把整轮 Vitest 弄红
+- mutation 结果留在 MutationCache，光清组件 state 不够，secret 还得靠 `reset()` 清
+- admin 测试的 15s 超时是机器负载（load 10+）导致，`--testTimeout=60000` 单跑全绿；不要并发跑两个 vitest
+- `apps/web/next-env.d.ts` 会被 `check-types` 和 `build` 轮流改写（`.next/dev/types` vs `.next/types`），提交前 checkout 掉
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 父任务剩 `08-21-web-ai-chat-consumer-validation`：Web 自己写事件归并，用 `test-fixtures/harness-timeline-isomorphism.json` 校验，不引 Admin 私有模块
+- `/ai/applications` 找机会做一次真实浏览器验收
