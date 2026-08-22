@@ -30,6 +30,7 @@ export const aiQueryKeys = {
   admin: ['ai', 'admin'] as const,
   adminModels: () => [...aiQueryKeys.admin, 'models'] as const,
   adminProviders: () => [...aiQueryKeys.admin, 'providers'] as const,
+  applications: () => [...aiQueryKeys.admin, 'applications'] as const,
   usageCalls: () => [...aiQueryKeys.admin, 'usage', 'calls'] as const,
   usageCallList: (query: AiModelCallAuditQuery) => [...aiQueryKeys.usageCalls(), query] as const,
   usageCallDetail: (callId: string) => [...aiQueryKeys.admin, 'usage', 'call', callId] as const,

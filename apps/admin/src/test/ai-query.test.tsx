@@ -6,6 +6,7 @@ import {
   useUpdateAiPreferenceMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai/ai.query'
+import { useCreateAiApplicationMutation, useRevokeAiApplicationMutation } from '@admin/api/ai/application.query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -15,6 +16,18 @@ const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoist
   checkAiProvider: vi.fn(),
   updateAiPreference: vi.fn(),
   updateAiProviderConfig: vi.fn(),
+}))
+
+const { createAiApplication, revokeAiApplication } = vi.hoisted(() => ({
+  createAiApplication: vi.fn(),
+  revokeAiApplication: vi.fn(),
+}))
+
+vi.mock('@admin/api/ai/application.api', () => ({
+  createAiApplication,
+  getAiApplications: vi.fn(),
+  revokeAiApplication,
+  rotateAiApplicationSecret: vi.fn(),
 }))
 
 vi.mock('@admin/api/ai/ai.api', () => ({
@@ -55,12 +68,15 @@ beforeEach(() => {
   checkAiProvider.mockReset()
   updateAiPreference.mockReset()
   updateAiProviderConfig.mockReset()
+  createAiApplication.mockReset()
+  revokeAiApplication.mockReset()
 })
 
 describe('ai query 状态', () => {
   it('使用分离的管理员、模型和偏好 query key', () => {
     expect(aiQueryKeys.adminProviders()).toEqual(['ai', 'admin', 'providers'])
     expect(aiQueryKeys.adminModels()).toEqual(['ai', 'admin', 'models'])
+    expect(aiQueryKeys.applications()).toEqual(['ai', 'admin', 'applications'])
     expect(aiQueryKeys.models()).toEqual(['ai', 'models'])
     expect(aiQueryKeys.preference()).toEqual(['ai', 'preference'])
   })
@@ -127,5 +143,40 @@ describe('ai query 状态', () => {
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(2))
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.preference() })
     expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.models() })
+  })
+
+  it('创建应用只失效应用列表，secret 不进 query cache', async () => {
+    createAiApplication.mockResolvedValue({
+      application: { appId: 'app-1', name: 'web-chat' },
+      secret: 'ai_secret_value',
+    })
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCreateAiApplicationMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    const created = await result.current.mutateAsync({ name: 'web-chat', tenantId: 'acme', projectId: 'chat' })
+
+    expect(created.secret).toBe('ai_secret_value')
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.applications() })
+    const cached = queryClient
+      .getQueryCache()
+      .getAll()
+      .map((query) => query.state.data)
+    expect(JSON.stringify(cached)).not.toContain('ai_secret_value')
+  })
+
+  it('撤销应用失败时不失效列表', async () => {
+    revokeAiApplication.mockRejectedValue(new Error('409'))
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useRevokeAiApplicationMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await expect(result.current.mutateAsync('app-1')).rejects.toThrow('409')
+    expect(invalidateQueries).not.toHaveBeenCalled()
   })
 })

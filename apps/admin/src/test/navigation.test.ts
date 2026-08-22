@@ -59,7 +59,16 @@ describe('buildNavigationMenuItems', () => {
     expect(keys).toContain('/ai/settings')
     expect(keys).toContain('/ai/providers')
     expect(keys).toContain('/ai/agents')
+    expect(keys).not.toContain('/ai/applications')
     expect(keys).not.toContain('/settings/authorization')
+  })
+
+  it('只持有 ai:config:manage 时显示应用凭据入口', () => {
+    const keys = buildKeys([PermissionKeys.AI_CONFIG_MANAGE])
+
+    expect(keys).toContain('/ai/applications')
+    expect(keys).not.toContain('/ai/providers')
+    expect(keys).not.toContain('/ai/agents')
   })
 
   it('只持有 file:list 时显示文件分组，不显示授权与用户管理', () => {
@@ -112,6 +121,7 @@ describe('buildNavigationMenuItems', () => {
     )
 
     expect(aiChildKeys).toContain('/ai/settings')
+    expect(aiChildKeys).not.toContain('/ai/applications')
     expect(aiChildKeys).not.toContain('/ai/providers')
     expect(aiChildKeys).not.toContain('/ai/usage')
   })

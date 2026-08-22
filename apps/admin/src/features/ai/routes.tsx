@@ -2,7 +2,7 @@ import type { AdminRouteRecord } from '@admin/app/router/types'
 
 import { PermissionKeys } from '@starter/contracts'
 import { lazyRouteComponent } from '@tanstack/react-router'
-import { BarChart3, Bot, FileText, GraduationCap, ScrollText, SlidersHorizontal } from 'lucide-react'
+import { BarChart3, Bot, FileText, GraduationCap, KeyRound, ScrollText, SlidersHorizontal } from 'lucide-react'
 
 export const aiRoutes: AdminRouteRecord[] = [
   {
@@ -63,6 +63,16 @@ export const aiRoutes: AdminRouteRecord[] = [
     path: '/ai/providers',
     permission: PermissionKeys.AI_CONFIG_READ,
     title: 'menu.aiProviders',
+  },
+  {
+    component: lazyRouteComponent(() => import('./pages/AiApplications'), 'AiApplications'),
+    icon: KeyRound,
+    id: 'ai.applications',
+    layout: { contentWidth: 'full' },
+    menu: { group: 'ai', order: 11 },
+    path: '/ai/applications',
+    permission: PermissionKeys.AI_CONFIG_MANAGE,
+    title: 'menu.aiApplications',
   },
   {
     component: lazyRouteComponent(() => import('./pages/AiUsageAudit'), 'AiUsageAudit'),
