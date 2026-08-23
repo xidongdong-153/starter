@@ -27,8 +27,9 @@ interface LiveMessageEntry {
  * 活跃 Run 的进程内快照状态。
  *
  * 它是流式视图的服务端副本，不是持久事实：Run 进终态后由 Run Service 丢弃，
- * 客户端改从 transcript 读取。折叠规则与 `apps/admin/src/features/ai/harness/stream-reducer.ts`
- * 保持同构，保证刷新页面前后看到的内容一致。
+ * 客户端改从 transcript 读取。产品前端自己折叠事件时按本文件的规则实现，
+ * 两侧用 `test-fixtures/harness-timeline-isomorphism.json` 断言结果同构，
+ * 保证刷新页面前后看到的内容一致。
  */
 export interface RunLiveSnapshotState {
   lastSequence: number;
