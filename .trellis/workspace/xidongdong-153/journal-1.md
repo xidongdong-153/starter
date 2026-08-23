@@ -598,3 +598,56 @@ Admin 退出 AI 运行面：删掉 Agent Sessions 聊天页和整套 harness 消
 
 - 父任务剩 `08-21-web-ai-chat-consumer-validation`：Web 自己写事件归并，用 `test-fixtures/harness-timeline-isomorphism.json` 校验，不引 Admin 私有模块
 - `/ai/applications` 找机会做一次真实浏览器验收
+
+
+## Session 11: Web Chat 作为 AI 产品接入验证
+
+**Date**: 2026-08-22
+**Task**: 08-21-web-ai-chat-consumer-validation
+**Package**: web
+**Branch**: `main`
+
+### Summary
+
+Web 用公开 AI Runtime API 做出最小 Chat：单 Session、单 lane、文本输入输出、流式渲染、断流轮询恢复、停止生成。事件归并 Web 自己写，用共享 fixture 保证和 API 折叠同构。
+
+### Main Changes
+
+- 新增 `app/(site)/chat/page.tsx` 和 `_components/chat/{chat-panel,chat-composer,chat-timeline}.tsx`，导航加 `/chat`
+- 新增 `hooks/use-chat-run.ts`：Session/Run 生命周期、断流轮询、终态读 transcript、停止、错误分支
+- 新增 `lib/ai/chat-events.ts`（归并纯函数）、`lib/ai/harness-stream.ts`（SSE 帧解析）、`lib/ai/chat-run-view.ts`、`lib/api/ai-chat.api.ts`
+- `apps/web` 加最小 vitest（`environment: 'node'`，不装 jsdom），`test/chat-events.test.ts` 12 用例
+- `lib/http.ts` 的 `ApiRequestError` 加可选 `code`，用于按 error code 判断 409 SESSION_BUSY
+- 新增 `.trellis/spec/web/frontend/ai-runtime-consumer.md`，另外 4 份 web spec 补 vitest 命令、`lib/ai`/`test` 目录、zod 与 guard 的分界、Run 状态归属
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `739c7b0` | feat(web): add ai chat consumer page |
+| `84e1e98` | docs(api): point folding rule reference at fixture |
+| `1cd422e` | docs(spec): add web ai runtime consumer guidelines |
+
+### Testing
+
+- [OK] `pnpm check-types` 9/9、`pnpm lint` 6/6、`pnpm format:check` 6/6、`pnpm build` 5/5、`git diff --check` 干净
+- [OK] `pnpm test`：web 12、admin 105、api 255 全通过
+- [OK] 变异测试：逐条改坏 `chat-events.ts` 的折叠规则，8 条变异全部报红
+- [SKIP] 真实 Provider + 真实 Agent 的浏览器验收：流式增量、刷新读历史、停止后状态恢复、未登录入口
+
+### Pitfalls
+
+- `POST /runs` 直接返回 `text/event-stream`，`unwrapApiData` 会把整个流当 JSON 读掉；POST 也用不了 `EventSource`，只能拿 `Response` 自己读 `body`
+- 只写 fixture 那一条同构断言挡不住漂移：fixture 里 `message.completed` 的 content 和 delta 恰好相同、每条 message 只有一个 thinking 块、没有 `tool.progress`，五类规则改坏都测不出来。判断断言强度只能靠逐条改坏实现看是否报红
+- 流提前结束不能报错也不能清空视图，判据是 `AgentRun.status` 而不是 `live` 是否为空
+- 停止按钮要等 `run.started` 带来 runId 才能用，否则 abort 没有目标，服务端 Run 继续跑、下次发送撞 409
+- 轮询别用 `setInterval`：请求慢于间隔时 tick 会重叠，重复读 transcript
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 父任务 `08-21-audit-ai-frontend-decoupling` 三个子任务已全部完成，剩父级集成审查
+- 找机会做一次真实模型的浏览器验收，覆盖上面 SKIP 的四项

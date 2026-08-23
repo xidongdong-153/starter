@@ -65,14 +65,14 @@
 
 ## Acceptance Criteria
 
-- [ ] 能用一句话回答当前是否完全解耦，不能把“没有导入前端源码”误判为“已经是通用独立基建服务”。
-- [ ] 设计明确区分管理控制面、Agent 运行数据面和产品应用层，并列出各自负责与不负责的内容。
-- [ ] 设计明确产品后端使用应用凭据调用平台，浏览器不持有平台凭据；运行上下文包含 tenant、project、user 和可选业务资源引用。
-- [ ] 设计明确 Provider/模型由平台统一管理，Prompt、Skill、Agent Definition 默认按 tenant/project 隔离并可显式共享。
-- [ ] 设计明确 HarnessEvent 是可重放运行协议，不包含 React、React Flow、Admin 页面或节点布局状态。
-- [ ] 设计明确第一阶段只稳定 Agent Run；React Flow、DAG 和工作流编排不在本次范围内。
-- [ ] 设计明确产品 Tool 由可信产品后端注册，平台负责 schema、权限、超时、取消和审计，浏览器不能提交 handler。
-- [ ] 设计列出当前代码可保留的边界、仍绑定 Starter 的部分和后续最小演进顺序。
+- [x] 能用一句话回答当前是否完全解耦，不能把“没有导入前端源码”误判为“已经是通用独立基建服务”。
+- [x] 设计明确区分管理控制面、Agent 运行数据面和产品应用层，并列出各自负责与不负责的内容。
+- [x] 设计明确产品后端使用应用凭据调用平台，浏览器不持有平台凭据；运行上下文包含 tenant、project、user 和可选业务资源引用。
+- [x] 设计明确 Provider/模型由平台统一管理，Prompt、Skill、Agent Definition 默认按 tenant/project 隔离并可显式共享。
+- [x] 设计明确 HarnessEvent 是可重放运行协议，不包含 React、React Flow、Admin 页面或节点布局状态。
+- [x] 设计明确第一阶段只稳定 Agent Run；React Flow、DAG 和工作流编排不在本次范围内。
+- [x] 设计明确产品 Tool 由可信产品后端注册，平台负责 schema、权限、超时、取消和审计，浏览器不能提交 handler。
+- [x] 设计列出当前代码可保留的边界、仍绑定 Starter 的部分和后续最小演进顺序。
 
 ## Out of Scope
 
