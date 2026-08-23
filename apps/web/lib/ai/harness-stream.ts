@@ -1,0 +1,120 @@
+import type { HarnessEvent } from '@starter/contracts'
+import { harnessEventSchema } from '@starter/contracts'
+import { ApiRequestError, isApiFailureBody, readJson } from '@web/lib/http'
+import { apiRpc } from '@web/lib/rpc'
+
+/** SSE 帧之间是一个空行，服务端换行可能是 `\n` 或 `\r\n`。 */
+const FRAME_SEPARATOR = /\r?\n\r?\n/
+const LINE_SEPARATOR = /\r?\n/
+
+export interface StartRunStreamInput {
+  agentId: string
+  /** 用户输入的文本，服务端会去掉首尾空白后校验长度。 */
+  input: string
+  sessionId: string
+  signal: AbortSignal
+}
+
+/**
+ * 启动 Agent Run 并按顺序产出 HarnessEvent。
+ *
+ * 启动失败（连不上、非 2xx、没有响应体）抛 `ApiRequestError`。
+ * 流开始后中途断开不抛错，直接结束迭代：Run 还在服务端跑，调用方要转成轮询
+ * `GET /runs/{runId}`。所以调用方需要自己记录「有没有收到过事件」和「有没有收到终态事件」：
+ * 收到过事件就是断流，一个事件都没收到就是启动失败。
+ * 单帧 JSON 或 schema 解析失败只丢这一帧，不中断整个流。
+ */
+export async function* startRunStream(request: StartRunStreamInput): AsyncGenerator<HarnessEvent> {
+  const response = await openRunStream(request)
+  const body = response.body
+  if (!body) {
+    throw new ApiRequestError(response.status, 'API 没有返回事件流。')
+  }
+
+  const reader = body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  try {
+    while (true) {
+      let chunk: ReadableStreamReadResult<Uint8Array>
+      try {
+        chunk = await reader.read()
+      } catch {
+        // 读流中途断开与服务端提前关闭是同一种情况，交给调用方轮询恢复。
+        return
+      }
+      if (chunk.done) break
+
+      buffer += decoder.decode(chunk.value, { stream: true })
+      const frames = buffer.split(FRAME_SEPARATOR)
+      buffer = frames.pop() ?? ''
+      for (const frame of frames) {
+        const event = parseFrame(frame)
+        if (event) yield event
+      }
+    }
+
+    const event = parseFrame(buffer)
+    if (event) yield event
+  } finally {
+    void reader.cancel().catch(() => undefined)
+  }
+}
+
+/**
+ * 发起启动 Run 的请求。
+ *
+ * 走 `apiRpc` 是为了保留路径和 body 的类型约束；这里不能用 `unwrapApiData`，
+ * 因为响应是 `text/event-stream`，不是 `{ ok, data, meta }` envelope。
+ * `accept` 需要覆盖 `apiRpc` 默认的 `application/json`。
+ */
+async function openRunStream(request: StartRunStreamInput): Promise<Response> {
+  const { agentId, input, sessionId, signal } = request
+  let response: Response
+
+  try {
+    response = await apiRpc.api.ai.sessions[':sessionId'].runs.$post(
+      { param: { sessionId }, json: { agentId, input } },
+      { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
+    )
+  } catch (error) {
+    if (signal.aborted) throw error
+    throw new ApiRequestError(0, 'API 服务连不上，请确认服务已经启动。')
+  }
+
+  if (!response.ok) {
+    const body = await readJson(response)
+    const failure = isApiFailureBody(body) ? body.error : null
+    throw new ApiRequestError(
+      response.status,
+      failure?.message ?? `启动 Agent Run 失败：${response.status}`,
+      failure?.code ?? null,
+    )
+  }
+
+  return response
+}
+
+/**
+ * 解析一个 SSE 帧。
+ * 只取 `data:` 行拼接，忽略 `id:`、`event:` 和以 `:` 开头的心跳注释。
+ */
+function parseFrame(frame: string): HarnessEvent | undefined {
+  const payload = frame
+    .split(LINE_SEPARATOR)
+    .filter((line) => line.startsWith('data:'))
+    .map((line) => line.slice('data:'.length).replace(/^ /, ''))
+    .join('\n')
+  if (payload.length === 0) return undefined
+
+  let json: unknown
+  try {
+    json = JSON.parse(payload)
+  } catch {
+    return undefined
+  }
+
+  const parsed = harnessEventSchema.safeParse(json)
+  return parsed.success ? parsed.data : undefined
+}

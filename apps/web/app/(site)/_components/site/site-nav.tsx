@@ -1,6 +1,6 @@
 'use client'
 
-import { FileText, FolderKanban, Home, Menu, Search, X } from 'lucide-react'
+import { FileText, FolderKanban, Home, Menu, MessagesSquare, Search, X } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
@@ -10,6 +10,7 @@ const navItems = [
   { href: '/writing', icon: FileText, label: '文稿' },
   { href: '/projects', icon: FolderKanban, label: '项目' },
   { href: '/search', icon: Search, label: '搜索' },
+  { href: '/chat', icon: MessagesSquare, label: '对话' },
 ] as const
 
 export function SiteNav() {

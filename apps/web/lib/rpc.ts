@@ -29,8 +29,12 @@ export async function unwrapApiData<TData>(request: Promise<Response>): Promise<
   const body = await readJson(response)
 
   if (!response.ok) {
-    const message = isApiFailureBody(body) ? body.error.message : `请求失败：${response.status}`
-    throw new ApiRequestError(response.status, message)
+    const failure = isApiFailureBody(body) ? body.error : null
+    throw new ApiRequestError(
+      response.status,
+      failure?.message ?? `请求失败：${response.status}`,
+      failure?.code ?? null,
+    )
   }
 
   if (!isApiSuccessBody(body)) {

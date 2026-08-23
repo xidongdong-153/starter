@@ -16,11 +16,14 @@ interface ApiSuccessBody {
 
 export class ApiRequestError extends Error {
   readonly status: number
+  /** API 返回的 error code，用来做分支判断；网络错误和非 envelope 响应没有这个值。 */
+  readonly code: ApiErrorCode | null
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, code: ApiErrorCode | null = null) {
     super(message)
     this.name = 'ApiRequestError'
     this.status = status
+    this.code = code
   }
 }
 
@@ -43,8 +46,12 @@ export async function apiRequest(path: string, init?: RequestInit): Promise<unkn
   const body = await readJson(response)
 
   if (!response.ok) {
-    const message = isApiFailureBody(body) ? body.error.message : `请求失败：${response.status}`
-    throw new ApiRequestError(response.status, message)
+    const failure = isApiFailureBody(body) ? body.error : null
+    throw new ApiRequestError(
+      response.status,
+      failure?.message ?? `请求失败：${response.status}`,
+      failure?.code ?? null,
+    )
   }
 
   if (!isApiSuccessBody(body)) {
