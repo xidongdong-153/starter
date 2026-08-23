@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Drizzle schema、migration 和事务规范"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 后端规范"}
+{"file": ".trellis/tasks/08-23-ai-provider-customization/design.md", "reason": "父任务跨层 contracts 和数据库设计"}
+{"file": ".trellis/tasks/08-23-ai-provider-contracts-storage/design.md", "reason": "子任务 definition 与存储设计"}
