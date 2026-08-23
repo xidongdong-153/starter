@@ -24,7 +24,8 @@ export function ChatPanel() {
   const chat = useChatRun(session?.user.id ?? null)
 
   useEffect(() => {
-    void authClient.getSession()
+    // API 连不上时 getSession 会 reject，这里只是触发一次同步，失败交给 useSession 的状态展示。
+    void authClient.getSession().catch(() => {})
   }, [])
 
   if (isPending) {

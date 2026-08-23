@@ -80,7 +80,7 @@ function TranscriptRow({ item }: { item: AgentTranscriptItem }) {
           {item.status === 'completed' ? null : <span>{assistantStatusLabels[item.status]}</span>}
           {item.errorCode === null ? null : <span>{item.errorCode}</span>}
         </div>
-        <MessageBlocks blocks={blocks} />
+        <MessageBlocks blocks={blocks} pending={false} />
       </div>
     )
   }
@@ -107,15 +107,20 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
         <span>助手</span>
         {item.completed ? null : <span>生成中</span>}
       </div>
-      <MessageBlocks blocks={item.blocks} />
+      <MessageBlocks blocks={item.blocks} pending={!item.completed} />
     </div>
   )
 }
 
-/** text 块按纯文本渲染并保留换行，thinking 块默认折叠。 */
-function MessageBlocks({ blocks }: { blocks: AgentMessageBlock[] }) {
+/**
+ * text 块按纯文本渲染并保留换行，thinking 块默认折叠。
+ *
+ * `pending` 区分两种空块：还在生成时是等待，已结束时是这次确实没有文本。
+ * transcript 里失败的 Run 会留下 `blocks: []` 的 assistant 消息，不能再显示成等待中。
+ */
+function MessageBlocks({ blocks, pending }: { blocks: AgentMessageBlock[]; pending: boolean }) {
   if (blocks.length === 0) {
-    return <p className="mt-2 text-muted-foreground">等待模型输出…</p>
+    return <p className="mt-2 text-muted-foreground">{pending ? '等待模型输出…' : '这次没有产生文本内容。'}</p>
   }
 
   return (
