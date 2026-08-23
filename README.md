@@ -10,6 +10,7 @@
 - `packages/contracts`：API 与前端共用的 Zod schema 和 TypeScript 类型。
 - `packages/theme`：Web 与 Admin 共用的 Rose Pine 主题变量和样式入口。
 - `packages/eslint-config`：ESLint 和 Prettier 配置。
+- `docs/ai`：AI 模块的设计、维护和第三方接入文档。
 
 ## 环境要求
 
