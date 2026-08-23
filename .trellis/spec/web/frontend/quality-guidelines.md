@@ -8,8 +8,11 @@
 pnpm --filter @starter/web check-types
 pnpm --filter @starter/web lint
 pnpm --filter @starter/web format:check
+pnpm --filter @starter/web test
 pnpm --filter @starter/web build
 ```
+
+测试用 vitest，配置在 `apps/web/vitest.config.ts`，`environment: 'node'`，测试文件放 `apps/web/test/`。只测不依赖 React 和 DOM 的纯逻辑（当前是 `lib/ai/` 的事件归并和 SSE 帧解析），不装 jsdom 和 testing-library，不测页面渲染。`apps/web/tsconfig.json` 的 `include` 是 `**/*.ts`，新增测试文件和根级配置自动被类型检查覆盖。
 
 ## 页面状态
 

@@ -2,3 +2,5 @@
 {"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"运行 Web 质量检查"}
 {"file":".trellis/spec/contracts/frontend/index.md","reason":"检查公共协议消费边界"}
 {"file":".trellis/spec/api/backend/ai-system-design.md","reason":"检查 Chat 处理 Run 事件、断线和 Transcript 恢复是否符合 API 事实"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "检查页面状态、可访问性和组件边界"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "检查断流恢复与终态处理是否符合 API 语义"}

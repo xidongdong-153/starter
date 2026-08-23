@@ -4,7 +4,7 @@
 
 `apps/web/app/` 按访问场景分组：
 
-- `(site)/`：公开站点布局和页面，包括首页、文稿、项目、搜索、公开资料。
+- `(site)/`：公开站点布局和页面，包括首页、文稿、项目、搜索、对话、公开资料。
 - `(auth)/`：登录和注册页面。
 - `layout.tsx`：全局字体、metadata、viewport、主题初始化和 body。
 - `loading.tsx`、`error.tsx`、`not-found.tsx`：全局加载、错误和 404 状态。
@@ -21,12 +21,16 @@ apps/web/
 ├── app/(site)/
 ├── components/
 ├── hooks/
+├── test/
 └── lib/
+    ├── ai/
     ├── api/
     ├── auth-client.ts
     ├── env.client.ts
     └── http.ts
 ```
+
+`lib/ai/` 只放与后端协议相关的纯逻辑（事件归并、SSE 帧解析），不 import React、不碰 DOM，方便在 node 环境下直接测。浏览器编排逻辑（请求时序、AbortController、轮询）放 `hooks/`，测试放 `test/`。
 
 ## 路径与环境
 

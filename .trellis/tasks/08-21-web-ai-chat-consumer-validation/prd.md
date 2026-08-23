@@ -18,15 +18,19 @@
 - 处理流中断、Run 轮询或 Transcript 恢复，不能把断流直接当成 Run 失败。
 - 使用现有 Web 登录和 API 访问方式；未登录时显示明确的登录入口或错误状态。
 - 不实现 React Flow、DAG、工作流编辑器、通用 Chat SDK 或产品业务 Tool。
+- 提供停止生成按钮，调 `POST /runs/{runId}/abort`；不做 steer、follow-up、Session 列表切换和 transcript 翻页。
+- 给 `apps/web` 加最小测试底座（只装 `vitest`，`environment: 'node'`），用 `test-fixtures/harness-timeline-isomorphism.json` 验证 Web 归并结果与 API 折叠结果同构；不测页面渲染。
 
 ## Acceptance Criteria
 
-- [ ] Web 有独立 Chat 页面，页面入口和空状态可用。
-- [ ] 登录用户可以提交消息并看到 Agent Run 的流式 assistant 输出和终态。
-- [ ] API 流断开后页面可以查询 Run 状态或 Transcript，不能丢失已产生的结果。
-- [ ] Web 没有导入 `apps/admin` 的源码、组件、API 函数或 Harness reducer。
-- [ ] 页面使用公开 contracts/API 协议，不依赖 Admin 的时间线结构。
-- [ ] Web 类型检查、Lint、Format 和构建通过。
+- [x] Web 有独立 Chat 页面，页面入口和空状态可用。
+- [ ] 登录用户可以提交消息并看到 Agent Run 的流式 assistant 输出和终态。（代码路径与单元测试已验证，等真实模型手工验收）
+- [ ] API 流断开后页面可以查询 Run 状态或 Transcript，不能丢失已产生的结果。（分支已实现并经代码复核，等真实断流手工验收）
+- [x] Web 没有导入 `apps/admin` 的源码、组件、API 函数或 Harness reducer。
+- [x] Web 自己的归并结果和 `test-fixtures/harness-timeline-isomorphism.json` 里的 API 折叠快照同构，`pnpm --filter @starter/web test` 通过。
+- [ ] 运行中可以点停止生成，Run 进入 aborted 后页面状态和输入框恢复可用。（等真实模型手工验收）
+- [x] 页面使用公开 contracts/API 协议，不依赖 Admin 的时间线结构。
+- [x] Web 类型检查、Lint、Format 和构建通过。
 
 ## Evidence
 
@@ -36,3 +40,17 @@
 - `apps/web/lib/http.ts`
 - `apps/web/lib/auth-client.ts`
 - `apps/web/package.json`
+
+## 验证记录
+
+```
+pnpm --filter @starter/web check-types   通过
+pnpm --filter @starter/web lint          通过
+pnpm --filter @starter/web format:check  通过
+pnpm --filter @starter/web test          2 文件 / 12 用例通过
+pnpm --filter @starter/web build         通过，/chat 静态产出
+```
+
+同构断言强度用变异测试确认：逐条改坏 `apps/web/lib/ai/chat-events.ts` 的折叠规则，8 条变异全部报红。
+
+未验证：没有跑真实 Provider 和真实 Agent 的浏览器验收，所以流式增量渲染、刷新读 transcript、停止生成后的状态恢复、未登录入口这四项只有代码层面和单元测试层面的保证。

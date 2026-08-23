@@ -2,3 +2,8 @@
 {"file":".trellis/spec/web/frontend/quality-guidelines.md","reason":"Web Chat 的类型、Lint、Format 和构建门禁"}
 {"file":".trellis/spec/contracts/frontend/index.md","reason":"Web 使用公开 contracts，不导入 Admin 私有类型"}
 {"file":".trellis/spec/api/backend/ai-system-design.md","reason":"Agent Run、HarnessEvent、断线恢复和 Transcript 公开语义"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Server/Client Component 边界、可访问性和内容约束"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "Chat 状态归属：局部 state、session 由 Better Auth client 管"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "contracts DTO 运行时校验和错误分支判据"}
+{"file": ".trellis/spec/web/frontend/hook-guidelines.md", "reason": "异步 effect、AbortController 和清理函数"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 并发、SSE 断开、终态和 live 快照语义"}
