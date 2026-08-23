@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/admin/frontend/index.md", "reason": "Admin 页面、query、权限和测试规范"}
+{"file": ".trellis/spec/admin/frontend/authorization-guidelines.md", "reason": "AI Provider 页面权限和动作控制"}
+{"file": ".trellis/tasks/08-23-ai-provider-customization/design.md", "reason": "跨层 DTO、API 和 Admin 设计"}
+{"file": ".trellis/tasks/08-23-ai-provider-admin-ui/design.md", "reason": "Admin 表单、状态和交互设计"}
