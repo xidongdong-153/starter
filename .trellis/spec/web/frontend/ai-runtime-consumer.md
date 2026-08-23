@@ -152,6 +152,16 @@ if (received > 0 && runId) {
 throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 ```
 
+## 9. 共享包在 dev 下的解析
+
+`@starter/contracts` 和 `@starter/theme` 的 exports 把 `development` 条件指向 `src/index.ts`，源码内部按 NodeNext 写成 `export * from './ai.js'`。Turbopack 不把 `.js` 映射到同名 `.ts`（Next 16.2.4 没有 webpack 的 `resolve.extensionAlias`），解析结果是一个没有任何导出的模块，dev 下整站都会被 Build Error 遮住。
+
+所以 `apps/web/next.config.ts` 用 `turbopack.resolveAlias` 把这两个包指向各自的 `dist/index.js`。改完共享包要先 `pnpm --filter @starter/contracts build`，web 的 dev 才能看到。
+
+不要试图去掉源码里的 `.js` 扩展：`apps/api` 的 tsc 直接按 NodeNext 编译 contracts 源码（`tsc --traceResolution` 能看到它解析到 `packages/contracts/src/index.ts`），NodeNext 要求显式扩展名，去掉会让 `pnpm --filter @starter/api check-types` 报一百多个 TS2305。
+
+> **Warning**: 这类问题五条常规命令都抓不到。`pnpm build` 走 production 条件读 `dist`，`tsc` 和 vitest 会做 `.js` 到 `.ts` 的扩展名替换，只有 `pnpm dev` 会炸。web 第一次从共享包做值导入（而不是 `import type`）时必须起一次 dev 页面验证。
+
 ## 9. 边界
 
 - 首个版本只做单 Session、单 lane、文本输入输出。steer、follow-up、Session 列表切换、transcript 翻页都不在范围内。
