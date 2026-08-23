@@ -437,17 +437,34 @@ flowchart TD
 
 ## 8. 权限和 secret 边界
 
+### 运行面身份
+
+运行面有两种 Principal，`principal.guard.ts` 按有没有 `Authorization: Bearer` 头分叉，结果统一成 `RuntimeAccessContext`（`principal` + `scope`）：
+
+| Principal | 来源 | tenantId / projectId | externalUserId | subject |
+| --- | --- | --- | --- | --- |
+| `starter_user` | Better Auth Cookie（`auth.guard.ts`） | 都是 `starter` | Starter 用户 id | 都是 `null` |
+| `product_app` | 应用凭据 `Authorization: Bearer <secret>` | 来自 `ai_app_credentials` | `X-AI-External-User-Id` | `X-AI-Subject-Type` / `X-AI-Subject-Id`，要么都给要么都不给 |
+
+`session.repository.ts` 的 `accessWhere` 是可见范围的唯一判据：Starter 用户按 `principalKind + ownerId + tenantId + projectId`；应用凭据按 `principalKind + appId + tenantId + projectId + externalUserId + subjectType + subjectId` 全等匹配。Run 查询挂在 Session 上，跟同一套条件。新增运行面查询必须走 `accessWhere`，不要自己拼 owner 条件。
+
+应用凭据只存 sha256 哈希和前 12 位前缀（`application.crypto.ts`），认证时按前缀取候选再做 `timingSafeEqual`。`AI_CONFIG_MANAGE` 权限的管理员负责创建、rotate 和 revoke。
+
+Tool 的权限检查现在没有 principalKind 判据：`run.service.ts` 把 `principal.externalUserId ?? principalId` 当 `userId` 传给 executor，`pi-tool-adapter.ts` 拿它直接调 `hasPermission`，而 `hasPermission` 只按 `user_roles.userId` 查表。第三方只要把 `X-AI-External-User-Id` 填成某个 Starter 用户 id，带 `requiredPermission` 的工具就会通过检查。当前内置工具的 `requiredPermission` 全是 `null`，没有可利用面；新增带权限的工具前必须先补上 principalKind 判据。
+
+`GET /api/ai/agents` 和 `GET /api/ai/agents/{agentId}` 当前用的是 `requireAuth`，应用凭据调不通；运行面 OpenAPI 的 `security` 也只声明了 `cookieAuth`。改这两处前先确认调用方是否依赖现状。
+
 ### 用户侧
 
 普通已登录用户可以：
 
 - 读取自己未归档的 Session。
 - 创建、更新、归档自己的 Session。
-- 读取自己 Session 的 transcript。
+- 读取自己 Session 的 transcript。归档后 transcript 也读不到，`requireActiveSession` 直接拒。
 - 使用已启用且当前可解析的 Agent 启动 Run。
 - 对自己仍 active 的 Run 执行 abort、steer、follow-up。
 
-所有 Session 和 Run 查询都带 owner 条件；资源不存在、归属他人和已归档统一返回 `COMMON.NOT_FOUND`，不暴露资源是否存在。
+所有 Session 和 Run 查询都带 scope 条件；资源不存在、归属他人和已归档统一返回 `COMMON.NOT_FOUND`，不暴露资源是否存在。
 
 ### 管理侧
 
@@ -480,7 +497,8 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 | Provider 失败或超时 | Run failed | Pi assistant 终态、模型 audit、Run terminal entry | 按 retryable 字段决定是否重试 |
 | Tool 参数、权限或执行失败（含工具超时） | 继续 Agent loop | Tool audit + safe tool result | Agent 根据安全结果决定下一轮 |
 | 撞到 `maxTurns` 且当轮还在调工具 | 追加一轮无工具收尾，Run completed | 多一条 `ai_model_calls` | 终态事件 `reason=max_turns` |
-| Run abort 或 Run 总时长耗尽 | Run aborted/failed | Tool audit + Run terminal entry | 用户显式发起新的 Run |
+| Run abort | Run aborted | Tool audit + Run terminal entry | 用户显式发起新的 Run |
+| Run 总时长耗尽 | Run failed + `AI.UPSTREAM_TIMEOUT` | 主库 Run 终态 + Pi terminal entry | 上限是 Executor 的 `maxRunMs`，默认 120000 ms，`ai.route.ts` 当前不传也不读环境变量；工具超时取 `min(工具 timeoutMs, Run 剩余时长)` |
 | SSE 连接断开 | Run 不变，继续执行 | Pi transcript + 主库终态 | 客户端重新读取 Run/transcript |
 | 进程在终态前退出 | Run 暂存非终态 | Pi terminal entry 或无 entry | API 启动时 recovery scan |
 | 主库终态更新失败 | 不发布 terminal event | Pi terminal entry + 日志 | 下一次启动恢复 |
@@ -496,7 +514,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - 不把 HarnessEvent 当作可靠历史日志；持久事实以 Pi transcript、terminal entry 和主库索引为准。
 - 不把 `ai_model_calls` 当作 Run 状态来源；Run 状态以 `ai_agent_runs` 为准，模型调用只是审计记录。
 - 不使用 fallback、localStorage 或前端缓存恢复业务状态。
-- 不提前加入租户、分布式队列、跨节点 active registry 或 Web 聊天产品层。
+- 不提前加入分布式队列、跨节点 active registry 或 Web 聊天产品层。当前 active registry 是单进程的，`tenantId` / `projectId` 只是 scope 查询维度，不要在此之上再造一层租户模型。
 
 ## 11. OpenAPI 面分类
 
@@ -600,6 +618,8 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 - 主库 Run 终态、Pi terminal entry 和恢复逻辑的字段一致。
 
 ## 14. 相关规范
+
+人读的系统介绍、维护手册和第三方接入协议在 `docs/ai/`（`index.md`、`design.md`、`maintenance.md`、`integration.md`）；本文件只管实现约束，改协议或接口时两边一起更新。
 
 - `agent-run-guidelines.md`：Run API、并发、SSE、终态和启动恢复。
 - `agent-session-guidelines.md`：Session 归属、双库创建补偿、transcript 投影和 cursor。

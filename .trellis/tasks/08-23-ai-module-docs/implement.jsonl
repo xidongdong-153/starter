@@ -1,0 +1,7 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "docs/ai/design.md 的事实基线，深层细节在文档里只能引用不能复制"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run API、并发、SSE、终态和启动恢复的约束原文"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "Session 归属、双库补偿、transcript 投影与 cursor 语义"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi Agent 执行、Tool adapter、compaction 与执行审计"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "Provider、模型目录、凭据、Gateway 与用量审计"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "已验证的运行面消费方式，integration.md 的 SSE 与折叠规则以它为参照"}
