@@ -25,13 +25,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 管理员可以创建三类协议的 custom Provider。
-- [ ] 管理员可以编辑基础配置、compat、凭据和模型列表。
-- [ ] 管理员可以检查认证、启停和删除 custom Provider。
-- [ ] Provider 列表能区分内置和自定义 Provider。
-- [ ] API 错误、冲突、权限和 pending 状态可见且文案准确。
-- [ ] 中英文文案齐全，布局在窄视口不截断关键操作。
-- [ ] Admin type-check、lint、format 和测试通过。
+- [x] 管理员可以创建三类协议的 custom Provider。
+- [x] 管理员可以编辑基础配置、compat、凭据和模型列表。
+- [x] 管理员可以检查认证、启停和删除 custom Provider。
+- [x] Provider 列表能区分内置和自定义 Provider。
+- [x] API 错误、冲突、权限和 pending 状态可见且文案准确。
+- [x] 中英文文案齐全，布局在窄视口不截断关键操作。
+- [x] Admin type-check、lint、format 和测试通过。
 
 ## Dependencies
 

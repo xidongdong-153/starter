@@ -23,13 +23,13 @@
 
 ## Acceptance Criteria
 
-- [ ] 三类协议的 contracts schema 可解析合法输入并拒绝非法输入。
-- [ ] custom Provider definition、model definition、compat 字段均有 TypeScript 类型导出。
-- [ ] 数据库 migration 可执行，`db:check` 通过。
-- [ ] repository 覆盖 create/list/find/update CAS/delete、revision 和引用清理。
-- [ ] JSON 无效、重复模型、超限模型、非法 URL 和冲突 ID 有稳定错误。
-- [ ] 不读写 Pi Session 数据库。
-- [ ] 相关 type-check、lint、format 和测试通过。
+- [x] 三类协议的 contracts schema 可解析合法输入并拒绝非法输入。
+- [x] custom Provider definition、model definition、compat 字段均有 TypeScript 类型导出。
+- [x] 数据库 migration 可执行，`db:check` 通过。
+- [x] repository 覆盖 create/list/find/update CAS/delete、revision 和引用清理。
+- [x] JSON 无效、重复模型、超限模型、非法 URL 和冲突 ID 有稳定错误。
+- [x] 不读写 Pi Session 数据库。
+- [x] 相关 type-check、lint、format 和测试通过。
 
 ## Dependencies
 

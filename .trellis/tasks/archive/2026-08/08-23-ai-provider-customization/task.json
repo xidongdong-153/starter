@@ -1,0 +1,31 @@
+{
+  "id": "ai-provider-customization",
+  "name": "ai-provider-customization",
+  "title": "完整实现自定义 AI Provider",
+  "description": "以父子任务实现三类协议的自定义 Provider contracts、存储、API runtime、Admin 管理和跨层验收",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "api",
+  "priority": "P1",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-08-23",
+  "completedAt": "2026-08-24",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "08-23-ai-provider-contracts-storage",
+    "08-23-ai-provider-api-runtime",
+    "08-23-ai-provider-admin-ui",
+    "08-23-ai-provider-integration-verification"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

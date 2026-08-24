@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/tasks/08-23-ai-provider-customization/research/custom-provider-evaluation.md", "reason": "pi-ai 自定义 Provider 调研与推荐方案"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "现有 Provider、凭据、模型目录和测试规范"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "AI runtime、Agent Run 和数据流边界"}
