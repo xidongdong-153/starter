@@ -33,6 +33,10 @@ export function toAdminAiProvider(input: {
   return {
     providerId: definition.id,
     name: definition.name,
+    kind: definition.kind,
+    protocol: definition.protocol,
+    baseUrl: definition.baseUrl,
+    revision: definition.revision,
     enabled: config?.enabled ?? false,
     supportedAuthModes: [...definition.supportedAuthModes],
     activeCredentialType:

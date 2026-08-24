@@ -9,6 +9,231 @@ export const aiProviderIdSchema = z
   .max(80)
   .regex(/^[a-z][a-z0-9-]*$/)
 
+export const aiProviderKindSchema = z.enum(['built_in', 'custom'])
+export type AiProviderKind = z.infer<typeof aiProviderKindSchema>
+
+export const customAiProviderProtocolSchema = z.enum(['openai-completions', 'openai-responses', 'anthropic-messages'])
+export type CustomAiProviderProtocol = z.infer<typeof customAiProviderProtocolSchema>
+
+const sessionAffinityFormatSchema = z.enum(['openai', 'openai-nosession', 'openrouter'])
+
+export const openAiCompletionsCompatSchema = z.strictObject({
+  supportsStore: z.boolean().optional(),
+  supportsDeveloperRole: z.boolean().optional(),
+  supportsReasoningEffort: z.boolean().optional(),
+  supportsUsageInStreaming: z.boolean().optional(),
+  supportsFinishReason: z.boolean().optional(),
+  maxTokensField: z.enum(['max_completion_tokens', 'max_tokens']).optional(),
+  requiresToolResultName: z.boolean().optional(),
+  requiresAssistantAfterToolResult: z.boolean().optional(),
+  requiresThinkingAsText: z.boolean().optional(),
+  requiresReasoningContentOnAssistantMessages: z.boolean().optional(),
+  thinkingFormat: z
+    .enum([
+      'openai',
+      'openrouter',
+      'deepseek',
+      'together',
+      'baseten',
+      'zai',
+      'qwen',
+      'chat-template',
+      'qwen-chat-template',
+      'string-thinking',
+      'ant-ling',
+    ])
+    .optional(),
+  zaiToolStream: z.boolean().optional(),
+  supportsThinkingTokenBudget: z.boolean().optional(),
+  supportsOpenAIGrammarTools: z.boolean().optional(),
+  supportsStrictMode: z.boolean().optional(),
+  cacheControlFormat: z.literal('anthropic').optional(),
+  sendSessionAffinityHeaders: z.boolean().optional(),
+  deferredToolsMode: z.literal('kimi').optional(),
+  sessionAffinityFormat: sessionAffinityFormatSchema.optional(),
+  supportsLongCacheRetention: z.boolean().optional(),
+})
+export type OpenAiCompletionsCompat = z.infer<typeof openAiCompletionsCompatSchema>
+export const customAiProviderOpenAiCompletionsCompatSchema = openAiCompletionsCompatSchema
+export type CustomAiProviderOpenAiCompletionsCompat = OpenAiCompletionsCompat
+
+export const openAiResponsesCompatSchema = z.strictObject({
+  supportsDeveloperRole: z.boolean().optional(),
+  sessionAffinityFormat: sessionAffinityFormatSchema.optional(),
+  supportsLongCacheRetention: z.boolean().optional(),
+  supportsStrictMode: z.boolean().optional(),
+  supportsOpenAIGrammarTools: z.boolean().optional(),
+  supportsToolSearch: z.boolean().optional(),
+  supportsExplicitPromptCacheMode: z.boolean().optional(),
+})
+export type OpenAiResponsesCompat = z.infer<typeof openAiResponsesCompatSchema>
+export const customAiProviderOpenAiResponsesCompatSchema = openAiResponsesCompatSchema
+export type CustomAiProviderOpenAiResponsesCompat = OpenAiResponsesCompat
+
+export const anthropicMessagesCompatSchema = z.strictObject({
+  supportsEagerToolInputStreaming: z.boolean().optional(),
+  supportsLongCacheRetention: z.boolean().optional(),
+  sendSessionAffinityHeaders: z.boolean().optional(),
+  supportsCacheControlOnTools: z.boolean().optional(),
+  supportsTemperature: z.boolean().optional(),
+  forceAdaptiveThinking: z.boolean().optional(),
+  allowEmptySignature: z.boolean().optional(),
+  supportsStrictTools: z.boolean().optional(),
+  supportsToolReferences: z.boolean().optional(),
+})
+export type AnthropicMessagesCompat = z.infer<typeof anthropicMessagesCompatSchema>
+export const customAiProviderAnthropicMessagesCompatSchema = anthropicMessagesCompatSchema
+export type CustomAiProviderAnthropicMessagesCompat = AnthropicMessagesCompat
+
+export const customAiProviderCompatSchema = z.union([
+  openAiCompletionsCompatSchema,
+  openAiResponsesCompatSchema,
+  anthropicMessagesCompatSchema,
+])
+export type CustomAiProviderCompat = z.infer<typeof customAiProviderCompatSchema>
+
+export const customAiProviderModelSchema = z.strictObject({
+  modelId: z.string().trim().min(1).max(240),
+  name: z.string().trim().min(1).max(240),
+  contextWindow: z.number().int().min(1).max(10_000_000),
+  maxOutputTokens: z.number().int().min(1).max(1_000_000),
+  supportsImageInput: z.boolean(),
+  supportsReasoning: z.boolean(),
+  supportsTools: z.boolean(),
+  inputCost: z.number().finite().min(0).max(1_000_000),
+  outputCost: z.number().finite().min(0).max(1_000_000),
+  cacheReadCost: z.number().finite().min(0).max(1_000_000),
+  cacheWriteCost: z.number().finite().min(0).max(1_000_000),
+})
+export type CustomAiProviderModel = z.infer<typeof customAiProviderModelSchema>
+export const customAiProviderModelDefinitionSchema = customAiProviderModelSchema
+export type CustomAiProviderModelDefinition = CustomAiProviderModel
+
+export const customAiProviderModelsSchema = z
+  .array(customAiProviderModelSchema)
+  .min(1)
+  .max(200)
+  .superRefine((models, context) => {
+    const seen = new Set<string>()
+    for (const [index, model] of models.entries()) {
+      if (seen.has(model.modelId)) {
+        context.addIssue({
+          code: 'custom',
+          path: [index, 'modelId'],
+          message: '模型列表不能包含重复的 modelId',
+        })
+      }
+      seen.add(model.modelId)
+    }
+  })
+
+export const customAiProviderBaseUrlSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(2048)
+  .url()
+  .refine((value) => /^https?:\/\//iu.test(value), {
+    message: 'Base URL 只允许 HTTP(S) 协议',
+  })
+  .refine((value) => !/^https?:\/\/[^/]*@/iu.test(value), {
+    message: 'Base URL 不能包含凭据',
+  })
+  .refine((value) => !/[?#]/u.test(value), {
+    message: 'Base URL 不能包含 query 或 fragment',
+  })
+  .transform((value) => value.replace(/\/+$/u, ''))
+
+const customAiProviderDefinitionBaseShape = {
+  providerId: aiProviderIdSchema,
+  name: z.string().trim().min(1).max(120),
+  baseUrl: customAiProviderBaseUrlSchema,
+  models: customAiProviderModelsSchema,
+}
+
+const openAiCompletionsDefinitionSchema = z.strictObject({
+  ...customAiProviderDefinitionBaseShape,
+  protocol: z.literal('openai-completions'),
+  compat: openAiCompletionsCompatSchema,
+})
+
+const openAiResponsesDefinitionSchema = z.strictObject({
+  ...customAiProviderDefinitionBaseShape,
+  protocol: z.literal('openai-responses'),
+  compat: openAiResponsesCompatSchema,
+})
+
+const anthropicMessagesDefinitionSchema = z.strictObject({
+  ...customAiProviderDefinitionBaseShape,
+  protocol: z.literal('anthropic-messages'),
+  compat: anthropicMessagesCompatSchema,
+})
+
+export const customAiProviderDefinitionSchema = z.discriminatedUnion('protocol', [
+  openAiCompletionsDefinitionSchema,
+  openAiResponsesDefinitionSchema,
+  anthropicMessagesDefinitionSchema,
+])
+export type CustomAiProviderDefinition = z.infer<typeof customAiProviderDefinitionSchema>
+
+const customAiProviderSecretSchema = z.string().trim().min(1).max(16_384)
+
+export const createCustomAiProviderSchema = z.discriminatedUnion('protocol', [
+  openAiCompletionsDefinitionSchema.extend({ apiKey: customAiProviderSecretSchema.optional() }),
+  openAiResponsesDefinitionSchema.extend({ apiKey: customAiProviderSecretSchema.optional() }),
+  anthropicMessagesDefinitionSchema.extend({ apiKey: customAiProviderSecretSchema.optional() }),
+])
+export type CreateCustomAiProviderInput = z.infer<typeof createCustomAiProviderSchema>
+
+const customAiProviderUpdateShape = {
+  expectedRevision: z.number().int().min(1),
+  apiKey: customAiProviderSecretSchema.optional(),
+}
+
+export const updateCustomAiProviderSchema = z.discriminatedUnion('protocol', [
+  openAiCompletionsDefinitionSchema.omit({ providerId: true }).extend(customAiProviderUpdateShape),
+  openAiResponsesDefinitionSchema.omit({ providerId: true }).extend(customAiProviderUpdateShape),
+  anthropicMessagesDefinitionSchema.omit({ providerId: true }).extend(customAiProviderUpdateShape),
+])
+export type UpdateCustomAiProviderInput = z.infer<typeof updateCustomAiProviderSchema>
+
+export const replaceCustomAiProviderModelsSchema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+  models: customAiProviderModelsSchema,
+})
+export type ReplaceCustomAiProviderModelsInput = z.infer<typeof replaceCustomAiProviderModelsSchema>
+export const deleteCustomAiProviderSchema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+})
+export type DeleteCustomAiProviderInput = z.infer<typeof deleteCustomAiProviderSchema>
+
+export const checkCustomAiProviderSchema = z.strictObject({
+  expectedRevision: z.number().int().min(1),
+})
+export type CheckCustomAiProviderInput = z.infer<typeof checkCustomAiProviderSchema>
+
+export const updateCustomAiProviderCredentialSchema = z.strictObject({
+  apiKey: customAiProviderSecretSchema,
+})
+export type UpdateCustomAiProviderCredentialInput = z.infer<typeof updateCustomAiProviderCredentialSchema>
+
+const customAiProviderResponseShape = {
+  kind: z.literal('custom'),
+  revision: z.number().int().min(1),
+  enabled: z.boolean(),
+  authStatus: z.enum(['not_configured', 'needs_check', 'ready', 'error']),
+  credentialMask: z.string().max(32).nullable(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+}
+
+export const customAiProviderSchema = z.discriminatedUnion('protocol', [
+  openAiCompletionsDefinitionSchema.extend(customAiProviderResponseShape),
+  openAiResponsesDefinitionSchema.extend(customAiProviderResponseShape),
+  anthropicMessagesDefinitionSchema.extend(customAiProviderResponseShape),
+])
+export type CustomAiProvider = z.infer<typeof customAiProviderSchema>
+
 export const aiScopeIdSchema = z
   .string()
   .trim()
@@ -120,6 +345,10 @@ export type AiProviderConfigField = z.infer<typeof aiProviderConfigFieldSchema>
 export const adminAiProviderSchema = z.object({
   providerId: aiProviderIdSchema,
   name: z.string().min(1).max(120),
+  kind: aiProviderKindSchema,
+  protocol: customAiProviderProtocolSchema.nullable(),
+  baseUrl: z.string().url().nullable(),
+  revision: z.number().int().min(0),
   enabled: z.boolean(),
   supportedAuthModes: z.array(aiAuthModeSchema),
   activeCredentialType: aiCredentialTypeSchema.nullable(),

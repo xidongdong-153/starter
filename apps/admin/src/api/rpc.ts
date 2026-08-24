@@ -54,3 +54,23 @@ export async function unwrapApiData<TData>(request: Promise<Response>): Promise<
 
   return body.data as TData
 }
+
+/**
+ * 执行不返回响应体的 RPC 请求，例如 204 删除接口。
+ */
+export async function unwrapApiVoid(request: Promise<Response>): Promise<void> {
+  let response: Response
+
+  try {
+    response = await request
+  } catch {
+    throw new ApiRequestError(0, 'API 服务连不上，检查服务是否启动')
+  }
+
+  notifyApiAccessError(response.status)
+
+  if (!response.ok) {
+    const error = await resolveApiError(response)
+    throw new ApiRequestError(response.status, error.message, error.code)
+  }
+}

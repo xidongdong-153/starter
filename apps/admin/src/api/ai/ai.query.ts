@@ -3,26 +3,42 @@ import type {
   AiModelCallAuditList,
   AiModelCallAuditQuery,
   AiModelRef,
+  CheckCustomAiProviderInput,
+  CreateCustomAiProviderInput,
+  DeleteCustomAiProviderInput,
   ReplaceAiEnabledModelsInput,
+  ReplaceCustomAiProviderModelsInput,
+  UpdateCustomAiProviderCredentialInput,
+  UpdateCustomAiProviderInput,
   UpdateAiProviderConfigInput,
 } from '@starter/contracts'
 import { queryOptions, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import {
   checkAiProvider,
+  checkCustomAiProvider,
   clearAiProviderCredential,
+  clearCustomAiProviderCredential,
+  createCustomAiProvider,
+  deleteCustomAiProvider,
   getAdminAiModels,
   getAiModels,
   getAiPreference,
   getAiProviders,
   getAiUsageCall,
   getAiUsageCalls,
+  getCustomAiProvider,
+  getCustomAiProviders,
   refreshAiProviderModels,
   replaceAdminAiModels,
+  replaceCustomAiProviderModels,
   setAdminAiDefault,
   setAiProviderState,
+  setCustomAiProviderState,
   updateAiPreference,
   updateAiProviderConfig,
+  updateCustomAiProvider,
+  updateCustomAiProviderCredential,
 } from './ai.api'
 
 export const aiQueryKeys = {
@@ -30,6 +46,8 @@ export const aiQueryKeys = {
   admin: ['ai', 'admin'] as const,
   adminModels: () => [...aiQueryKeys.admin, 'models'] as const,
   adminProviders: () => [...aiQueryKeys.admin, 'providers'] as const,
+  customProviders: () => [...aiQueryKeys.admin, 'custom-providers'] as const,
+  customProvider: (providerId: string) => [...aiQueryKeys.customProviders(), providerId] as const,
   applications: () => [...aiQueryKeys.admin, 'applications'] as const,
   usageCalls: () => [...aiQueryKeys.admin, 'usage', 'calls'] as const,
   usageCallList: (query: AiModelCallAuditQuery) => [...aiQueryKeys.usageCalls(), query] as const,
@@ -69,6 +87,18 @@ export function useAiProvidersQuery(enabled = true) {
   return useQuery({ ...aiProvidersQueryOptions, enabled })
 }
 
+export function useCustomAiProvidersQuery(enabled = true) {
+  return useQuery({ queryKey: aiQueryKeys.customProviders(), queryFn: getCustomAiProviders, enabled })
+}
+
+export function useCustomAiProviderQuery(providerId: string | null) {
+  return useQuery({
+    queryKey: aiQueryKeys.customProvider(providerId ?? ''),
+    queryFn: () => getCustomAiProvider(providerId ?? ''),
+    enabled: providerId !== null,
+  })
+}
+
 export function useAdminAiModelsQuery(enabled = true) {
   return useQuery({ queryKey: aiQueryKeys.adminModels(), queryFn: getAdminAiModels, enabled })
 }
@@ -88,6 +118,93 @@ async function invalidateAdminAi(queryClient: ReturnType<typeof useQueryClient>)
     queryClient.invalidateQueries({ queryKey: aiQueryKeys.models() }),
     queryClient.invalidateQueries({ queryKey: aiQueryKeys.preference() }),
   ])
+}
+
+async function invalidateCustomAi(queryClient: ReturnType<typeof useQueryClient>) {
+  await Promise.all([
+    invalidateAdminAi(queryClient),
+    queryClient.invalidateQueries({ queryKey: aiQueryKeys.customProviders() }),
+  ])
+}
+
+export function useCreateCustomAiProviderMutation() {
+  const queryClient = useQueryClient()
+  let resetMutation: (() => void) | undefined
+  const mutation = useMutation({
+    gcTime: 0,
+    mutationFn: (input: CreateCustomAiProviderInput) => createCustomAiProvider(input),
+    onSettled: () => {
+      resetMutation?.()
+      return invalidateCustomAi(queryClient)
+    },
+  })
+  resetMutation = mutation.reset
+  return mutation
+}
+
+export function useUpdateCustomAiProviderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { providerId: string; values: UpdateCustomAiProviderInput }) => updateCustomAiProvider(input),
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
+}
+
+export function useReplaceCustomAiProviderModelsMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { providerId: string; values: ReplaceCustomAiProviderModelsInput }) =>
+      replaceCustomAiProviderModels(input),
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
+}
+
+export function useUpdateCustomAiProviderCredentialMutation() {
+  const queryClient = useQueryClient()
+  let resetMutation: (() => void) | undefined
+  const mutation = useMutation({
+    gcTime: 0,
+    mutationFn: (input: { providerId: string; values: UpdateCustomAiProviderCredentialInput }) =>
+      updateCustomAiProviderCredential(input),
+    onSettled: () => {
+      resetMutation?.()
+      return invalidateCustomAi(queryClient)
+    },
+  })
+  resetMutation = mutation.reset
+  return mutation
+}
+
+export function useClearCustomAiProviderCredentialMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: clearCustomAiProviderCredential,
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
+}
+
+export function useCheckCustomAiProviderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { providerId: string; values: CheckCustomAiProviderInput }) => checkCustomAiProvider(input),
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
+}
+
+export function useSetCustomAiProviderStateMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { providerId: string; enabled: boolean }) => setCustomAiProviderState(input),
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
+}
+
+export function useDeleteCustomAiProviderMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { providerId: string; values: DeleteCustomAiProviderInput }) => deleteCustomAiProvider(input),
+    onSettled: () => invalidateCustomAi(queryClient),
+  })
 }
 
 export function useUpdateAiProviderConfigMutation() {

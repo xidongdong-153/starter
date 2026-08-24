@@ -3,6 +3,7 @@ import type { AdminAiProvider, AiUserPreference } from '@starter/contracts'
 import {
   aiQueryKeys,
   useCheckAiProviderMutation,
+  useCreateCustomAiProviderMutation,
   useUpdateAiPreferenceMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai/ai.query'
@@ -12,8 +13,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { createQueryClientWrapper, createTestQueryClient } from './helpers'
 
-const { checkAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
+const { checkAiProvider, createCustomAiProvider, updateAiPreference, updateAiProviderConfig } = vi.hoisted(() => ({
   checkAiProvider: vi.fn(),
+  createCustomAiProvider: vi.fn(),
   updateAiPreference: vi.fn(),
   updateAiProviderConfig: vi.fn(),
 }))
@@ -33,6 +35,7 @@ vi.mock('@admin/api/ai/application.api', () => ({
 vi.mock('@admin/api/ai/ai.api', () => ({
   checkAiProvider,
   clearAiProviderCredential: vi.fn(),
+  createCustomAiProvider,
   getAdminAiModels: vi.fn(),
   getAiModels: vi.fn(),
   getAiPreference: vi.fn(),
@@ -43,11 +46,16 @@ vi.mock('@admin/api/ai/ai.api', () => ({
   setAiProviderState: vi.fn(),
   updateAiPreference,
   updateAiProviderConfig,
+  updateCustomAiProvider: vi.fn(),
 }))
 
 const provider: AdminAiProvider = {
   providerId: 'openai',
   name: 'OpenAI',
+  kind: 'built_in',
+  protocol: null,
+  baseUrl: null,
+  revision: 0,
   enabled: false,
   supportedAuthModes: ['api_key', 'ambient'],
   activeCredentialType: 'api_key',
@@ -66,6 +74,7 @@ const provider: AdminAiProvider = {
 
 beforeEach(() => {
   checkAiProvider.mockReset()
+  createCustomAiProvider.mockReset()
   updateAiPreference.mockReset()
   updateAiProviderConfig.mockReset()
   createAiApplication.mockReset()
@@ -81,6 +90,43 @@ describe('ai query 状态', () => {
     expect(aiQueryKeys.preference()).toEqual(['ai', 'preference'])
   })
 
+  it('自定义 Provider 创建成功后失效 Provider、模型和偏好查询', async () => {
+    createCustomAiProvider.mockResolvedValue({})
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useCreateCustomAiProviderMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({
+      providerId: 'custom-provider',
+      name: 'Custom Provider',
+      baseUrl: 'https://api.example.com',
+      protocol: 'openai-completions',
+      compat: {},
+      models: [
+        {
+          modelId: 'model',
+          name: 'Model',
+          contextWindow: 1,
+          maxOutputTokens: 1,
+          supportsImageInput: false,
+          supportsReasoning: false,
+          supportsTools: false,
+          inputCost: 0,
+          outputCost: 0,
+          cacheReadCost: 0,
+          cacheWriteCost: 0,
+        },
+      ],
+    })
+
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(5))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.customProviders() })
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.preference() })
+    await waitFor(() => expect(queryClient.getMutationCache().getAll()).toHaveLength(0))
+    expect(JSON.stringify(queryClient.getMutationCache().getAll())).not.toContain('secret-value')
+  })
   it('provider 配置成功后失效管理员和用户 AI 查询', async () => {
     updateAiProviderConfig.mockResolvedValue(provider)
     const queryClient = createTestQueryClient()

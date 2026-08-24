@@ -36,6 +36,7 @@ import {
 } from "./session/index.js";
 import { createAiConfigurationRoute } from "./configuration/configuration.route.js";
 import { createAiRepository } from "./configuration/configuration.repository.js";
+import { createAiCustomProviderRepository } from "./configuration/custom-provider.repository.js";
 import { createAiService } from "./configuration/configuration.service.js";
 import { createAiPromptRepository } from "./prompt/prompt.repository.js";
 import { createAiPromptRoute } from "./prompt/prompt.route.js";
@@ -95,6 +96,12 @@ export function createAiRoute(runtime: AppRuntime) {
     runtime.aiGateway,
     invocationRunner,
     runtime.env.AI_REQUEST_TIMEOUT_MS,
+    createAiCustomProviderRepository(
+      runtime.db,
+      runtime.ai.providers
+        .filter((provider) => provider.kind === "built_in")
+        .map((provider) => provider.id),
+    ),
   );
   const promptService = createAiPromptService(
     createAiPromptRepository(runtime.db),

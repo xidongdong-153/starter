@@ -107,6 +107,54 @@ export const aiProviderConfigs = sqliteTable(
   ],
 );
 
+export const aiCustomProviders = sqliteTable(
+  "ai_custom_providers",
+  {
+    providerId: text("provider_id").primaryKey(),
+    definitionJson: text("definition_json").notNull(),
+    revision: integer("revision").notNull().default(1),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_custom_providers_updated_idx").on(
+      table.updatedAt,
+      table.providerId,
+    ),
+    check(
+      "ai_custom_providers_id_check",
+      sql`length(${table.providerId}) BETWEEN 1 AND 80 AND substr(${table.providerId}, 1, 1) BETWEEN 'a' AND 'z' AND ${table.providerId} NOT GLOB '*[^a-z0-9-]*'`,
+    ),
+    check(
+      "ai_custom_providers_definition_json_check",
+      sql`json_valid(${table.definitionJson})`,
+    ),
+    check(
+      "ai_custom_providers_definition_id_check",
+      sql`json_extract(${table.definitionJson}, '$.providerId') = ${table.providerId}`,
+    ),
+    check(
+      "ai_custom_providers_protocol_check",
+      sql`json_extract(${table.definitionJson}, '$.protocol') IN ('openai-completions', 'openai-responses', 'anthropic-messages')`,
+    ),
+    check(
+      "ai_custom_providers_models_check",
+      sql`json_type(${table.definitionJson}, '$.models') = 'array' AND json_array_length(${table.definitionJson}, '$.models') BETWEEN 1 AND 200`,
+    ),
+    check(
+      "ai_custom_providers_secret_check",
+      sql`json_type(${table.definitionJson}, '$.apiKey') IS NULL AND json_type(${table.definitionJson}, '$.secret') IS NULL AND json_type(${table.definitionJson}, '$.credential') IS NULL`,
+    ),
+    check("ai_custom_providers_revision_check", sql`${table.revision} >= 1`),
+  ],
+);
+
 export const aiModelCatalogs = sqliteTable("ai_model_catalogs", {
   providerId: text("provider_id").primaryKey(),
   modelsJson: text("models_json").notNull(),
@@ -242,6 +290,22 @@ export const aiProviderConfigsRelations = relations(
     updater: one(user, {
       fields: [aiProviderConfigs.updatedBy],
       references: [user.id],
+    }),
+  }),
+);
+
+export const aiCustomProvidersRelations = relations(
+  aiCustomProviders,
+  ({ one }) => ({
+    creator: one(user, {
+      fields: [aiCustomProviders.createdBy],
+      references: [user.id],
+      relationName: "custom_provider_creator",
+    }),
+    updater: one(user, {
+      fields: [aiCustomProviders.updatedBy],
+      references: [user.id],
+      relationName: "custom_provider_updater",
     }),
   }),
 );

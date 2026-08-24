@@ -9,17 +9,111 @@ import type {
   AiTestStreamEvent,
   AiUserModel,
   AiUserPreference,
+  CheckCustomAiProviderInput,
+  CreateCustomAiProviderInput,
+  CustomAiProvider,
+  DeleteCustomAiProviderInput,
   ReplaceAiEnabledModelsInput,
+  ReplaceCustomAiProviderModelsInput,
+  UpdateCustomAiProviderCredentialInput,
+  UpdateCustomAiProviderInput,
   UpdateAiProviderConfigInput,
 } from '@starter/contracts'
 import { aiTestStreamEventSchema } from '@starter/contracts'
 import { createParser } from 'eventsource-parser'
 
 import { ApiRequestError, apiRequest, fetchApi, resolveApiError } from '@admin/api/http'
-import { apiRpc, unwrapApiData } from '@admin/api/rpc'
+import { apiRpc, unwrapApiData, unwrapApiVoid } from '@admin/api/rpc'
+
+const customProvidersRpc = apiRpc.api.ai.admin['custom-providers']
 
 export function getAiProviders(): Promise<AdminAiProvider[]> {
   return unwrapApiData(apiRpc.api.ai.admin.providers.$get())
+}
+
+export function getCustomAiProviders(): Promise<CustomAiProvider[]> {
+  return unwrapApiData(customProvidersRpc.$get())
+}
+
+export function getCustomAiProvider(providerId: string): Promise<CustomAiProvider> {
+  return unwrapApiData(customProvidersRpc[':providerId'].$get({ param: { providerId } }))
+}
+
+export function createCustomAiProvider(input: CreateCustomAiProviderInput): Promise<CustomAiProvider> {
+  return unwrapApiData(customProvidersRpc.$post({ json: input }))
+}
+
+export function updateCustomAiProvider(input: {
+  providerId: string
+  values: UpdateCustomAiProviderInput
+}): Promise<CustomAiProvider> {
+  return unwrapApiData(
+    customProvidersRpc[':providerId'].$put({
+      param: { providerId: input.providerId },
+      json: input.values,
+    }),
+  )
+}
+
+export function replaceCustomAiProviderModels(input: {
+  providerId: string
+  values: ReplaceCustomAiProviderModelsInput
+}): Promise<CustomAiProvider> {
+  return unwrapApiData(
+    customProvidersRpc[':providerId'].models.$put({
+      param: { providerId: input.providerId },
+      json: input.values,
+    }),
+  )
+}
+
+export function updateCustomAiProviderCredential(input: {
+  providerId: string
+  values: UpdateCustomAiProviderCredentialInput
+}): Promise<CustomAiProvider> {
+  return unwrapApiData(
+    customProvidersRpc[':providerId'].credential.$put({
+      param: { providerId: input.providerId },
+      json: input.values,
+    }),
+  )
+}
+
+export function clearCustomAiProviderCredential(providerId: string): Promise<CustomAiProvider> {
+  return unwrapApiData(customProvidersRpc[':providerId'].credential.$delete({ param: { providerId } }))
+}
+
+export function checkCustomAiProvider(input: {
+  providerId: string
+  values: CheckCustomAiProviderInput
+}): Promise<CustomAiProvider> {
+  return unwrapApiData(
+    customProvidersRpc[':providerId'].check.$post({
+      param: { providerId: input.providerId },
+      json: input.values,
+    }),
+  )
+}
+
+export function setCustomAiProviderState(input: { providerId: string; enabled: boolean }): Promise<CustomAiProvider> {
+  return unwrapApiData(
+    customProvidersRpc[':providerId'].state.$put({
+      param: { providerId: input.providerId },
+      json: { enabled: input.enabled },
+    }),
+  )
+}
+
+export function deleteCustomAiProvider(input: {
+  providerId: string
+  values: DeleteCustomAiProviderInput
+}): Promise<void> {
+  return unwrapApiVoid(
+    customProvidersRpc[':providerId'].$delete({
+      param: { providerId: input.providerId },
+      json: input.values,
+    }),
+  )
 }
 
 export function updateAiProviderConfig(input: {

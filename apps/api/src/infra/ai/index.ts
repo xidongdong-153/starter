@@ -31,6 +31,11 @@ export type {
   AiRuntimeModel,
   AiStoredPayloadColumns,
 } from "./ai-runtime.js";
+export { AiUrlGuardError, createAiUrlGuard } from "./ai-url-guard.js";
+export {
+  AiCustomProviderProtocolError,
+  createCustomAiProvider,
+} from "./custom-provider.factory.js";
 export {
   createNativePiStreamFn,
   createPiNativeStreamFn,

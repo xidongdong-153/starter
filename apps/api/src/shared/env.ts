@@ -32,6 +32,7 @@ const envSchema = z.object({
     .min(1_000)
     .max(300_000)
     .default(60_000),
+  AI_PRIVATE_CIDR_ALLOWLIST: z.string().default(""),
   AI_TEST_TOOLS_ENABLED: z.stringbool().default(false),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.url().default("http://localhost:7788"),
@@ -60,7 +61,10 @@ const envSchema = z.object({
   OPENAPI_ENABLED: z.stringbool().default(true),
 });
 
-export type AppEnv = z.infer<typeof envSchema> & { corsOrigins: string[] };
+export type AppEnv = z.infer<typeof envSchema> & {
+  corsOrigins: string[];
+  aiPrivateCidrs: string[];
+};
 
 export function parseEnv(input: NodeJS.ProcessEnv = process.env): AppEnv {
   const values = envSchema.parse(input);
@@ -71,6 +75,9 @@ export function parseEnv(input: NodeJS.ProcessEnv = process.env): AppEnv {
   return {
     ...values,
     corsOrigins: values.CORS_ORIGINS.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean),
+    aiPrivateCidrs: values.AI_PRIVATE_CIDR_ALLOWLIST.split(",")
       .map((item) => item.trim())
       .filter(Boolean),
   };

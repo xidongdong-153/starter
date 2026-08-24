@@ -89,6 +89,7 @@ export function createRuntime(
     createAiRuntime(
       database.db,
       createAiCrypto(env.AI_CREDENTIAL_ENCRYPTION_KEY),
+      { appEnv: env.APP_ENV, allowedPrivateCidrs: env.aiPrivateCidrs },
     );
   const aiGateway =
     deps.aiGateway ??

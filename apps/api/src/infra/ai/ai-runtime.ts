@@ -12,8 +12,11 @@ import type {
   AiModelCapabilities,
   AiModelRef,
 } from "@starter/contracts";
+import { customAiProviderDefinitionSchema } from "@starter/contracts";
 import type { AppDatabase } from "@api/infra/db/client.js";
+import { parseBoundedJson } from "@api/shared/bounded-json.js";
 import {
+  aiCustomProviders,
   aiEnabledModels,
   aiProviderConfigs,
   aiSettings,
@@ -31,7 +34,12 @@ import {
 } from "./ai-credential-store.js";
 import { AiModelsStore } from "./ai-models-store.js";
 import type { AiProviderDefinition } from "./ai-provider-registry.js";
-import { createAiProviderRegistry } from "./ai-provider-registry.js";
+import {
+  createAiProviderRegistry,
+  createCustomAiProviderDefinition,
+} from "./ai-provider-registry.js";
+import { createCustomAiProvider } from "./custom-provider.factory.js";
+import { AiUrlGuardError, createAiUrlGuard } from "./ai-url-guard.js";
 
 export interface AiRuntimeModel extends AiModelRef {
   name: string;
@@ -61,7 +69,10 @@ export type AiRuntimeErrorKind =
   | "conflict"
   | "credential_key_unavailable"
   | "decrypt"
-  | "provider_not_found";
+  | "provider_not_found"
+  | "response_invalid"
+  | "timeout"
+  | "upstream";
 
 export class AiRuntimeError extends Error {
   constructor(readonly kind: AiRuntimeErrorKind) {
@@ -141,18 +152,30 @@ export interface AiRuntime {
     current: AiStoredPayloadColumns,
   ) => AiPreparedProviderPayload | null;
   reloadProvider: (providerId: string) => void;
+  unloadProvider: (providerId: string) => void;
+  validateCustomProviderUrl: (url: string) => Promise<void>;
   getModelsCollection: () => Models;
 }
 
-export function createAiRuntime(db: AppDatabase, crypto: AiCrypto): AiRuntime {
+export interface AiRuntimeOptions {
+  appEnv?: "development" | "test" | "production";
+  allowedPrivateCidrs?: readonly string[];
+}
+
+export function createAiRuntime(
+  db: AppDatabase,
+  crypto: AiCrypto,
+  options: AiRuntimeOptions = {},
+): AiRuntime {
+  const urlGuard = createAiUrlGuard(options);
   const credentialStore = new AiCredentialStore(db, crypto);
   const modelsStore = new AiModelsStore(db);
   const models = builtinModels({ credentials: credentialStore, modelsStore });
-  const providers = createAiProviderRegistry();
+  const providerDefinitions = [...createAiProviderRegistry()];
   let readyPromise: Promise<void> | undefined;
 
   const runtime: AiRuntime = {
-    providers,
+    providers: providerDefinitions,
     ensureReady() {
       readyPromise ??= initialize();
       return readyPromise;
@@ -199,10 +222,17 @@ export function createAiRuntime(db: AppDatabase, crypto: AiCrypto): AiRuntime {
           }),
           credentialStore.read(providerId, { signal }),
         ]);
-        return {
+        const result = {
           credentialType: credential?.type ?? null,
           source: auth ? normalizeAuthSource(auth.source, credential) : null,
         };
+        if (
+          providerDefinitions.find((item) => item.id === providerId)?.kind ===
+          "custom"
+        ) {
+          await probeCustomProvider(providerId, signal);
+        }
+        return result;
       } catch (error) {
         throw normalizeRuntimeError(error);
       }
@@ -270,26 +300,50 @@ export function createAiRuntime(db: AppDatabase, crypto: AiCrypto): AiRuntime {
       };
     },
     reloadProvider(providerId) {
-      if (providerId !== "radius") return;
-      const row = db
-        .select()
-        .from(aiProviderConfigs)
-        .where(eq(aiProviderConfigs.providerId, providerId))
-        .get();
-      const gateway = row
-        ? readRuntimeSettings(crypto, row).RADIUS_GATEWAY_URL
-        : undefined;
-      models.setProvider(radiusProvider(gateway ? { gateway } : undefined));
+      if (providerId === "radius") {
+        const row = db
+          .select()
+          .from(aiProviderConfigs)
+          .where(eq(aiProviderConfigs.providerId, providerId))
+          .get();
+        const gateway = row
+          ? readRuntimeSettings(crypto, row).RADIUS_GATEWAY_URL
+          : undefined;
+        models.setProvider(radiusProvider(gateway ? { gateway } : undefined));
+      } else {
+        reloadCustomProvider(providerId);
+      }
       readyPromise = undefined;
+    },
+    validateCustomProviderUrl: async (url) => {
+      try {
+        await urlGuard.assertAllowed(url);
+      } catch (error) {
+        if (error instanceof AiUrlGuardError)
+          throw new AiRuntimeError("catalog");
+        throw error;
+      }
     },
     getModelsCollection() {
       return models;
+    },
+    unloadProvider(providerId) {
+      if (
+        providerDefinitions.find((item) => item.id === providerId)?.kind !==
+        "custom"
+      ) {
+        throw new AiRuntimeError("provider_not_found");
+      }
+      models.deleteProvider(providerId);
+      removeProviderDefinition(providerId);
+      readyPromise = undefined;
     },
   };
 
   return runtime;
 
   async function initialize(): Promise<void> {
+    await loadCustomProviders();
     const rows = db.select().from(aiProviderConfigs).all();
     for (const row of rows) {
       try {
@@ -304,6 +358,50 @@ export function createAiRuntime(db: AppDatabase, crypto: AiCrypto): AiRuntime {
     for (const [providerId, error] of result.errors)
       markProviderError(providerId, error);
     revalidateStoredCatalog();
+  }
+
+  async function probeCustomProvider(
+    providerId: string,
+    signal?: AbortSignal,
+  ): Promise<void> {
+    const model = models.getModels(providerId)[0];
+    if (!model) throw new AiRuntimeError("catalog");
+    const auth = await models.getAuth(model, {
+      signal,
+      env: runtime.getProviderRequestEnv(providerId),
+    });
+    if (!auth) throw new AiRuntimeError("auth");
+    const probeTimeout = AbortSignal.timeout(10_000);
+    const probeSignal = AbortSignal.any([
+      ...(signal ? [signal] : []),
+      probeTimeout,
+    ]);
+    let responseStatus: number | undefined;
+    const stream = models.streamSimple(
+      model,
+      { messages: [{ role: "user", content: "ping", timestamp: Date.now() }] },
+      {
+        signal: probeSignal,
+        env: runtime.getProviderRequestEnv(providerId),
+        timeoutMs: 10_000,
+        maxRetries: 0,
+        maxTokens: 1,
+        onResponse(response) {
+          responseStatus = response.status;
+        },
+      },
+    );
+    for await (const event of stream) {
+      if (event.type === "error") {
+        throw classifyProbeError(
+          event.error.errorMessage,
+          responseStatus,
+          probeTimeout.aborted,
+        );
+      }
+      if (event.type === "done") return;
+    }
+    throw new AiRuntimeError("response_invalid");
   }
 
   function revalidateStoredCatalog(): void {
@@ -348,6 +446,59 @@ export function createAiRuntime(db: AppDatabase, crypto: AiCrypto): AiRuntime {
     });
   }
 
+  async function loadCustomProviders(): Promise<void> {
+    for (const row of db.select().from(aiCustomProviders).all()) {
+      try {
+        const definition = customAiProviderDefinitionSchema.parse(
+          parseBoundedJson(row.definitionJson),
+        );
+        await urlGuard.assertAllowed(definition.baseUrl);
+        models.setProvider(createCustomAiProvider(definition, options));
+        replaceProviderDefinition(
+          createCustomAiProviderDefinition(definition, row.revision),
+        );
+      } catch {
+        markProviderError(row.providerId, new AiRuntimeError("catalog"));
+      }
+    }
+  }
+
+  function reloadCustomProvider(providerId: string): void {
+    const row = db
+      .select()
+      .from(aiCustomProviders)
+      .where(eq(aiCustomProviders.providerId, providerId))
+      .get();
+    if (!row) return;
+    try {
+      const definition = customAiProviderDefinitionSchema.parse(
+        parseBoundedJson(row.definitionJson),
+      );
+      models.setProvider(createCustomAiProvider(definition, options));
+      replaceProviderDefinition(
+        createCustomAiProviderDefinition(definition, row.revision),
+      );
+    } catch {
+      models.deleteProvider(providerId);
+      markProviderError(providerId, new AiRuntimeError("catalog"));
+    }
+  }
+
+  function replaceProviderDefinition(definition: AiProviderDefinition): void {
+    const index = providerDefinitions.findIndex(
+      (item) => item.id === definition.id,
+    );
+    if (index === -1) providerDefinitions.push(definition);
+    else providerDefinitions[index] = definition;
+  }
+
+  function removeProviderDefinition(providerId: string): void {
+    const index = providerDefinitions.findIndex(
+      (item) => item.id === providerId,
+    );
+    if (index !== -1 && providerDefinitions[index]?.kind === "custom")
+      providerDefinitions.splice(index, 1);
+  }
   function markProviderError(providerId: string, error: unknown): void {
     const kind = normalizeRuntimeError(error).kind;
     db.transaction((tx) => {
@@ -429,7 +580,10 @@ function toRuntimeModel(model: Model<string>): AiRuntimeModel {
       maxOutputTokens: model.maxTokens,
       supportsImageInput: model.input.includes("image"),
       supportsReasoning: model.reasoning,
-      supportsTools: true,
+      supportsTools:
+        "supportsTools" in model && typeof model.supportsTools === "boolean"
+          ? model.supportsTools
+          : true,
     },
   };
 }
@@ -456,6 +610,29 @@ function normalizeAuthSource(
   }
   if (source) return "environment";
   return "keyless";
+}
+
+function classifyProbeError(
+  message: string | undefined,
+  responseStatus: number | undefined,
+  timedOut: boolean,
+): AiRuntimeError {
+  const status = responseStatus ?? statusCodeFromMessage(message);
+  if (timedOut) return new AiRuntimeError("timeout");
+  if (status === 401 || status === 403) return new AiRuntimeError("auth");
+  if (status === 408 || status === 504) return new AiRuntimeError("timeout");
+  if (status !== undefined && status >= 400)
+    return new AiRuntimeError("upstream");
+  if (message?.toLowerCase().includes("timeout"))
+    return new AiRuntimeError("timeout");
+  return new AiRuntimeError("upstream");
+}
+
+function statusCodeFromMessage(
+  message: string | undefined,
+): number | undefined {
+  const match = message?.match(/(^|\D)([45]\d{2})(\D|$)/u);
+  return match?.[2] ? Number(match[2]) : undefined;
 }
 
 function normalizeRuntimeError(error: unknown): AiRuntimeError {

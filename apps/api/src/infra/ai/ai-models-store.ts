@@ -9,6 +9,7 @@ import { eq } from "drizzle-orm";
 
 import type { AppDatabase } from "@api/infra/db/client.js";
 import { aiModelCatalogs } from "@api/modules/ai/ai.schema.js";
+import { parseBoundedJson } from "@api/shared/bounded-json.js";
 
 export class AiModelsStore implements ModelsStore {
   constructor(private readonly db: AppDatabase) {}
@@ -82,7 +83,7 @@ export class AiModelsStore implements ModelsStore {
 function parseModels(json: string): readonly Model<Api>[] {
   let value: unknown;
   try {
-    value = JSON.parse(json) as unknown;
+    value = parseBoundedJson(json);
   } catch {
     throw new Error("AI model catalog is invalid");
   }

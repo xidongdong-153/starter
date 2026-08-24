@@ -121,6 +121,7 @@ export function createAiGateway(
             throw errorFromStreamEvent(
               event.reason,
               event.error.usage,
+              event.error.errorMessage,
               abortState.cause,
               timeoutSignal,
               input.signal,
@@ -336,6 +337,7 @@ function normalizeStopReason(
 function errorFromStreamEvent(
   reason: "error" | "aborted",
   usage: Usage | undefined,
+  errorMessage: string | undefined,
   abortCause: "aborted" | "timeout" | null,
   timeoutSignal: AbortSignal,
   inputSignal: AbortSignal | undefined,
@@ -355,7 +357,13 @@ function errorFromStreamEvent(
   ) {
     return new AiGatewayError("aborted", details);
   }
+  if (isAuthStatusMessage(errorMessage))
+    return new AiGatewayError("auth", details);
   return new AiGatewayError("upstream", details);
+}
+
+function isAuthStatusMessage(message: string | undefined): boolean {
+  return message ? /(?:^|\D)(?:401|403)(?:\D|$)/u.test(message) : false;
 }
 
 function toUsageOrNull(usage: Usage | undefined): AiUsage | null {

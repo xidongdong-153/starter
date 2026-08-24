@@ -7,6 +7,13 @@ import type {
   AiTestStreamEvent,
   AiUserModel,
   AiUserPreference,
+  ReplaceCustomAiProviderModelsInput,
+  UpdateCustomAiProviderCredentialInput,
+  CreateCustomAiProviderInput,
+  DeleteCustomAiProviderInput,
+  CheckCustomAiProviderInput,
+  UpdateCustomAiProviderInput,
+  CustomAiProvider,
   ReplaceAiEnabledModelsInput,
   UpdateAiProviderConfigInput,
 } from "@starter/contracts";
@@ -18,11 +25,22 @@ import type {
   AiStoredPayloadColumns,
 } from "@api/infra/ai/index.js";
 import { AiGatewayError, AiRuntimeError } from "@api/infra/ai/index.js";
+import {
+  AiCredentialDecryptError,
+  AiCredentialKeyUnavailableError,
+} from "@api/infra/ai/ai-crypto.js";
+import { AiCredentialConflictError } from "@api/infra/ai/ai-credential-store.js";
 import { AppError } from "@api/shared/app-error.js";
 
 import type { AiInvocationRunner } from "../usage-audit/usage-audit.service.js";
 import type { AiProviderConfigRecord } from "./configuration.repository.js";
 import { AiProviderConfigConflictError } from "./configuration.repository.js";
+import {
+  AiCustomProviderDefinitionInvalidError,
+  AiCustomProviderExistsError,
+  AiCustomProviderIdConflictError,
+  AiCustomProviderRevisionConflictError,
+} from "./custom-provider.repository.js";
 import {
   toAdminAiModel,
   toAdminAiProvider,
@@ -38,7 +56,269 @@ export function createAiService(
   gateway: AiGateway,
   invocationRunner?: AiInvocationRunner,
   requestTimeoutMs = 120_000,
+  customProviders?: ReturnType<
+    typeof import("./custom-provider.repository.js").createAiCustomProviderRepository
+  >,
 ) {
+  async function createCustomProvider(
+    input: CreateCustomAiProviderInput,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRepository();
+    await runtime.validateCustomProviderUrl(input.baseUrl).catch(() => {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_URL_INVALID,
+        "Provider URL 不允许访问",
+        400,
+      );
+    });
+    const { apiKey, ...definition } = input;
+    let created = false;
+    try {
+      customProviders!.create({ definition, actorId, now: new Date() });
+      created = true;
+      runtime.reloadProvider(definition.providerId);
+      if (apiKey !== undefined) {
+        const payload = runtime.prepareProviderConfig(
+          definition.providerId,
+          undefined,
+          apiKey,
+          {},
+        );
+        repository.saveProviderConfig(
+          definition.providerId,
+          payload,
+          actorId,
+          null,
+        );
+      } else {
+        repository.markCredentialChanged(definition.providerId);
+      }
+      return getCustomProvider(definition.providerId);
+    } catch (error) {
+      if (created) {
+        try {
+          customProviders!.delete({
+            providerId: definition.providerId,
+            expectedRevision: 1,
+            actorId,
+            now: new Date(),
+            assertNoAgentReferences() {},
+          });
+          runtime.unloadProvider(definition.providerId);
+        } catch {
+          // 保留原始创建错误；删除失败时数据库状态仍保持停用。
+        }
+      }
+      throwCustomProviderError(error);
+    }
+  }
+
+  async function updateCustomProvider(
+    providerId: string,
+    input: UpdateCustomAiProviderInput,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRecord(providerId);
+    await runtime.validateCustomProviderUrl(input.baseUrl).catch(() => {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_URL_INVALID,
+        "Provider URL 不允许访问",
+        400,
+      );
+    });
+    const { apiKey, expectedRevision, ...definition } = input;
+    if (requireCustomRecord(providerId).revision !== expectedRevision) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_CONFLICT,
+        "Custom Provider 已被其他操作更新",
+        409,
+      );
+    }
+    const config = repository.findProviderConfig(providerId);
+    try {
+      if (apiKey !== undefined) {
+        const payload = runtime.prepareProviderConfig(
+          providerId,
+          config ? toStoredColumns(config) : undefined,
+          apiKey,
+          config ? runtime.readProviderSettings(toStoredColumns(config)) : {},
+        );
+        repository.saveProviderConfig(
+          providerId,
+          payload,
+          actorId,
+          config?.rowVersion ?? null,
+        );
+      } else {
+        repository.markCredentialChanged(providerId);
+      }
+      const updated = customProviders!.update({
+        definition: { ...definition, providerId } as never,
+        expectedRevision,
+        actorId,
+        now: new Date(),
+      });
+      if (!updated) throwProviderNotFound();
+      repository.pruneProviderModels(
+        providerId,
+        definition.models.map((model) => model.modelId),
+        actorId,
+      );
+      runtime.reloadProvider(providerId);
+      return getCustomProvider(providerId);
+    } catch (error) {
+      throwCustomProviderError(error);
+    }
+  }
+
+  async function updateCustomCredential(
+    providerId: string,
+    input: UpdateCustomAiProviderCredentialInput,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRecord(providerId);
+    const current = repository.findProviderConfig(providerId);
+    try {
+      const payload = runtime.prepareProviderConfig(
+        providerId,
+        current ? toStoredColumns(current) : undefined,
+        input.apiKey,
+        current ? runtime.readProviderSettings(toStoredColumns(current)) : {},
+      );
+      repository.saveProviderConfig(
+        providerId,
+        payload,
+        actorId,
+        current?.rowVersion ?? null,
+      );
+      runtime.reloadProvider(providerId);
+      return getCustomProvider(providerId);
+    } catch (error) {
+      throwCustomProviderError(error);
+    }
+  }
+
+  async function deleteCustomProvider(
+    providerId: string,
+    input: DeleteCustomAiProviderInput,
+    actorId: string,
+  ): Promise<void> {
+    requireCustomRepository();
+    const config = repository.findProviderConfig(providerId);
+    if (config?.enabled) {
+      throw new AppError(
+        ApiErrorCodes.AI_PROVIDER_DISABLED,
+        "请先停用 Provider",
+        409,
+      );
+    }
+    try {
+      const deleted = customProviders!.delete({
+        providerId,
+        expectedRevision: input.expectedRevision,
+        actorId,
+        now: new Date(),
+        assertNoAgentReferences(references) {
+          if (references.length > 0) {
+            throw new AppError(
+              ApiErrorCodes.AI_CUSTOM_PROVIDER_IN_USE,
+              "Provider 仍被 Agent 引用",
+              409,
+            );
+          }
+        },
+      });
+      if (!deleted) throwProviderNotFound();
+      runtime.unloadProvider(providerId);
+    } catch (error) {
+      throwCustomProviderError(error);
+    }
+  }
+
+  async function replaceCustomModels(
+    providerId: string,
+    input: ReplaceCustomAiProviderModelsInput,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    const current = requireCustomRecord(providerId);
+    if (current.revision !== input.expectedRevision) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_CONFLICT,
+        "Custom Provider 已被其他操作更新",
+        409,
+      );
+    }
+    try {
+      repository.markCredentialChanged(providerId);
+      const updated = customProviders!.update({
+        definition: { ...current.definition, models: input.models },
+        expectedRevision: input.expectedRevision,
+        actorId,
+        now: new Date(),
+      });
+      if (!updated) throwProviderNotFound();
+      repository.pruneProviderModels(
+        providerId,
+        input.models.map((model) => model.modelId),
+        actorId,
+      );
+      runtime.reloadProvider(providerId);
+      return getCustomProvider(providerId);
+    } catch (error) {
+      throwCustomProviderError(error);
+    }
+  }
+
+  async function checkCustomProvider(
+    providerId: string,
+    input: CheckCustomAiProviderInput,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    const current = requireCustomRecord(providerId);
+    if (current.revision !== input.expectedRevision) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_CONFLICT,
+        "Custom Provider 已被其他操作更新",
+        409,
+      );
+    }
+    await checkProvider(providerId, actorId);
+    return getCustomProvider(providerId);
+  }
+
+  async function setCustomProviderState(
+    providerId: string,
+    enabled: boolean,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRecord(providerId);
+    await setProviderState(providerId, enabled, actorId);
+    return getCustomProvider(providerId);
+  }
+
+  async function clearCustomCredential(
+    providerId: string,
+    actorId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRecord(providerId);
+    await clearProviderCredential(providerId, actorId);
+    return getCustomProvider(providerId);
+  }
+  async function listCustomProviders(): Promise<CustomAiProvider[]> {
+    requireCustomRepository();
+    await runtime.ensureReady();
+    return customProviders!.list().map(toCustomProvider);
+  }
+
+  async function getCustomProvider(
+    providerId: string,
+  ): Promise<CustomAiProvider> {
+    requireCustomRepository();
+    await runtime.ensureReady();
+    return toCustomProvider(requireCustomRecord(providerId));
+  }
+
   async function listProviders(): Promise<AdminAiProvider[]> {
     await runtime.ensureReady();
     const configs = new Map(
@@ -120,7 +400,8 @@ export function createAiService(
     actorId: string,
   ): Promise<AdminAiProvider> {
     await runtime.ensureReady();
-    requireProvider(providerId);
+    const definition = requireProvider(providerId);
+    const isCustomProvider = definition.kind === "custom";
     const current = repository.findProviderConfig(providerId);
     const expectedConfigRevision = current?.configRevision ?? null;
     runtime.reloadProvider(providerId);
@@ -153,6 +434,7 @@ export function createAiService(
       } catch (recordError) {
         throwRuntimeError(recordError);
       }
+      if (isCustomProvider) throwCustomCheckError(normalized);
       throwRuntimeError(normalized);
     }
   }
@@ -590,10 +872,101 @@ export function createAiService(
     await runtime.ensureReady();
     return requireExplicitModel(model);
   }
+  function requireCustomRepository(): void {
+    if (!customProviders) {
+      throw new AppError(
+        ApiErrorCodes.AI_CONFIG_INVALID,
+        "Custom Provider 存储未装配",
+        500,
+      );
+    }
+  }
+
+  function requireCustomRecord(providerId: string) {
+    requireCustomRepository();
+    const record = customProviders!.findById(providerId);
+    if (!record) throwProviderNotFound();
+    return record;
+  }
+
+  function toCustomProvider(
+    record: NonNullable<
+      ReturnType<NonNullable<typeof customProviders>["findById"]>
+    >,
+  ): CustomAiProvider {
+    const config = repository.findProviderConfig(record.providerId);
+    return {
+      ...record.definition,
+      kind: "custom",
+      revision: record.revision,
+      enabled: config?.enabled ?? false,
+      authStatus:
+        config?.authStatus === "needs_check" ||
+        config?.authStatus === "ready" ||
+        config?.authStatus === "error"
+          ? config.authStatus
+          : "not_configured",
+      credentialMask: config?.credentialHint ?? null,
+      createdAt: record.createdAt.toISOString(),
+      updatedAt: record.updatedAt.toISOString(),
+    };
+  }
+
+  function throwCustomProviderError(error: unknown): never {
+    if (error instanceof AppError) throw error;
+    if (error instanceof AiCustomProviderExistsError) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_EXISTS,
+        "Custom Provider 已存在",
+        409,
+      );
+    }
+    if (error instanceof AiCustomProviderIdConflictError) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_ID_CONFLICT,
+        "Provider ID 与内置 Provider 冲突",
+        409,
+      );
+    }
+    if (error instanceof AiCustomProviderRevisionConflictError) {
+      throw new AppError(
+        ApiErrorCodes.AI_CUSTOM_PROVIDER_CONFLICT,
+        "Custom Provider 已被其他操作更新",
+        409,
+      );
+    }
+    if (error instanceof AiCustomProviderDefinitionInvalidError) {
+      throw new AppError(
+        ApiErrorCodes.AI_CONFIG_INVALID,
+        "Custom Provider 配置无效",
+        400,
+      );
+    }
+    if (
+      error instanceof AiRuntimeError ||
+      error instanceof AiProviderConfigConflictError ||
+      error instanceof AiCredentialConflictError ||
+      error instanceof AiCredentialKeyUnavailableError ||
+      error instanceof AiCredentialDecryptError
+    ) {
+      throwRuntimeError(error);
+    }
+    throw error;
+  }
 
   return {
     resolveAgentModel,
     listProviders,
+    listCustomProviders,
+    getCustomProvider,
+    createCustomProvider,
+    updateCustomProvider,
+    updateCustomCredential,
+    deleteCustomProvider,
+    replaceCustomModels,
+    checkCustomProvider,
+    setCustomProviderState,
+    clearCustomCredential,
     updateProviderConfig,
     clearProviderCredential,
     checkProvider,
@@ -690,6 +1063,23 @@ function throwProviderNotFound(): never {
   );
 }
 
+function throwCustomCheckError(error: AiRuntimeError): never {
+  if (
+    error.kind === "auth" ||
+    error.kind === "conflict" ||
+    error.kind === "credential_key_unavailable" ||
+    error.kind === "decrypt" ||
+    error.kind === "provider_not_found"
+  ) {
+    throwRuntimeError(error);
+  }
+  throw new AppError(
+    ApiErrorCodes.AI_CUSTOM_PROVIDER_CHECK_FAILED,
+    "Provider 检查失败，可以稍后重试",
+    503,
+  );
+}
+
 function throwRuntimeError(error: unknown): never {
   const normalized = normalizeRuntimeError(error);
   if (normalized.kind === "provider_not_found") throwProviderNotFound();
@@ -717,6 +1107,12 @@ function throwRuntimeError(error: unknown): never {
 function normalizeRuntimeError(error: unknown): AiRuntimeError {
   if (error instanceof AiProviderConfigConflictError)
     return new AiRuntimeError("conflict");
+  if (error instanceof AiCredentialConflictError)
+    return new AiRuntimeError("conflict");
+  if (error instanceof AiCredentialKeyUnavailableError)
+    return new AiRuntimeError("credential_key_unavailable");
+  if (error instanceof AiCredentialDecryptError)
+    return new AiRuntimeError("decrypt");
   return error instanceof AiRuntimeError ? error : new AiRuntimeError("auth");
 }
 

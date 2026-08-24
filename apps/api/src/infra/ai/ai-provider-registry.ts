@@ -1,11 +1,19 @@
 import type { Provider } from "@earendil-works/pi-ai";
 import { builtinProviders } from "@earendil-works/pi-ai/providers/all";
 
-import type { AiAuthMode, AiProviderConfigField } from "@starter/contracts";
+import type {
+  AiAuthMode,
+  AiProviderConfigField,
+  CustomAiProviderDefinition,
+} from "@starter/contracts";
 
 export interface AiProviderDefinition {
   id: string;
   name: string;
+  kind: "built_in" | "custom";
+  protocol: CustomAiProviderDefinition["protocol"] | null;
+  baseUrl: string | null;
+  revision: number;
   supportedAuthModes: readonly AiAuthMode[];
   acceptsAdminApiKey: boolean;
   configFields: readonly AiProviderConfigField[];
@@ -121,6 +129,26 @@ export function createAiProviderRegistry(): readonly AiProviderDefinition[] {
   return builtinProviders().map(toDefinition);
 }
 
+export function createCustomAiProviderDefinition(
+  definition: CustomAiProviderDefinition,
+  revision: number,
+): AiProviderDefinition {
+  return {
+    id: definition.providerId,
+    name: definition.name,
+    kind: "custom",
+    protocol: definition.protocol,
+    baseUrl: definition.baseUrl,
+    revision,
+    supportedAuthModes: ["api_key"],
+    acceptsAdminApiKey: true,
+    configFields: [],
+    setupInstructions: [
+      "可选保存 API Key；未保存凭据时按 keyless Provider 处理。",
+    ],
+    supportsModelRefresh: false,
+  };
+}
 export function findAiProviderDefinition(
   providerId: string,
 ): AiProviderDefinition | undefined {
@@ -141,6 +169,10 @@ function toDefinition(provider: Provider): AiProviderDefinition {
   return {
     id: provider.id,
     name: provider.name,
+    kind: "built_in",
+    protocol: null,
+    baseUrl: provider.baseUrl ?? null,
+    revision: 0,
     supportedAuthModes,
     acceptsAdminApiKey: Boolean(provider.auth.apiKey?.login),
     configFields: override?.configFields ?? [],

@@ -6,15 +6,18 @@ import {
   useAdminAiModelsQuery,
   useAiProvidersQuery,
   useCheckAiProviderMutation,
+  useCheckCustomAiProviderMutation,
   useClearAiProviderCredentialMutation,
   useRefreshAiProviderModelsMutation,
   useReplaceAdminAiModelsMutation,
   useSetAdminAiDefaultMutation,
   useSetAiProviderStateMutation,
+  useSetCustomAiProviderStateMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai'
 import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
 import { usePermission } from '@admin/hooks/usePermission'
+import { CustomProviderDrawer } from '@admin/features/ai/components/CustomProviderDrawer'
 import {
   Alert,
   App,
@@ -40,6 +43,7 @@ import {
   Globe,
   KeyRound,
   Layers,
+  Plus,
   RefreshCw,
   Save,
   Search,
@@ -82,7 +86,9 @@ export function AiProviders() {
   const updateConfig = useUpdateAiProviderConfigMutation()
   const clearCredential = useClearAiProviderCredentialMutation()
   const checkProvider = useCheckAiProviderMutation()
+  const checkCustomProvider = useCheckCustomAiProviderMutation()
   const setProviderState = useSetAiProviderStateMutation()
+  const setCustomProviderState = useSetCustomAiProviderStateMutation()
   const refreshModels = useRefreshAiProviderModelsMutation()
   const replaceModels = useReplaceAdminAiModelsMutation()
   const setDefault = useSetAdminAiDefaultMutation()
@@ -99,6 +105,8 @@ export function AiProviders() {
   const [modelCapabilityFilter, setModelCapabilityFilter] = useState<string>('all')
 
   const [drawerProvider, setDrawerProvider] = useState<AdminAiProvider | null>(null)
+  const [customDrawerProvider, setCustomDrawerProvider] = useState<AdminAiProvider | null>(null)
+  const [customDrawerOpen, setCustomDrawerOpen] = useState(false)
   const [selectedModelKeys, setSelectedModelKeys] = useState<string[]>([])
   const [defaultModelKey, setDefaultModelKey] = useState<string | undefined>()
   const drawerProviderId = drawerProvider?.providerId
@@ -178,13 +186,28 @@ export function AiProviders() {
   }, [allModels, modelQuery, modelProviderFilter, modelCapabilityFilter])
 
   const openProvider = (provider: AdminAiProvider) => {
+    if (provider.kind === 'custom') {
+      setCustomDrawerProvider(provider)
+      setCustomDrawerOpen(true)
+      return
+    }
     setDrawerProvider(provider)
     form.setFieldsValue({ apiKey: undefined, settings: provider.configuredSettings })
+  }
+
+  const openCustomProvider = () => {
+    setCustomDrawerProvider(null)
+    setCustomDrawerOpen(true)
   }
 
   const closeProvider = () => {
     setDrawerProvider(null)
     form.resetFields()
+  }
+
+  const closeCustomProvider = () => {
+    setCustomDrawerOpen(false)
+    setCustomDrawerProvider(null)
   }
 
   const saveProvider = async (values: ProviderFormValues) => {
@@ -256,7 +279,12 @@ export function AiProviders() {
       title: t('ai.providers.columns.provider'),
       render: (_, provider) => (
         <div className="min-w-48">
-          <div className="text-fg font-medium">{provider.name}</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="text-fg font-medium">{provider.name}</div>
+            <Tag color={provider.kind === 'custom' ? 'blue' : 'default'} className="m-0 text-xs">
+              {provider.kind === 'custom' ? t('ai.providers.custom') : t('ai.providers.builtIn')}
+            </Tag>
+          </div>
           <Typography.Text className="text-fg-muted font-mono text-xs" type="secondary">
             {provider.providerId}
           </Typography.Text>
@@ -313,10 +341,17 @@ export function AiProviders() {
         <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
           <Switch
             checked={provider.enabled}
-            disabled={setProviderState.isPending}
+            disabled={
+              provider.kind === 'custom'
+                ? setCustomProviderState.isPending || provider.authStatus !== 'ready'
+                : setProviderState.isPending
+            }
             onChange={(enabled) =>
               void runProviderAction(
-                () => setProviderState.mutateAsync({ providerId: provider.providerId, enabled }),
+                () =>
+                  provider.kind === 'custom'
+                    ? setCustomProviderState.mutateAsync({ providerId: provider.providerId, enabled })
+                    : setProviderState.mutateAsync({ providerId: provider.providerId, enabled }),
                 enabled ? 'ai.providers.enableSuccess' : 'ai.providers.disableSuccess',
               )
             }
@@ -331,15 +366,31 @@ export function AiProviders() {
       width: 160,
       render: (_, provider) => (
         <div className="flex items-center gap-1">
-          <Button
-            type="primary"
-            size="small"
-            ghost
-            icon={<Settings2 className="size-3.5" />}
-            onClick={() => openProvider(provider)}
-          >
-            {t('ai.providers.configure')}
-          </Button>
+          {provider.kind === 'custom' ? (
+            <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+              <Button
+                type="primary"
+                size="small"
+                ghost
+                icon={<Settings2 className="size-3.5" />}
+                onClick={() => openProvider(provider)}
+              >
+                {t('ai.customProviders.edit')}
+              </Button>
+            </PermissionGuard>
+          ) : (
+            <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+              <Button
+                type="primary"
+                size="small"
+                ghost
+                icon={<Settings2 className="size-3.5" />}
+                onClick={() => openProvider(provider)}
+              >
+                {t('ai.providers.configure')}
+              </Button>
+            </PermissionGuard>
+          )}
 
           <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
             <Tooltip title={t('ai.providers.check')}>
@@ -347,11 +398,23 @@ export function AiProviders() {
                 type="text"
                 size="small"
                 aria-label={t('ai.providers.check')}
-                loading={checkProvider.isPending && checkProvider.variables === provider.providerId}
+                loading={
+                  (provider.kind === 'custom' ? checkCustomProvider.isPending : checkProvider.isPending) &&
+                  (provider.kind === 'custom'
+                    ? checkCustomProvider.variables?.providerId === provider.providerId
+                    : checkProvider.variables === provider.providerId)
+                }
                 icon={<ShieldCheck className="size-3.5" />}
                 onClick={() =>
                   void runProviderAction(
-                    () => checkProvider.mutateAsync(provider.providerId),
+                    () =>
+                      provider.kind === 'custom'
+                        ? checkCustomProvider.mutateAsync({
+                            providerId: provider.providerId,
+                            values: { expectedRevision: provider.revision },
+                          })
+                        : checkProvider.mutateAsync(provider.providerId),
+
                     'ai.providers.checkSuccess',
                   )
                 }
@@ -462,6 +525,13 @@ export function AiProviders() {
             value: providersQuery.data?.filter((provider) => provider.enabled).length ?? 0,
           },
         ]}
+        actions={
+          <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCustomProvider}>
+              {t('ai.customProviders.create')}
+            </Button>
+          </PermissionGuard>
+        }
       />
 
       <div className="border-border-subtle bg-surface/85 flex min-h-0 flex-1 flex-col rounded-2xl border p-5 shadow-sm backdrop-blur-xs sm:p-6">
@@ -797,6 +867,7 @@ export function AiProviders() {
           </div>
         ) : null}
       </Drawer>
+      <CustomProviderDrawer open={customDrawerOpen} provider={customDrawerProvider} onClose={closeCustomProvider} />
     </div>
   )
 }

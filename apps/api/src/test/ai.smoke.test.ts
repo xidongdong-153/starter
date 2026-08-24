@@ -1,3 +1,6 @@
+import type { AddressInfo } from "node:net";
+import { createServer } from "node:http";
+
 import type {
   AdminAiModelsResponse,
   AdminAiProvider,
@@ -15,7 +18,12 @@ import {
   createAiCrypto,
   createAiRuntime,
 } from "@api/infra/ai/index.js";
-import { aiProviderConfigs, aiSettings } from "@api/infra/db/schema/index.js";
+import {
+  aiEnabledModels,
+  aiModelCalls,
+  aiProviderConfigs,
+  aiSettings,
+} from "@api/infra/db/schema/index.js";
 import { parseEnv } from "@api/shared/env.js";
 import { createAuthorizationRepository } from "@api/modules/authorization/index.js";
 
@@ -190,12 +198,162 @@ it("拒绝非规范 base64 的 AI 凭据主密钥", () => {
   ).toThrow("AI_CREDENTIAL_ENCRYPTION_KEY");
 });
 
+it("custom Provider check 将认证失败和上游失败映射为不同安全错误码", async () => {
+  let status = 500;
+  const upstream = await startCheckServer(() => status);
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await register(app, "custom-check-admin@example.com");
+    expect(
+      createAuthorizationRepository(runtime.db).bootstrapAdminByEmail(
+        "custom-check-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+
+    const createResponse = await app.request("/api/ai/admin/custom-providers", {
+      method: "POST",
+      headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerId: "custom-check-provider",
+        name: "Custom Check Provider",
+        protocol: "openai-completions",
+        baseUrl: upstream.url,
+        compat: {},
+        models: [
+          {
+            modelId: "check-model",
+            name: "Check Model",
+            contextWindow: 8_000,
+            maxOutputTokens: 1_024,
+            supportsImageInput: false,
+            supportsReasoning: false,
+            supportsTools: false,
+            inputCost: 0,
+            outputCost: 0,
+            cacheReadCost: 0,
+            cacheWriteCost: 0,
+          },
+        ],
+        apiKey: "custom-check-secret",
+      }),
+    });
+    expect(createResponse.status).toBe(200);
+    const created = await readSuccess<{ revision: number }>(createResponse);
+
+    const upstreamFailure = await app.request(
+      "/api/ai/admin/custom-providers/custom-check-provider/check",
+      {
+        method: "POST",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: created.data.revision }),
+      },
+    );
+    expect(upstreamFailure.status).toBe(503);
+    expect((await readFailure(upstreamFailure)).error.code).toBe(
+      ApiErrorCodes.AI_CUSTOM_PROVIDER_CHECK_FAILED,
+    );
+
+    status = 401;
+    const authFailure = await app.request(
+      "/api/ai/admin/custom-providers/custom-check-provider/check",
+      {
+        method: "POST",
+        headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ expectedRevision: created.data.revision }),
+      },
+    );
+    expect(authFailure.status).toBe(503);
+    expect((await readFailure(authFailure)).error.code).toBe(
+      ApiErrorCodes.AI_PROVIDER_AUTH_FAILED,
+    );
+  } finally {
+    cleanup();
+    await upstream.close();
+  }
+});
+
+async function startCheckServer(
+  getStatus: () => number,
+): Promise<{ url: string; close: () => Promise<void> }> {
+  const server = createServer((_request, response) => {
+    response.writeHead(getStatus(), { "content-type": "application/json" });
+    response.end(JSON.stringify({ error: "check-upstream-secret" }));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  return {
+    url: `http://127.0.0.1:${address.port}/v1`,
+    async close() {
+      server.closeAllConnections();
+      await new Promise<void>((resolve, reject) => {
+        server.close((error) => (error ? reject(error) : resolve()));
+      });
+    },
+  };
+}
+
 it("固定 Provider registry 精确覆盖 pi-ai 0.84.1 的 40 个文本 Provider", () => {
   const { cleanup, runtime } = createTestApp();
   try {
     expect(runtime.ai.providers.map((provider) => provider.id).sort()).toEqual(
       [...expectedProviderIds].sort(),
     );
+  } finally {
+    cleanup();
+  }
+});
+
+it("自定义 Provider 创建失败时不保留 definition", async () => {
+  const { app, cleanup, runtime } = createTestApp({
+    AI_CREDENTIAL_ENCRYPTION_KEY: "",
+  });
+  try {
+    const admin = await register(app, "custom-provider-admin@example.com");
+    expect(
+      createAuthorizationRepository(runtime.db).bootstrapAdminByEmail(
+        "custom-provider-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+
+    const response = await app.request("/api/ai/admin/custom-providers", {
+      method: "POST",
+      headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerId: "rollback-provider",
+        name: "Rollback Provider",
+        protocol: "openai-completions",
+        baseUrl: "http://localhost:11434/v1",
+        compat: {},
+        models: [
+          {
+            modelId: "rollback-model",
+            name: "Rollback Model",
+            contextWindow: 32_000,
+            maxOutputTokens: 4_000,
+            supportsImageInput: false,
+            supportsReasoning: false,
+            supportsTools: false,
+            inputCost: 0,
+            outputCost: 0,
+            cacheReadCost: 0,
+            cacheWriteCost: 0,
+          },
+        ],
+        apiKey: "secret-that-must-not-persist",
+      }),
+    });
+    expect(response.status).toBe(503);
+    expect((await readFailure(response)).error.code).toBe(
+      ApiErrorCodes.AI_CREDENTIAL_KEY_UNAVAILABLE,
+    );
+
+    const read = await app.request(
+      "/api/ai/admin/custom-providers/rollback-provider",
+      { headers: { cookie: admin.cookie } },
+    );
+    expect(read.status).toBe(404);
   } finally {
     cleanup();
   }
@@ -312,6 +470,107 @@ it("credential 限制会过滤 GitHub Copilot 的可用模型", async () => {
     expect(filteredRuntime.listAvailableModels("github-copilot")).toEqual([
       expect.objectContaining({ modelId: allowedModelId }),
     ]);
+  } finally {
+    cleanup();
+  }
+});
+
+it("custom Provider 模型测试复用统一 SSE 和 model_test 审计", async () => {
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    { aiGateway: fakeGateway },
+  );
+  try {
+    const admin = await register(app, "custom-model-test-admin@example.com");
+    const user = await register(app, "custom-model-test-user@example.com");
+    expect(
+      createAuthorizationRepository(runtime.db).bootstrapAdminByEmail(
+        "custom-model-test-admin@example.com",
+        systemContext,
+      ).kind,
+    ).toBe("ok");
+
+    const providerId = "custom-model-test";
+    const modelId = "custom-chat";
+    const created = await app.request("/api/ai/admin/custom-providers", {
+      method: "POST",
+      headers: { cookie: admin.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        providerId,
+        name: "Custom Model Test",
+        protocol: "openai-completions",
+        baseUrl: "http://localhost:11434/v1",
+        compat: {},
+        models: [
+          {
+            modelId,
+            name: "Custom Chat",
+            contextWindow: 8_000,
+            maxOutputTokens: 1_024,
+            supportsImageInput: false,
+            supportsReasoning: false,
+            supportsTools: false,
+            inputCost: 0,
+            outputCost: 0,
+            cacheReadCost: 0,
+            cacheWriteCost: 0,
+          },
+        ],
+        apiKey: "custom-model-test-secret",
+      }),
+    });
+    expect(created.status).toBe(200);
+
+    const config = runtime.db
+      .select()
+      .from(aiProviderConfigs)
+      .where(eq(aiProviderConfigs.providerId, providerId))
+      .get()!;
+    runtime.db
+      .update(aiProviderConfigs)
+      .set({
+        enabled: true,
+        authStatus: "ready",
+        authSource: "stored_api_key",
+        checkedConfigRevision: config.configRevision,
+      })
+      .where(eq(aiProviderConfigs.providerId, providerId))
+      .run();
+    runtime.db
+      .insert(aiEnabledModels)
+      .values({ providerId, modelId, enabledAt: new Date() })
+      .run();
+
+    const response = await app.request("/api/ai/test", {
+      method: "POST",
+      headers: { cookie: user.cookie, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: { providerId, modelId },
+        prompt: "custom model prompt",
+      }),
+    });
+    expect(response.status).toBe(200);
+    const events = parseAiTestStream(await response.text());
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "text_delta",
+      "done",
+    ]);
+    expect(events[0]).toMatchObject({
+      model: { providerId, modelId },
+    });
+
+    const calls = runtime.db.select().from(aiModelCalls).all();
+    expect(calls).toEqual([
+      expect.objectContaining({
+        scenario: "model_test",
+        providerId,
+        modelId,
+        result: "succeeded",
+      }),
+    ]);
+    expect(JSON.stringify(calls)).not.toContain("custom model prompt");
+    expect(JSON.stringify(calls)).not.toContain("custom-model-test-secret");
   } finally {
     cleanup();
   }

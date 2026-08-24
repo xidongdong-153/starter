@@ -9,6 +9,16 @@ import { createSuccessResponse } from "@api/shared/response.js";
 import {
   checkAiProviderRoute,
   clearAiProviderCredentialRoute,
+  checkCustomAiProviderRoute,
+  clearCustomAiProviderCredentialRoute,
+  createCustomAiProviderRoute,
+  deleteCustomAiProviderRoute,
+  getCustomAiProviderRoute,
+  listCustomAiProvidersRoute,
+  replaceCustomAiProviderModelsRoute,
+  updateCustomAiProviderCredentialRoute,
+  updateCustomAiProviderRoute,
+  updateCustomAiProviderStateRoute,
   getAiPreferenceRoute,
   listAdminAiModelsRoute,
   listAiProvidersRoute,
@@ -34,6 +44,166 @@ export function createAiConfigurationRoute(deps: {
   const { service, requireAuth, requireRead, requireManage } = deps;
 
   return new OpenAPIHono<HonoEnv>()
+    .openapi(
+      { ...listCustomAiProvidersRoute, middleware: [requireAuth, requireRead] },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.listCustomProviders(),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...createCustomAiProviderRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.createCustomProvider(
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      { ...getCustomAiProviderRoute, middleware: [requireAuth, requireRead] },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.getCustomProvider(c.req.valid("param").providerId),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...updateCustomAiProviderRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.updateCustomProvider(
+              c.req.valid("param").providerId,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...deleteCustomAiProviderRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) => {
+        await service.deleteCustomProvider(
+          c.req.valid("param").providerId,
+          c.req.valid("json"),
+          c.var.currentUserId,
+        );
+        return c.body(null, 204);
+      },
+    )
+    .openapi(
+      {
+        ...checkCustomAiProviderRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.checkCustomProvider(
+              c.req.valid("param").providerId,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...updateCustomAiProviderCredentialRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.updateCustomCredential(
+              c.req.valid("param").providerId,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...clearCustomAiProviderCredentialRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.clearCustomCredential(
+              c.req.valid("param").providerId,
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...updateCustomAiProviderStateRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.setCustomProviderState(
+              c.req.valid("param").providerId,
+              c.req.valid("json").enabled,
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...replaceCustomAiProviderModelsRoute,
+        middleware: [requireAuth, requireManage],
+      },
+      async (c) =>
+        c.json(
+          createSuccessResponse(
+            await service.replaceCustomModels(
+              c.req.valid("param").providerId,
+              c.req.valid("json"),
+              c.var.currentUserId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
     .openapi(
       { ...listAiProvidersRoute, middleware: [requireAuth, requireRead] },
       async (c) =>
