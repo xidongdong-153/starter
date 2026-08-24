@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "AI Runtime 调用契约、错误矩阵、状态归属；本任务要突破它第 9 节的 Session 列表边界并在完成后更新"}
+{"file": ".trellis/spec/web/frontend/hook-guidelines.md", "reason": "useChatRun 改造要遵守异步 effect、active 标记和清理函数规则"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "新增 ChatSessionBar 的 Server/Client 边界、可访问性和内容边界要求"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "会话列表状态归属，判断放 hook 局部 state 还是组件"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "新增 API 封装的运行时校验和 contracts 类型用法"}

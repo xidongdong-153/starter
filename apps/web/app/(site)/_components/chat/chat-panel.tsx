@@ -7,6 +7,7 @@ import { useChatRun } from '@web/hooks/use-chat-run'
 import { authClient } from '@web/lib/auth-client'
 
 import { ChatComposer } from './chat-composer'
+import { ChatSessionBar } from './chat-session-bar'
 import { ChatTimeline } from './chat-timeline'
 
 const linkStyle =
@@ -88,6 +89,17 @@ export function ChatPanel() {
 
       {chat.boot === 'failed' ? null : (
         <>
+          <ChatSessionBar
+            canMutateSessions={chat.canMutateSessions}
+            onArchive={() => void chat.archiveSession()}
+            onNew={chat.startNewSession}
+            onRename={(title) => chat.renameSession(title)}
+            onSelect={(id) => void chat.selectSession(id)}
+            sessionBusy={chat.sessionBusy}
+            sessionId={chat.sessionId}
+            sessions={chat.sessions}
+            sessionTotal={chat.sessionTotal}
+          />
           <div aria-live="polite" className="min-h-32">
             {empty ? (
               <p className="text-sm text-muted-foreground">还没有对话内容。选择一个 Agent，输入内容后发送。</p>

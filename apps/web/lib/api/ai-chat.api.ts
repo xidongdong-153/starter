@@ -44,6 +44,20 @@ export async function createAgentSession(input: CreateAgentSessionInput): Promis
   return parseApiData(agentSessionSchema.safeParse(data), 'Session')
 }
 
+/** 改 Session 标题；只传 title，不设置会话级 defaultAgentId。 */
+export async function renameAgentSession(sessionId: string, title: string): Promise<AgentSession> {
+  const data = await unwrapApiData<unknown>(
+    apiRpc.api.ai.sessions[':sessionId'].$patch({ param: { sessionId }, json: { title } }),
+  )
+  return parseApiData(agentSessionSchema.safeParse(data), 'Session')
+}
+
+/** 归档 Session。归档后从列表消失，API 没有恢复接口，返回归档后的 Session。 */
+export async function archiveAgentSession(sessionId: string): Promise<AgentSession> {
+  const data = await unwrapApiData<unknown>(apiRpc.api.ai.sessions[':sessionId'].$delete({ param: { sessionId } }))
+  return parseApiData(agentSessionSchema.safeParse(data), 'Session')
+}
+
 /**
  * 读 main lane 最新一页 transcript。
  * 服务端默认 `direction=backward`、`limit=50`，`items` 是时间正序；本页不做翻页，忽略 `nextCursor`。

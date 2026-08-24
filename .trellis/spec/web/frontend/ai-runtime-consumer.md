@@ -37,6 +37,8 @@ export function startRunStream(input: {
 | 可用 Agent   | `GET /api/ai/agents`                                   | 服务端已过滤 `enabled`    |
 | Session 列表 | `GET /api/ai/sessions`                                 | 默认不含归档              |
 | 创建 Session | `POST /api/ai/sessions`                                | `AgentSession`            |
+| 改名 Session | `PATCH /api/ai/sessions/{sessionId}`                   | `AgentSession`，`title` trim 后 1-120 字符，至少传一个字段 |
+| 归档 Session | `DELETE /api/ai/sessions/{sessionId}`                  | `AgentSession`，只写 `archivedAt`，不物理删除 |
 | 历史         | `GET /api/ai/sessions/{sessionId}/transcript`          | 默认最新一页，items 时间正序 |
 | 启动 Run     | `POST /api/ai/sessions/{sessionId}/runs`               | `text/event-stream`       |
 | Run 状态     | `GET /api/ai/sessions/{sessionId}/runs/{runId}`         | `AgentRun`，含可选 `live` |
@@ -64,7 +66,8 @@ SSE 帧解析规则：
 | `run.started` 还没到               | 停止按钮禁用。此时 abort 没有目标，只中断读流会让服务端 Run 继续跑 |
 | transcript 读取失败                | 保留流式视图，已产生的输出不清空                                  |
 | 401                                | 提示重新登录并给登录入口，不清 session 之外的状态                 |
-| 404                                | 当作 Session 失效，清本地 session 引用，重新发送会新建            |
+| 404（读历史 / 发送）               | 当作 Session 失效，清本地 session 引用，重新发送会新建            |
+| 404（改名 / 归档）                 | 会话已不存在或被归档，从本地列表移除该条目，提示「这个对话已经不存在」 |
 | 409 `AI.SESSION_BUSY`              | 换成产品文案。API 原文带「Session lane」这类内部概念              |
 | `run.failed`                       | 透传 `data.error.message` 当主文案，错误码作为附注                |
 
@@ -90,6 +93,7 @@ SSE 帧解析规则：
 - Run 相关状态全是组件或 hook 局部 state，不进全局 store、不写 localStorage。`live` 只是视图，持久事实是 `AgentRun.status`、Pi transcript 和主库记录。
 - 轮询用 `setTimeout` 链式调度，不用 `setInterval`：请求慢于间隔时 tick 会重叠，重复读 transcript 和重复提示。
 - 卸载、切换 session、重新发送前都要 abort 上一个流并停掉轮询。
+- 会话切换 / 归档的异步操作：目标 session id 先用 ref 更新，再读 transcript；切换前 abort 旧流、停轮询，用递增 token 作废晚到的 transcript 响应；会话操作期间用互斥位（`sessionBusy`）禁住入口，结束时 `finally` 复位。
 - 异步回调回来后先校验身份（`streamRef.current === controller`、轮询 token），不靠时序保证正确。
 - 跨渲染读的 session id 用 ref，不从 memo 闭包读。
 
@@ -164,6 +168,6 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 
 ## 9. 边界
 
-- 首个版本只做单 Session、单 lane、文本输入输出。steer、follow-up、Session 列表切换、transcript 翻页都不在范围内。
+- 会话列表、切换、改名、归档已支持（`lib/ai/chat-session-view.ts` 负责列表纯函数，`use-chat-run.ts` 负责状态与异步编排）。steer、follow-up、transcript 翻页、多 lane 视图仍不在范围内。
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时如果 Run 还在跑，只能读 transcript，看不到进行中的输出。运行面没有「列出某 Session 的 Run」接口，接回需要先改 API。
