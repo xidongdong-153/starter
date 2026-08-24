@@ -199,8 +199,15 @@ async function requestWithPinnedAddress(input: {
         headers: requestHeaders,
         // The lookup result is passed to the socket connection. This prevents
         // the second DNS lookup that would otherwise reopen the SSRF window.
-        lookup(_hostname, _options, callback) {
-          callback(null, input.address, net.isIP(input.address));
+        // Node 的 autoSelectFamily 默认开启，会用 all: true 调用 lookup，
+        // 这时必须回传数组，否则连接阶段直接抛 ERR_INVALID_IP_ADDRESS。
+        lookup(_hostname, options, callback) {
+          const family = net.isIP(input.address);
+          if (options.all) {
+            callback(null, [{ address: input.address, family }]);
+            return;
+          }
+          callback(null, input.address, family);
         },
         signal: input.signal,
       },

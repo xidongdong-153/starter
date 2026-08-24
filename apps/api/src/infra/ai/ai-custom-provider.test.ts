@@ -1,5 +1,6 @@
 import type { AddressInfo } from "node:net";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import dns from "node:dns/promises";
 import { createServer } from "node:http";
 
 import { customAiProviderDefinitionSchema } from "@starter/contracts";
@@ -73,6 +74,26 @@ describe("ai URL guard", () => {
     ).rejects.toMatchObject({ reason: "private" });
   });
 
+  it("用主机名请求时把解析到的地址固定给 socket，不会被 autoSelectFamily 的 all: true 打断", async () => {
+    const [primary] = await dns.lookup("localhost", { all: true });
+    expect(primary).toBeDefined();
+    const upstream = await startServer((_request, response) => {
+      response.writeHead(200, { "content-type": "text/plain" });
+      response.end("ok");
+    }, primary!.address);
+    try {
+      const guard = createAiUrlGuard({ appEnv: "test" });
+      const response = await guard.fetch(
+        `http://localhost:${upstream.port}/v1`,
+      );
+
+      expect(response.status).toBe(200);
+      await expect(response.text()).resolves.toBe("ok");
+    } finally {
+      await upstream.close();
+    }
+  });
+
   it("在 headers 返回后仍限制流式 response body 的读取时间", async () => {
     const upstream = await startServer((_request, response) => {
       response.writeHead(200, { "content-type": "text/plain" });
@@ -121,14 +142,16 @@ describe("ai URL guard", () => {
 
 async function startServer(
   handler: (request: IncomingMessage, response: ServerResponse) => void,
-): Promise<{ url: string; close: () => Promise<void> }> {
+  host = "127.0.0.1",
+): Promise<{ url: string; port: number; close: () => Promise<void> }> {
   const server = createServer(handler);
   await new Promise<void>((resolve) => {
-    server.listen(0, "127.0.0.1", resolve);
+    server.listen(0, host, resolve);
   });
   const address = server.address() as AddressInfo;
   return {
     url: `http://127.0.0.1:${address.port}`,
+    port: address.port,
     async close() {
       server.closeAllConnections();
       await new Promise<void>((resolve, reject) => {
