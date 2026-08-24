@@ -182,6 +182,7 @@ export default {
       thinkingLevel: 'Thinking level',
       tools: 'Tools',
       toolsPlaceholder: 'Choose allowed tools',
+      toolsVersionConflict: 'Cannot select two versions of the same tool in one Agent',
       updateSuccess: 'Agent updated',
     },
     applications: {

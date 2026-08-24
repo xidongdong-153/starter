@@ -148,9 +148,11 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
   const tools = createAiToolRegistry([
     defineAiTool({
       name: "lookup",
+      version: "1.0.0",
       description: "Look up a value",
       inputSchema: z.object({ value: z.string() }),
       timeoutMs: 1000,
+      scope: "platform",
       requiredPermission: null,
       execute: async () => ({
         modelText: "tool-result",
@@ -162,7 +164,6 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
     sessionStore: store,
     resolveModel: () => model,
     streamFn,
-    tools,
     hasPermission: async () => true,
   });
   const registry = createActiveRunRegistry();
@@ -179,7 +180,7 @@ it("piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
       systemPrompt: "You are a test agent.",
       thinkingLevel: "off",
       maxTurns: 4,
-      toolNames: ["lookup"],
+      tools: tools.list(),
     },
   });
 
@@ -315,7 +316,7 @@ it("思考内容映射成 thinking 事件，message.completed 只带正文", asy
       model: { providerId: model.provider, modelId: model.id },
       thinkingLevel: "medium",
       maxTurns: 4,
-      toolNames: [],
+      tools: [],
     },
   });
   const lease = registry.reserve(sessionId, "main");
@@ -404,9 +405,11 @@ it("工具上报进度时发布 tool.progress，只带脱敏摘要", async () =>
   const tools = createAiToolRegistry([
     defineAiTool({
       name: "stepwise",
+      version: "1.0.0",
       description: "Report progress per step",
       inputSchema: z.object({ steps: z.number().int().min(1).max(4) }),
       timeoutMs: 1000,
+      scope: "platform",
       requiredPermission: null,
       execute: async (context, input) => {
         for (let step = 1; step <= input.steps; step += 1) {
@@ -420,7 +423,6 @@ it("工具上报进度时发布 tool.progress，只带脱敏摘要", async () =>
     sessionStore: store,
     resolveModel: () => model,
     streamFn,
-    tools,
     hasPermission: async () => true,
   });
   const registry = createActiveRunRegistry();
@@ -435,7 +437,7 @@ it("工具上报进度时发布 tool.progress，只带脱敏摘要", async () =>
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 4,
-      toolNames: ["stepwise"],
+      tools: tools.list(),
     },
   });
   const lease = registry.reserve(sessionId, "main");
@@ -515,9 +517,11 @@ it("工具超时后模型继续回复，Run 以 completed 结束", async () => {
   const tools = createAiToolRegistry([
     defineAiTool({
       name: "never_finishes",
+      version: "1.0.0",
       description: "Never settles; adapter timeout owns cancellation",
       inputSchema: z.object({}),
       timeoutMs: 100,
+      scope: "platform",
       requiredPermission: null,
       execute: async () => new Promise<never>(() => {}),
     }),
@@ -526,7 +530,6 @@ it("工具超时后模型继续回复，Run 以 completed 结束", async () => {
     sessionStore: store,
     resolveModel: () => model,
     streamFn,
-    tools,
     hasPermission: async () => true,
   });
   const registry = createActiveRunRegistry();
@@ -541,7 +544,7 @@ it("工具超时后模型继续回复，Run 以 completed 结束", async () => {
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 4,
-      toolNames: ["never_finishes"],
+      tools: tools.list(),
     },
   });
   const lease = registry.reserve(sessionId, "main");
@@ -630,9 +633,11 @@ it("pi JSON Schema 拒绝参数时仍生成安全 Tool 结果和一次审计", a
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "lookup",
+        version: "1.0.0",
         description: "Look up a value",
         inputSchema: z.object({ value: z.string().min(5) }),
         timeoutMs: 1000,
+        scope: "platform",
         requiredPermission: null,
         execute,
       }),
@@ -646,7 +651,6 @@ it("pi JSON Schema 拒绝参数时仍生成安全 Tool 结果和一次审计", a
       sessionStore: store,
       resolveModel: () => model,
       streamFn,
-      tools: registry,
       toolAudit,
     });
     const prepared = executor.prepare({
@@ -660,7 +664,7 @@ it("pi JSON Schema 拒绝参数时仍生成安全 Tool 结果和一次审计", a
       config: {
         model: { providerId: model.provider, modelId: model.id },
         maxTurns: 4,
-        toolNames: ["lookup"],
+        tools: registry.list(),
       },
     });
     const activeRegistry = createActiveRunRegistry();
@@ -756,6 +760,7 @@ it("pi compaction 成功后写入 entry，并用 retained context 继续运行",
       config: {
         model: { providerId: compactModel.provider, modelId: compactModel.id },
         maxTurns: 1,
+        tools: [],
       },
     });
     const registry = createActiveRunRegistry();
@@ -856,6 +861,7 @@ it("pi compaction 摘要失败时保留原 transcript 并返回失败结果", as
       config: {
         model: { providerId: compactModel.provider, modelId: compactModel.id },
         maxTurns: 1,
+        tools: [],
       },
     });
     const registry = createActiveRunRegistry();
@@ -948,6 +954,7 @@ it("pi compaction entry 写入失败时保留原 transcript 并返回 Session st
       config: {
         model: { providerId: compactModel.provider, modelId: compactModel.id },
         maxTurns: 1,
+        tools: [],
       },
     });
     const registry = createActiveRunRegistry();
@@ -997,6 +1004,7 @@ it("session 初始读取失败时返回 Session storage 错误，不启动 Provi
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 1,
+      tools: [],
     },
   });
   const registry = createActiveRunRegistry();
@@ -1033,6 +1041,7 @@ it("start 前 signal 已取消时不读取 Session 或启动 Agent", async () =>
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 1,
+      tools: [],
     },
   });
   const registry = createActiveRunRegistry();
@@ -1073,6 +1082,7 @@ it("模型不在 executor 的解析目录时返回 MODEL_NOT_FOUND，不启动 s
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 1,
+      tools: [],
     },
   });
   const registry = createActiveRunRegistry();
@@ -1121,6 +1131,7 @@ it("原生模型 timeout 以 failed 和 AI_UPSTREAM_TIMEOUT 结束，而不是�
       config: {
         model: { providerId: model.provider, modelId: model.id },
         maxTurns: 1,
+        tools: [],
       },
     });
     const registry = createActiveRunRegistry();
@@ -1183,9 +1194,11 @@ it("撞上 maxTurns 且仍在调工具时追加一轮无工具收尾", async () 
   const tools = createAiToolRegistry([
     defineAiTool({
       name: "lookup",
+      version: "1.0.0",
       description: "Look up a value",
       inputSchema: z.object({ value: z.string() }),
       timeoutMs: 1000,
+      scope: "platform",
       requiredPermission: null,
       execute: async () => ({
         modelText: "tool-result",
@@ -1197,7 +1210,6 @@ it("撞上 maxTurns 且仍在调工具时追加一轮无工具收尾", async () 
     sessionStore: store,
     resolveModel: () => model,
     streamFn,
-    tools,
     hasPermission: async () => true,
   });
   const registry = createActiveRunRegistry();
@@ -1212,7 +1224,7 @@ it("撞上 maxTurns 且仍在调工具时追加一轮无工具收尾", async () 
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 2,
-      toolNames: ["lookup"],
+      tools: tools.list(),
     },
   });
   const lease = registry.reserve(sessionId, "main");
@@ -1299,9 +1311,11 @@ it("撞上 maxTurns 时模型已给文字回答则不追加收尾轮", async () 
   const tools = createAiToolRegistry([
     defineAiTool({
       name: "lookup",
+      version: "1.0.0",
       description: "Look up a value",
       inputSchema: z.object({ value: z.string() }),
       timeoutMs: 1000,
+      scope: "platform",
       requiredPermission: null,
       execute: async () => ({
         modelText: "tool-result",
@@ -1313,7 +1327,6 @@ it("撞上 maxTurns 时模型已给文字回答则不追加收尾轮", async () 
     sessionStore: store,
     resolveModel: () => model,
     streamFn,
-    tools,
     hasPermission: async () => true,
   });
   const registry = createActiveRunRegistry();
@@ -1328,7 +1341,7 @@ it("撞上 maxTurns 时模型已给文字回答则不追加收尾轮", async () 
     config: {
       model: { providerId: model.provider, modelId: model.id },
       maxTurns: 2,
-      toolNames: ["lookup"],
+      tools: tools.list(),
     },
   });
   const lease = registry.reserve(sessionId, "main");

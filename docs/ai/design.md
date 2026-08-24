@@ -68,7 +68,7 @@ flowchart LR
 
 `principal.ts` 和 `principal.guard.ts` 是运行面的身份层：`principal.guard.ts` 按有没有 `Authorization: Bearer` 头分叉到应用凭据或 Better Auth，`principal.ts` 把身份转成 `RuntimeAccessContext`（`principal` + `scope`），所有 Session 和 Run 查询都带这个上下文。
 
-Agent Definition 只存引用和执行参数：`providerId` + `modelId`、`systemPromptId`、`skillIds`、`toolNames`、`thinkingLevel`、`maxTurns`、`revision`、状态。Run 开始时解析当前可用配置，并把不含 secret 的快照写进 `ai_agent_runs.snapshot_json`，所以运行中改 Agent 不会影响已经在跑的 Run。
+Agent Definition 只存引用和执行参数：`schemaVersion: 2`、`providerId` + `modelId`、`systemPromptId`、`skillIds`、`toolRefs`（精确 `{ name, version }`）、`thinkingLevel`、`maxTurns`、`revision`、状态。Run 开始时解析当前可用配置（工具按精确版本解析成 `RegisteredAiTool[]` 直接交给 Executor），并把不含 secret 的 v2 快照写进 `ai_agent_runs.snapshot_json`，所以运行中改 Agent 不会影响已经在跑的 Run。
 
 ## 4. 一次 Run 的完整过程
 

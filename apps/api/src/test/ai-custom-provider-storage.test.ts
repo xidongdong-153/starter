@@ -323,14 +323,14 @@ it("custom Provider 删除时 Agent 引用检查失败会回滚事务", async ()
         id: "referencing-agent",
         name: "Referencing Agent",
         configJson: JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           model: {
             providerId: "local-gateway",
             modelId: model.modelId,
           },
           systemPromptId: null,
           skillIds: [],
-          toolNames: [],
+          toolRefs: [],
           thinkingLevel: "off",
           maxTurns: 8,
         }),

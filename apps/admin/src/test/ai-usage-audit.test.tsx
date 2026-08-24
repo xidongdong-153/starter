@@ -108,6 +108,7 @@ describe('ai usage audit page', () => {
         {
           id: '01958c80-8df7-7ce2-8f90-123456789002',
           toolName: 'lookup',
+          toolVersion: '1.0.0',
           status: 'succeeded',
           startedAt: call.startedAt,
           finishedAt: call.finishedAt,
@@ -128,6 +129,6 @@ describe('ai usage audit page', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '查看详情: request-1' }))
     await waitFor(() => expect(screen.getByText('模型调用详情')).toBeTruthy())
-    expect(screen.getByText('lookup')).toBeTruthy()
+    expect(screen.getByText('lookup@1.0.0')).toBeTruthy()
   })
 })

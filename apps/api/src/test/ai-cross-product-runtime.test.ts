@@ -479,11 +479,11 @@ function seedAgent(
       status: "enabled",
       revision: 1,
       configJson: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         model: modelRef,
         systemPromptId,
         skillIds: [],
-        toolNames: ["scoped_lookup"],
+        toolRefs: [{ name: "scoped_lookup", version: "1.0.0" }],
         thinkingLevel: "off",
         maxTurns: 8,
       }),

@@ -179,6 +179,7 @@ export default {
       thinkingLevel: '思考级别',
       tools: '工具',
       toolsPlaceholder: '选择允许使用的工具',
+      toolsVersionConflict: '同一个 Agent 不能同时选择同一工具的不同版本',
       updateSuccess: 'Agent 已更新',
     },
     applications: {

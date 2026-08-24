@@ -55,9 +55,11 @@ describe("pi tool adapter", () => {
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "lookup",
+        version: "1.0.0",
         description: "Look up a value",
         inputSchema: z.object({ value: z.string() }),
         timeoutMs: 1000,
+        scope: "platform",
         requiredPermission: null,
         execute,
       }),
@@ -74,7 +76,10 @@ describe("pi tool adapter", () => {
     );
 
     expect(execute).toHaveBeenCalledWith(
-      expect.objectContaining({ userId: "user-1", requestId: "request-1" }),
+      expect.objectContaining({
+        principal: expect.objectContaining({ principalId: "user-1" }),
+        requestId: "request-1",
+      }),
       { value: "input" },
     );
     expect(result).toMatchObject({
@@ -100,14 +105,16 @@ describe("pi tool adapter", () => {
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "progressive",
+        version: "1.0.0",
         description: "Reports progress",
         inputSchema: z.object({ value: z.string() }),
         timeoutMs: 1000,
+        scope: "platform",
         requiredPermission: null,
         execute: async (context) => {
-          context.reportProgress?.("第 1 步完成");
-          context.reportProgress?.("");
-          context.reportProgress?.("第 2 步完成");
+          context.reportProgress("第 1 步完成");
+          context.reportProgress("");
+          context.reportProgress("第 2 步完成");
           return { modelText: "result", safeSummary: "done" };
         },
       }),
@@ -143,9 +150,11 @@ describe("pi tool adapter", () => {
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "protected",
+        version: "1.0.0",
         description: "Protected action",
         inputSchema: z.object({ value: z.string() }),
         timeoutMs: 1000,
+        scope: "platform",
         requiredPermission: PermissionKeys.AI_CONFIG_MANAGE,
         execute: async () => ({ modelText: "secret", safeSummary: null }),
       }),
@@ -191,9 +200,11 @@ describe("pi tool adapter", () => {
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "slow",
+        version: "1.0.0",
         description: "Slow action",
         inputSchema: z.object({ value: z.string() }),
         timeoutMs: 100,
+        scope: "platform",
         requiredPermission: null,
         execute: async () =>
           new Promise(() => {
@@ -247,9 +258,11 @@ describe("pi tool adapter", () => {
     const registry = createAiToolRegistry([
       defineAiTool({
         name: "cancellable",
+        version: "1.0.0",
         description: "Cancellable action",
         inputSchema: z.object({ value: z.string() }),
         timeoutMs: 5000,
+        scope: "platform",
         requiredPermission: null,
         execute: async () =>
           new Promise(() => {
@@ -278,6 +291,62 @@ describe("pi tool adapter", () => {
       expect.objectContaining({ id: "audit-tool-1" }),
       "cancelled",
       "AI.TOOL_CANCELLED",
+    );
+  });
+});
+
+describe("pi tool adapter sensitive marker isolation", () => {
+  it("原始异常、arguments 和 secret marker 不进入审计或失败输出", async () => {
+    const audit = createAudit();
+    const registry = createAiToolRegistry([
+      defineAiTool({
+        name: "leaky",
+        version: "1.0.0",
+        description: "Throw with a marker",
+        inputSchema: z.object({ value: z.string() }),
+        timeoutMs: 1000,
+        scope: "platform",
+        requiredPermission: null,
+        execute: async () => {
+          throw new Error("TOOL_ERROR_SECRET_MARKER");
+        },
+      }),
+    ]);
+    const adapter = createPiToolAdapter(registry.list(), options(audit));
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    await expect(
+      tool.execute(
+        "tool-call-marker",
+        { value: "TOOL_ARGUMENT_SECRET_MARKER" },
+        new AbortController().signal,
+      ),
+    ).rejects.toBeInstanceOf(PiToolExecutionError);
+
+    const override = await adapter.afterToolCall({
+      toolCall: {
+        type: "toolCall",
+        id: "tool-call-marker",
+        name: "leaky",
+        arguments: { value: "TOOL_ARGUMENT_SECRET_MARKER" },
+      },
+    } as never);
+
+    const serialized = JSON.stringify({ override, audit });
+    expect(serialized).not.toContain("TOOL_ERROR_SECRET_MARKER");
+    expect(serialized).not.toContain("TOOL_ARGUMENT_SECRET_MARKER");
+    expect(override).toMatchObject({
+      isError: true,
+      details: { status: "failed", errorCode: "AI.TOOL_FAILED" },
+    });
+    expect(audit.beginToolExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ toolName: "leaky", toolVersion: "1.0.0" }),
+    );
+    expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "audit-tool-1" }),
+      "failed",
+      "AI.TOOL_FAILED",
     );
   });
 });

@@ -1,0 +1,14 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端目录、跨层修改和质量检查入口"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "AI Agent、Tool Registry、审计和敏感信息边界"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi Executor、Tool Adapter、取消、超时和安全结果"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run snapshot、生命周期、恢复和跨层事件约束"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "Principal、Starter 权限和 Product App 授权边界"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Drizzle schema、migration、历史审计和测试数据库"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "共享 Zod contracts 和 API/Admin DTO 边界"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "contracts 变更和跨消费者验证"}
+{"file": ".trellis/spec/admin/frontend/index.md", "reason": "Admin feature、API query、表单和质量检查入口"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "Admin 表单和 contracts 类型转换"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "Admin AI 页面 loading、error、权限和测试"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contracts、API、数据库、Admin 跨层数据流检查"}
+{"file": ".trellis/tasks/08-24-api-builtin-ai-tool-catalog/research/code-evidence-and-opencode-agent.md", "reason": "实际代码证据、缺口和 Pi Provider 实施参数"}

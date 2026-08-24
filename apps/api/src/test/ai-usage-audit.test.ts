@@ -47,6 +47,7 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
       id: toolExecutionId,
       aiCallId: modelCallId,
       toolName: "lookup",
+      toolVersion: "1.0.0",
       startedAt,
       timeoutMs: 5000,
     });
@@ -65,6 +66,7 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
       id: freshToolExecutionId,
       aiCallId: freshModelCallId,
       toolName: "lookup",
+      toolVersion: "1.0.0",
       startedAt: freshStartedAt,
       timeoutMs: 5000,
     });
@@ -394,11 +396,16 @@ describe("agent run audit ports", () => {
       const toolHandle = toolPort.beginToolExecution({
         modelCallId,
         toolName: "lookup",
+        toolVersion: "1.0.0",
         timeoutMs: 100,
       });
       toolPort.finalizeToolExecution(toolHandle, "succeeded", null);
       expect(repository.beginToolExecution).toHaveBeenCalledWith(
-        expect.objectContaining({ aiCallId: modelCallId, toolName: "lookup" }),
+        expect.objectContaining({
+          aiCallId: modelCallId,
+          toolName: "lookup",
+          toolVersion: "1.0.0",
+        }),
       );
       expect(repository.finalizeToolExecution).toHaveBeenCalledOnce();
     } finally {

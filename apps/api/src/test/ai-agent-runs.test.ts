@@ -32,11 +32,16 @@ import {
   userRoles,
 } from "@api/infra/db/schema/index.js";
 import {
+  createAiToolRegistry,
+  defineAiTool,
+} from "@api/modules/ai/tool/tool-registry.js";
+import {
   createAiAgentRunRepository,
   createAiAgentRunService,
 } from "@api/modules/ai/run/index.js";
 import { createAiAgentSessionRepository } from "@api/modules/ai/session/index.js";
 import { generateId } from "@api/shared/id.js";
+import { z } from "zod";
 
 import {
   createTestApp,
@@ -160,9 +165,11 @@ async function setupAgent(
   admin: { cookie: string },
   name: string,
   maxTurns = 8,
+  toolRefs: Array<{ name: string; version: string }> = [],
 ): Promise<{
   agentId: string;
   modelRef: { providerId: string; modelId: string };
+  promptId: string;
 }> {
   const prompt = await postJson(app, "/api/ai/system-prompts", admin.cookie, {
     name: `${name}-prompt`,
@@ -173,11 +180,11 @@ async function setupAgent(
   const created = await postJson(app, "/api/ai/admin/agents", admin.cookie, {
     name,
     config: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       model: modelRef,
       systemPromptId: promptBody.data.id,
       skillIds: [],
-      toolNames: [],
+      toolRefs,
       thinkingLevel: "off",
       maxTurns,
     },
@@ -190,7 +197,11 @@ async function setupAgent(
     { status: "enabled" },
   );
   expect(enabled.status).toBe(200);
-  return { agentId: createdBody.data.id, modelRef };
+  return {
+    agentId: createdBody.data.id,
+    modelRef,
+    promptId: promptBody.data.id,
+  };
 }
 
 async function createSession(
@@ -351,6 +362,190 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
     expect(row?.status).toBe("completed");
     expect(row?.finalEntryId).toBeTruthy();
     expect(row?.finishedAt).toBeTruthy();
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("run 启动时固定 Tool 版本；改 Agent 配置不影响已启动 Run，新 Run 用新版本", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-fixed-tool-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const captured: Context[] = [];
+  const streamFn = (
+    _model: Model<Api>,
+    context: Context,
+    _options?: SimpleStreamOptions,
+  ) => {
+    captured.push(context);
+    const last = context.messages.at(-1);
+    if (last?.role === "toolResult") {
+      return streamResponse(
+        assistantMessage([{ type: "text", text: "done" }], "stop"),
+        "stop",
+      );
+    }
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: `fixed-tool-${captured.length}`,
+            name: "lookup",
+            arguments: {},
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const lookupV1 = defineAiTool({
+    name: "lookup",
+    version: "1.0.0",
+    description: "Lookup v1",
+    inputSchema: z.object({}),
+    timeoutMs: 1000,
+    scope: "platform",
+    requiredPermission: null,
+    async execute() {
+      return { modelText: "lookup-v1-result", safeSummary: null };
+    },
+  });
+  const lookupV2 = defineAiTool({
+    name: "lookup",
+    version: "2.0.0",
+    description: "Lookup v2",
+    inputSchema: z.object({}),
+    timeoutMs: 1000,
+    scope: "platform",
+    requiredPermission: null,
+    async execute() {
+      return { modelText: "lookup-v2-result", safeSummary: null };
+    },
+  });
+  const executor = createPiAgentExecutor({
+    sessionStore: store,
+    resolveModel: () => model,
+    streamFn,
+    hasPermission: async () => true,
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutor: executor,
+      aiTools: createAiToolRegistry([lookupV1, lookupV2]),
+    },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-fixed-tool@example.com");
+    const { agentId, modelRef, promptId } = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "fixed-tool-agent",
+      8,
+      [{ name: "lookup", version: "1.0.0" }],
+    );
+    const sessionOne = await createSession(app, user.cookie, "固定 v1");
+    const startedOne = await startRun(app, user.cookie, sessionOne.sessionId, {
+      agentId,
+      input: "use lookup",
+    });
+    expect(startedOne.status).toBe(200);
+    const runOneEvents = parseSseEvents(await readSse(startedOne));
+    const runOneId = runOneEvents[0]?.runId as string | undefined;
+    if (!runOneId) throw new Error("SSE 缺少 runId");
+
+    // Run 1 持有 v1：工具结果出现在模型 context 中，snapshot 固定 v1
+    const v1Context = captured.find((context) =>
+      context.messages.some((message) => message.role === "toolResult"),
+    );
+    expect(JSON.stringify(v1Context?.messages)).toContain("lookup-v1-result");
+    expect(JSON.stringify(v1Context?.messages)).not.toContain(
+      "lookup-v2-result",
+    );
+    const runOne = await getRun(
+      app,
+      user.cookie,
+      sessionOne.sessionId,
+      runOneId,
+    );
+    expect(runOne.status).toBe(200);
+    expect(
+      (
+        await readSuccess<{
+          snapshot: { toolRefs: { name: string; version: string }[] };
+        }>(runOne)
+      ).data.snapshot.toolRefs,
+    ).toEqual([{ name: "lookup", version: "1.0.0" }]);
+    const oneRow = runtime.db
+      .select()
+      .from(aiAgentRuns)
+      .where(eq(aiAgentRuns.id, runOneId))
+      .get();
+    expect(oneRow?.snapshotJson).not.toContain('"execute"');
+    expect(oneRow?.snapshotJson).not.toContain("inputSchema");
+    expect(oneRow?.snapshotJson).not.toContain("timeoutMs");
+    expect(oneRow?.snapshotJson).not.toContain("requiredPermission");
+
+    // 修改 Agent 配置到 v2：Run 1 的内存 Tool 不变，新 Run 解析新版本
+    const patched = await patchJson(
+      app,
+      `/api/ai/admin/agents/${agentId}`,
+      admin.cookie,
+      {
+        config: {
+          schemaVersion: 2,
+          model: modelRef,
+          systemPromptId: promptId,
+          skillIds: [],
+          toolRefs: [{ name: "lookup", version: "2.0.0" }],
+          thinkingLevel: "off",
+          maxTurns: 8,
+        },
+      },
+    );
+    expect(patched.status).toBe(200);
+    const runOneAfter = await getRun(
+      app,
+      user.cookie,
+      sessionOne.sessionId,
+      runOneId,
+    );
+    expect(
+      (
+        await readSuccess<{
+          snapshot: { toolRefs: { name: string; version: string }[] };
+        }>(runOneAfter)
+      ).data.snapshot.toolRefs,
+    ).toEqual([{ name: "lookup", version: "1.0.0" }]);
+
+    const sessionTwo = await createSession(app, user.cookie, "新 v2");
+    const startedTwo = await startRun(app, user.cookie, sessionTwo.sessionId, {
+      agentId,
+      input: "use lookup again",
+    });
+    expect(startedTwo.status).toBe(200);
+    await readSse(startedTwo);
+    const v2Context = captured
+      .slice(
+        captured.findIndex((context) =>
+          context.messages.some((message) => message.role === "toolResult"),
+        ) + 1,
+      )
+      .find((context) =>
+        context.messages.some((message) => message.role === "toolResult"),
+      );
+    expect(JSON.stringify(v2Context?.messages)).toContain("lookup-v2-result");
+    expect(JSON.stringify(v2Context?.messages)).not.toContain(
+      "lookup-v1-result",
+    );
   } finally {
     cleanup();
     await rm(directory, { recursive: true, force: true });
@@ -932,13 +1127,13 @@ it("启动恢复：无 terminal entry 标记 interrupted，唯一合法 entry �
         status: "running",
         agentRevision: 1,
         snapshotJson: JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           agentId,
           agentRevision: 1,
           model: { providerId: model.provider, modelId: model.id },
           systemPromptId: null,
           skillIds: [],
-          toolNames: [],
+          toolRefs: [],
           thinkingLevel: "off",
           maxTurns: 8,
         }),
@@ -1011,13 +1206,13 @@ it("启动恢复：唯一合法 entry 投影终态；重复 entry 标记 interru
           status,
           agentRevision: 1,
           snapshotJson: JSON.stringify({
-            schemaVersion: 1,
+            schemaVersion: 2,
             agentId,
             agentRevision: 1,
             model: { providerId: model.provider, modelId: model.id },
             systemPromptId: null,
             skillIds: [],
-            toolNames: [],
+            toolRefs: [],
             thinkingLevel: "off",
             maxTurns: 8,
           }),
@@ -1165,13 +1360,13 @@ it("启动恢复：schema 解析失败标记 AI.RUN_INTERRUPTED", async () => {
         status: "running",
         agentRevision: 1,
         snapshotJson: JSON.stringify({
-          schemaVersion: 1,
+          schemaVersion: 2,
           agentId,
           agentRevision: 1,
           model: { providerId: model.provider, modelId: model.id },
           systemPromptId: null,
           skillIds: [],
-          toolNames: [],
+          toolRefs: [],
           thinkingLevel: "off",
           maxTurns: 8,
         }),
@@ -1452,11 +1647,11 @@ async function seedAgentDefinition(
       status: "enabled",
       revision: 1,
       configJson: JSON.stringify({
-        schemaVersion: 1,
+        schemaVersion: 2,
         model: { providerId: model.provider, modelId: model.id },
         systemPromptId: null,
         skillIds: [],
-        toolNames: [],
+        toolRefs: [],
         thinkingLevel: "off",
         maxTurns: 8,
       }),

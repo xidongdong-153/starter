@@ -29,11 +29,11 @@ function renderPage() {
 }
 
 const config = {
-  schemaVersion: 1 as const,
+  schemaVersion: 2 as const,
   model: { providerId: 'openai', modelId: 'gpt-test' },
   systemPromptId: '01900000-0000-7000-8000-000000000001',
   skillIds: ['01900000-0000-7000-8000-000000000002'],
-  toolNames: ['read_skill'],
+  toolRefs: [{ name: 'read_skill', version: '1.0.0' }],
   thinkingLevel: 'medium' as const,
   maxTurns: 8,
 }
@@ -125,7 +125,14 @@ beforeEach(() => {
     refetch: vi.fn(),
   })
   mocks.useAdminAiToolsQuery.mockReturnValue({
-    data: [{ name: 'read_skill', description: 'Read a skill' }],
+    data: [
+      {
+        name: 'read_skill',
+        version: '1.0.0',
+        description: 'Read a skill',
+        scope: 'platform',
+      },
+    ],
     error: null,
     isLoading: false,
     refetch: vi.fn(),
@@ -177,8 +184,74 @@ describe('agentDefinition 管理页', () => {
 
     await waitFor(() => expect(create).toHaveBeenCalledOnce())
     const input = create.mock.calls[0]?.[0]
-    expect(input).toMatchObject({ name: 'New Agent', config: { schemaVersion: 1, model: null, systemPromptId: null } })
+    expect(input).toMatchObject({
+      name: 'New Agent',
+      config: { schemaVersion: 2, model: null, systemPromptId: null, toolRefs: [] },
+    })
     expect(JSON.stringify(input)).not.toContain('hidden from Agent form payload')
+  })
+
+  it('编辑已有 Agent 时回填结构化 toolRefs，提交时携带精确版本', async () => {
+    const update = vi.fn().mockResolvedValue({})
+    mocks.useUpdateAgentDefinitionMutation.mockReturnValue({ isPending: false, mutateAsync: update })
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '编辑' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'Code Agent v2' } })
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(update).toHaveBeenCalledOnce())
+    const input = update.mock.calls[0]?.[0]
+    expect(input).toMatchObject({
+      agentId: '01900000-0000-7000-8000-000000000010',
+      values: {
+        name: 'Code Agent v2',
+        config: {
+          schemaVersion: 2,
+          toolRefs: [{ name: 'read_skill', version: '1.0.0' }],
+        },
+      },
+    })
+  })
+
+  it('tool 选项显示 name@version，选择同名不同版本时阻止提交', async () => {
+    mocks.useAdminAiToolsQuery.mockReturnValue({
+      data: [
+        {
+          name: 'read_skill',
+          version: '1.0.0',
+          description: 'Read a skill',
+          scope: 'platform',
+        },
+        {
+          name: 'read_skill',
+          version: '2.0.0',
+          description: 'Read a skill v2',
+          scope: 'platform',
+        },
+      ],
+      error: null,
+      isLoading: false,
+      refetch: vi.fn(),
+    })
+    const create = vi.fn().mockResolvedValue({})
+    mocks.useCreateAgentDefinitionMutation.mockReturnValue({ isPending: false, mutateAsync: create })
+    renderPage()
+
+    fireEvent.click(screen.getByRole('button', { name: '新建 Agent' }))
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'Conflict Agent' } })
+
+    fireEvent.mouseDown(screen.getByLabelText('工具'))
+    await waitFor(() => expect(screen.getByTitle(/read_skill@1\.0\.0/)).toBeTruthy())
+    fireEvent.click(screen.getByTitle(/read_skill@1\.0\.0/))
+    // multiple 模式下选择后下拉保持打开，直接选第二个版本
+    await waitFor(() => expect(screen.getByTitle(/read_skill@2\.0\.0/)).toBeTruthy())
+    fireEvent.click(screen.getByTitle(/read_skill@2\.0\.0/))
+
+    fireEvent.click(screen.getByRole('button', { name: '保存' }))
+
+    await waitFor(() => expect(screen.getByText('同一个 Agent 不能同时选择同一工具的不同版本')).toBeTruthy())
+    expect(create).not.toHaveBeenCalled()
   })
 
   it('更新时间格式化展示，操作按钮成组渲染', () => {

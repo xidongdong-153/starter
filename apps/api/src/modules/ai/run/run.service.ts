@@ -236,7 +236,7 @@ export function createAiAgentRunService(input: {
           systemPrompt: resolved.systemPrompt,
           thinkingLevel: resolved.thinkingLevel,
           maxTurns: resolved.maxTurns,
-          toolNames: resolved.config.toolNames,
+          tools: resolved.tools,
         },
       });
     } catch (cause) {
@@ -774,13 +774,13 @@ function buildSnapshot(
   resolved: import("../agent/agent.service.js").ResolvedAgentDefinition,
 ): AgentRunSnapshot {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     agentId,
     agentRevision,
     model: resolved.model,
     systemPromptId: resolved.config.systemPromptId,
     skillIds: resolved.config.skillIds,
-    toolNames: resolved.config.toolNames,
+    toolRefs: resolved.config.toolRefs,
     thinkingLevel: resolved.config.thinkingLevel,
     maxTurns: resolved.config.maxTurns,
   };

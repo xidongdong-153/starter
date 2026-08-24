@@ -40,6 +40,8 @@ export interface PiToolExecutionAudit {
     modelCallId: string | null;
     requestId?: string;
     toolName: string;
+    /** 已注册 Tool 必须传精确版本；未注册 Tool 的 not_found 记录传 null，不猜测版本。 */
+    toolVersion: string | null;
     timeoutMs: number;
   }) => PiToolExecutionAuditHandle | null;
   finalizeToolExecution: (
@@ -52,7 +54,6 @@ export interface PiToolExecutionAudit {
 export interface PiToolAdapterOptions {
   principal: PrincipalContext;
   scope: ResourceScope;
-  userId: string;
   requestId: string;
   hasPermission: (userId: string, permission: Permission) => Promise<boolean>;
   getModelCallId: () => string | null;
@@ -121,6 +122,7 @@ export function createPiToolAdapter(
           modelCallId: options.getModelCallId(),
           requestId: options.requestId,
           toolName: input.toolName,
+          toolVersion: tool?.version ?? null,
           timeoutMs,
         }),
         finalized: false,
@@ -195,6 +197,7 @@ function createAgentTool(
           modelCallId: options.getModelCallId(),
           requestId: options.requestId,
           toolName: tool.name,
+          toolVersion: tool.version,
           timeoutMs,
         });
       let finalized = false;
@@ -244,6 +247,25 @@ function createAgentTool(
         );
       }
 
+      // 参数安全序列化检查：不可序列化、非 object 或 JSON 字符数超过 16000
+      // 都按参数无效处理；检查过程不把值写入异常、日志或审计。
+      if (safeSerializeArguments(params) === null) {
+        finalizeAudit(
+          "invalid_arguments",
+          ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+        );
+        return failWithoutAudit(
+          toolCallId,
+          pendingFailures,
+          "invalid_arguments",
+          ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+          "The tool arguments are invalid.",
+          false,
+          options,
+          signal,
+        );
+      }
+
       let parsed: unknown;
       try {
         parsed = tool.inputSchema.parse(params);
@@ -281,11 +303,16 @@ function createAgentTool(
       if (tool.requiredPermission) {
         let allowed = false;
         try {
-          allowed = await options.hasPermission(
-            options.userId,
-            tool.requiredPermission,
-          );
+          // 只有 Starter User 主体才查 Starter 用户角色；
+          // product_app 不得把 externalUserId 当作 Starter User ID 查询 user_roles。
+          if (options.principal.kind === "starter_user") {
+            allowed = await options.hasPermission(
+              options.principal.principalId,
+              tool.requiredPermission,
+            );
+          }
         } catch {
+          // 权限查询异常按拒绝处理，不降级允许。
           allowed = false;
         }
         if (!allowed) {
@@ -333,7 +360,6 @@ function createAgentTool(
               {
                 principal: options.principal,
                 scope: options.scope,
-                userId: options.userId,
                 requestId: options.requestId,
                 signal: toolSignal,
                 reportProgress,
@@ -433,6 +459,13 @@ function preflightToolFailure(pending: PendingToolAudit): PiToolResultDetails {
       "The requested tool is not available.",
     );
   }
+  if (safeSerializeArguments(pending.args) === null) {
+    return toolResultDetails(
+      "invalid_arguments",
+      ApiErrorCodes.AI_TOOL_INVALID_ARGUMENTS,
+      "The tool arguments are invalid.",
+    );
+  }
   try {
     if (!pending.tool.inputSchema.safeParse(pending.args).success) {
       return toolResultDetails(
@@ -453,6 +486,23 @@ function preflightToolFailure(pending: PendingToolAudit): PiToolResultDetails {
     ApiErrorCodes.AI_TOOL_FAILED,
     "The tool failed.",
   );
+}
+
+/**
+ * 安全序列化：模型参数必须是可序列化的 object，序列化结果最多 16000 字符。
+ * 不可序列化、非 object 或超限都返回 null；值本身不进入任何输出。
+ */
+function safeSerializeArguments(value: unknown): string | null {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return null;
+  }
+  try {
+    const text = JSON.stringify(value);
+    if (text === undefined || text.length > 16_000) return null;
+    return text;
+  } catch {
+    return null;
+  }
 }
 
 function readToolResultDetails(value: unknown): PiToolResultDetails | null {
@@ -514,6 +564,7 @@ function beginToolAudit(
     modelCallId: string | null;
     requestId?: string;
     toolName: string;
+    toolVersion: string | null;
     timeoutMs: number;
   },
 ): PiToolExecutionAuditHandle | null {

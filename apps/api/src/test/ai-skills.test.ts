@@ -127,9 +127,23 @@ it("read_skill 工具：注册在 orchestrator 中，启用技能返回 content�
     const tool = createReadSkillTool(createAiSkillRepository(runtime.db));
     const success = await tool.execute(
       {
-        userId: "skill-user",
+        principal: {
+          kind: "starter_user" as const,
+          principalId: "skill-user",
+          tenantId: "starter",
+          projectId: "starter",
+          externalUserId: "skill-user",
+          appId: null,
+        },
+        scope: {
+          tenantId: "starter",
+          projectId: "starter",
+          subjectType: null,
+          subjectId: null,
+        },
         requestId: "skill-request",
         signal: new AbortController().signal,
+        reportProgress: () => undefined,
       },
       { name: "sql-expert" },
     );
@@ -138,9 +152,23 @@ it("read_skill 工具：注册在 orchestrator 中，启用技能返回 content�
     await expect(
       tool.execute(
         {
-          userId: "skill-user",
+          principal: {
+            kind: "starter_user" as const,
+            principalId: "skill-user",
+            tenantId: "starter",
+            projectId: "starter",
+            externalUserId: "skill-user",
+            appId: null,
+          },
+          scope: {
+            tenantId: "starter",
+            projectId: "starter",
+            subjectType: null,
+            subjectId: null,
+          },
           requestId: "skill-request",
           signal: new AbortController().signal,
+          reportProgress: () => undefined,
         },
         { name: "inactive-skill" },
       ),
@@ -148,9 +176,23 @@ it("read_skill 工具：注册在 orchestrator 中，启用技能返回 content�
     await expect(
       tool.execute(
         {
-          userId: "skill-user",
+          principal: {
+            kind: "starter_user" as const,
+            principalId: "skill-user",
+            tenantId: "starter",
+            projectId: "starter",
+            externalUserId: "skill-user",
+            appId: null,
+          },
+          scope: {
+            tenantId: "starter",
+            projectId: "starter",
+            subjectType: null,
+            subjectId: null,
+          },
           requestId: "skill-request",
           signal: new AbortController().signal,
+          reportProgress: () => undefined,
         },
         { name: "missing" },
       ),

@@ -152,8 +152,8 @@ sequenceDiagram
   R-->>U: SSE HarnessEvent
 
   alt 模型请求工具
-    X->>T: execute(toolName, args, userId, signal)
-    T->>T: Zod parse + permission + timeout
+    X->>T: execute(toolName, args, principal, scope, signal)
+    T->>T: size + Zod parse + scope + principal permission + timeout
     T->>DB: begin/finalize ai_tool_executions
     T-->>X: safe tool result
     X->>PS: append tool result(runId)
@@ -450,7 +450,7 @@ flowchart TD
 
 应用凭据只存 sha256 哈希和前 12 位前缀（`application.crypto.ts`），认证时按前缀取候选再做 `timingSafeEqual`。`AI_CONFIG_MANAGE` 权限的管理员负责创建、rotate 和 revoke。
 
-Tool 的权限检查现在没有 principalKind 判据：`run.service.ts` 把 `principal.externalUserId ?? principalId` 当 `userId` 传给 executor，`pi-tool-adapter.ts` 拿它直接调 `hasPermission`，而 `hasPermission` 只按 `user_roles.userId` 查表。第三方只要把 `X-AI-External-User-Id` 填成某个 Starter 用户 id，带 `requiredPermission` 的工具就会通过检查。当前内置工具的 `requiredPermission` 全是 `null`，没有可利用面；新增带权限的工具前必须先补上 principalKind 判据。
+Tool 的权限检查由 adapter 按 principal kind 分流：只有 `starter_user` 用 `principal.principalId` 查 Starter 授权表；`product_app` 对带 `requiredPermission` 的 Tool 直接 `AI.TOOL_FORBIDDEN`，伪造与 Starter 用户相同的 `X-AI-External-User-Id` 也不会查 `user_roles`；权限查询异常同样按拒绝处理。Adapter 只收 Run 启动时已解析的 `RegisteredAiTool[]`，handler 不接收裸 userId、Hono Context、Better Auth session 或数据库 client。
 
 `GET /api/ai/agents` 和 `GET /api/ai/agents/{agentId}` 当前用的是 `requireAuth`，应用凭据调不通；运行面 OpenAPI 的 `security` 也只声明了 `cookieAuth`。改这两处前先确认调用方是否依赖现状。
 

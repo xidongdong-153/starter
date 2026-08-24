@@ -562,6 +562,8 @@ export const aiToolExecutions = sqliteTable(
       .notNull()
       .references(() => aiModelCalls.id, { onDelete: "cascade" }),
     toolName: text("tool_name").notNull(),
+    /** 历史记录与未注册 Tool 的 not_found 记录允许 null；新执行必须由应用层写精确版本。 */
+    toolVersion: text("tool_version"),
     startedAt: timestamp("started_at").notNull(),
     finishedAt: timestamp("finished_at"),
     durationMs: integer("duration_ms"),

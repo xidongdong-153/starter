@@ -8,6 +8,7 @@ import {
   agentTranscriptItemSchema,
   agentTranscriptQuerySchema,
   aiModelCallAuditSchema,
+  aiToolRefSchema,
   createAgentDefinitionSchema,
   createAgentSessionSchema,
   defaultAgentDefinitionConfig,
@@ -33,11 +34,11 @@ const IDS = {
 const NOW = "2025-01-01T00:00:00.000Z";
 const MODEL = { providerId: "openai", modelId: "gpt-4o" } as const;
 const CONFIG = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   model: MODEL,
   systemPromptId: IDS.prompt,
   skillIds: [IDS.skill],
-  toolNames: ["lookup"],
+  toolRefs: [{ name: "lookup", version: "1.0.0" }],
   thinkingLevel: "medium",
   maxTurns: 8,
 } as const;
@@ -50,11 +51,11 @@ const SNAPSHOT = {
 describe("agent harness contracts", () => {
   it("解析默认配置并拒绝 secret、未知字段、重复引用和越界参数", () => {
     expect(defaultAgentDefinitionConfig).toEqual({
-      schemaVersion: 1,
+      schemaVersion: 2,
       model: null,
       systemPromptId: null,
       skillIds: [],
-      toolNames: [],
+      toolRefs: [],
       thinkingLevel: "off",
       maxTurns: 8,
     });
@@ -72,7 +73,10 @@ describe("agent harness contracts", () => {
     expect(
       agentDefinitionConfigSchema.safeParse({
         ...CONFIG,
-        toolNames: ["lookup", "lookup"],
+        toolRefs: [
+          { name: "lookup", version: "1.0.0" },
+          { name: "lookup", version: "1.0.0" },
+        ],
       }).success,
     ).toBe(false);
     expect(
@@ -83,6 +87,82 @@ describe("agent harness contracts", () => {
       createAgentDefinitionSchema.safeParse({
         name: "Harness",
         unknown: true,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("只接受 schemaVersion 2 + toolRefs，拒绝 v1、toolNames、缺版本和版本范围", () => {
+    expect(
+      aiToolRefSchema.safeParse({ name: "lookup", version: "1.0.0" }).success,
+    ).toBe(true);
+    expect(
+      aiToolRefSchema.safeParse({ name: "lookup", version: "1.0.0" }).data,
+    ).toEqual({
+      name: "lookup",
+      version: "1.0.0",
+    });
+
+    // v1 配置：整体拒绝，不存在兼容读取
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        schemaVersion: 1,
+      }).success,
+    ).toBe(false);
+
+    // toolNames 不是 v2 字段，strictObject 拒绝未知字段
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        toolNames: ["lookup"],
+      }).success,
+    ).toBe(false);
+
+    // 缺失 version / name
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        toolRefs: [{ name: "lookup" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        toolRefs: [{ version: "1.0.0" }],
+      }).success,
+    ).toBe(false);
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        toolRefs: [],
+      }).success,
+    ).toBe(true);
+
+    // 版本范围 / latest / v 前缀 / 预发布标签全部拒绝
+    for (const version of [
+      "latest",
+      "^1.0.0",
+      ">=1.0.0",
+      "~1.0.0",
+      "v1.0.0",
+      "1.0",
+      "1.0.0-beta.1",
+      "1.0.0+build",
+    ]) {
+      expect(
+        agentDefinitionConfigSchema.safeParse({
+          ...CONFIG,
+          toolRefs: [{ name: "lookup", version }],
+        }).success,
+        version,
+      ).toBe(false);
+    }
+
+    // 非法工具名
+    expect(
+      agentDefinitionConfigSchema.safeParse({
+        ...CONFIG,
+        toolRefs: [{ name: "Lookup", version: "1.0.0" }],
       }).success,
     ).toBe(false);
   });

@@ -1,0 +1,1 @@
+ALTER TABLE `ai_tool_executions` ADD `tool_version` text;

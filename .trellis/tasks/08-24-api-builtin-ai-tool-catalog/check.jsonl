@@ -1,0 +1,14 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端质量检查入口"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "AI Tool、Agent config、审计和安全输出检查"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi Tool Adapter 和 Executor 检查"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run snapshot、恢复和生命周期检查"}
+{"file": ".trellis/spec/api/backend/authorization-guidelines.md", "reason": "Product App 权限主体安全检查"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "migration 和审计历史数据检查"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 跨层检查"}
+{"file": ".trellis/spec/contracts/backend/quality-guidelines.md", "reason": "共享 DTO、schema 和 build 检查"}
+{"file": ".trellis/spec/admin/frontend/index.md", "reason": "Admin 检查入口"}
+{"file": ".trellis/spec/admin/frontend/type-safety.md", "reason": "Admin DTO 和表单转换检查"}
+{"file": ".trellis/spec/admin/frontend/quality-guidelines.md", "reason": "Admin 交互和测试检查"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨层字段和 fixture 检查"}
+{"file": ".trellis/tasks/08-24-api-builtin-ai-tool-catalog/research/code-evidence-and-opencode-agent.md", "reason": "代码事实和模型派发约束"}

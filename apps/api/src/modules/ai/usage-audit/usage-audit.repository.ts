@@ -45,6 +45,7 @@ export interface BeginAiToolExecutionInput {
   id: string;
   aiCallId: string;
   toolName: string;
+  toolVersion: string | null;
   startedAt: Date;
   timeoutMs: number;
 }
@@ -128,7 +129,15 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
 
   function beginToolExecution(input: BeginAiToolExecutionInput): void {
     db.insert(aiToolExecutions)
-      .values({ ...input, status: "running" })
+      .values({
+        id: input.id,
+        aiCallId: input.aiCallId,
+        toolName: input.toolName,
+        toolVersion: input.toolVersion,
+        timeoutMs: input.timeoutMs,
+        startedAt: input.startedAt,
+        status: "running",
+      })
       .run();
   }
 

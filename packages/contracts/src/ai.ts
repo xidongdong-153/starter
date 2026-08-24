@@ -540,9 +540,29 @@ export const aiSkillSchema = aiSkillSummarySchema.extend({
 })
 export type AiSkill = z.infer<typeof aiSkillSchema>
 
+export const aiToolNameSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(64)
+  .regex(/^[a-z][a-z0-9_-]{0,63}$/u)
+export type AiToolName = z.infer<typeof aiToolNameSchema>
+
+export const aiToolVersionSchema = z
+  .string()
+  .trim()
+  .regex(/^\d+\.\d+\.\d+$/u)
+export type AiToolVersion = z.infer<typeof aiToolVersionSchema>
+
+export const aiToolRefSchema = z.strictObject({
+  name: aiToolNameSchema,
+  version: aiToolVersionSchema,
+})
+export type AiToolRef = z.infer<typeof aiToolRefSchema>
+
 export const aiToolSummarySchema = z.strictObject({
-  name: z.string().trim().min(1).max(64),
-  version: z.string().trim().min(1).max(64),
+  name: aiToolNameSchema,
+  version: aiToolVersionSchema,
   description: z.string().min(1).max(1000),
   scope: z.union([z.literal('platform'), z.strictObject({ tenantId: aiScopeIdSchema, projectId: aiScopeIdSchema })]),
 })
@@ -590,23 +610,24 @@ const agentSkillIdsSchema = z
     }
   })
 
-const agentToolNamesSchema = z
-  .array(z.string().trim().min(1).max(240))
+const agentToolRefsSchema = z
+  .array(aiToolRefSchema)
   .max(64)
   .superRefine((values, context) => {
-    if (new Set(values).size !== values.length) {
-      context.addIssue({ code: 'custom', message: '工具列表不能包含重复项' })
+    const keys = values.map((ref) => `${ref.name}\u0000${ref.version}`)
+    if (new Set(keys).size !== keys.length) {
+      context.addIssue({ code: 'custom', message: '工具列表不能包含重复的 name@version' })
     }
   })
 
 const strictAiModelRefSchema = aiModelRefSchema.strict()
 
 export const agentDefinitionConfigSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   model: strictAiModelRefSchema.nullable(),
   systemPromptId: uuidSchema.nullable(),
   skillIds: agentSkillIdsSchema,
-  toolNames: agentToolNamesSchema,
+  toolRefs: agentToolRefsSchema,
   thinkingLevel: agentThinkingLevelSchema,
   maxTurns: z.number().int().min(1).max(32),
 })
@@ -614,11 +635,11 @@ export const agentDefinitionConfigSchema = z.strictObject({
 export type AgentDefinitionConfig = z.infer<typeof agentDefinitionConfigSchema>
 
 export const defaultAgentDefinitionConfig = agentDefinitionConfigSchema.parse({
-  schemaVersion: 1,
+  schemaVersion: 2,
   model: null,
   systemPromptId: null,
   skillIds: [],
-  toolNames: [],
+  toolRefs: [],
   thinkingLevel: 'off',
   maxTurns: 8,
 })
@@ -878,13 +899,13 @@ export const agentRunStatusSchema = z.enum(['starting', 'running', 'completed', 
 export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>
 
 export const agentRunSnapshotSchema = z.strictObject({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   agentId: uuidSchema,
   agentRevision: z.number().int().min(1),
   model: strictAiModelRefSchema,
   systemPromptId: uuidSchema.nullable(),
   skillIds: agentSkillIdsSchema,
-  toolNames: agentToolNamesSchema,
+  toolRefs: agentToolRefsSchema,
   thinkingLevel: agentThinkingLevelSchema,
   maxTurns: z.number().int().min(1).max(32),
 })
@@ -1263,6 +1284,8 @@ export type AiToolExecutionAuditStatus = z.infer<typeof aiToolExecutionAuditStat
 export const aiToolExecutionAuditSummarySchema = z.object({
   id: uuidSchema,
   toolName: z.string().min(1).max(240),
+  /** 已注册 Tool 的新记录必须写入精确版本；历史记录与未注册 Tool 的 not_found 记录允许 null。 */
+  toolVersion: aiToolVersionSchema.nullable(),
   status: aiToolExecutionAuditStatusSchema,
   startedAt: isoDateTimeSchema,
   finishedAt: isoDateTimeSchema.nullable(),

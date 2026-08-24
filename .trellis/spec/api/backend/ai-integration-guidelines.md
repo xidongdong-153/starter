@@ -124,11 +124,11 @@ Gateway 使用项目自己的 user、assistant 和 tool result 消息。这条�
 
 用量读取接口要求 `ai:usage:read`，按 `(started_at, id)` 倒序稳定分页，支持 user、Provider、model、result、request ID 和时间范围精确筛选。presenter 只返回 contracts 白名单字段。
 
-Tool Registry 保存名称、描述、Zod schema、timeout 和权限。Retold Execution 由 Agent Executor 通过 Pi Tool adapter 驱动：adapter 把 registry 工具转成 Pi 工具，执行时再次 parse 输入、检查权限、记录 begin/finalize 审计，并生成安全 tool result。生产 runtime 默认注入空 registry，业务工具不注册，测试通过 `RuntimeDeps.aiTools` 注入。
+Tool Registry 保存名称、精确版本、描述、Zod schema、timeout、scope 和权限，只按精确 `{ name, version }` 查找。内置 Tool 由 `modules/ai/tool/tool-catalog.ts` 的显式 Catalog 组装：runtime 注入（测试用途）+ 各业务模块的已审核 Tool（如 `read_skill`）；不扫描目录、不动态注册。Execution 由 Agent Executor 通过 Pi Tool adapter 驱动：adapter 把 Run 启动时已解析的 `RegisteredAiTool[]` 转成 Pi 工具，执行时检查参数序列化大小、再次 parse 输入、检查 scope 和 Principal 权限、记录 begin/finalize 审计，并生成安全 tool result。Product App 主体不能复用 Starter 用户角色查询，带权限的工具对其直接 forbidden。
 
 固定约束：工具自身 timeout 100 到 30000 毫秒；arguments 和 model-facing result 各最多 16000 字符；safeSummary 最多 1000 字符。每个未超量 call 在校验前 best-effort begin tool audit，所有已 begin 记录都必须 finalize，不能遗留 running。
 
-安全边界：tool arguments、model-facing result 和 safeSummary 只存在于当前内存与 SSE 实时事件；SQLite 只保存脱敏 activity（toolCallId、name、status、errorCode）和执行审计元数据。handler 只接收 user ID、request ID、AbortSignal 和已校验输入；日志字段固定为 event、requestId、toolCallId、toolName、status、errorCode。
+安全边界：tool arguments、model-facing result 和 safeSummary 只存在于当前内存与 SSE 实时事件；SQLite 只保存脱敏 activity（toolCallId、name、status、errorCode）和执行审计元数据。handler 只接收已解析参数和受限执行上下文（`PrincipalContext`、`ResourceScope`、requestId、AbortSignal、进度函数），不接收裸 userId、Hono Context、Better Auth session、完整 runtime 或数据库 client；日志字段固定为 event、requestId、toolCallId、toolName、status、errorCode。
 
 API 环境变量：
 
@@ -358,12 +358,14 @@ GET   /api/ai/admin/tools
 
 ### 8.3 Contracts
 
-- Config 使用 `agentDefinitionConfigSchema` 的固定字段：`schemaVersion`、`model`、`systemPromptId`、`skillIds`、`toolNames`、`thinkingLevel`、`maxTurns`。
+- Config 使用 `agentDefinitionConfigSchema` 的固定字段：`schemaVersion: 2`、`model`、`systemPromptId`、`skillIds`、`toolRefs`（精确 `{ name, version }`）、`thinkingLevel`、`maxTurns`。v1、`toolNames`、缺版本和版本范围一律拒绝，不存在兼容读取或默认版本推断。
 - Admin 返回 `AgentDefinitionDetail`，公开返回 `AgentDefinitionSummary`；两者都不包含 `createdBy`、`updatedBy`、Provider credential、Prompt/Skill 内容、Tool schema 或 handler。
-- `ai_agent_definitions.config_json` 写入前必须经过 schema 解析。比较执行配置时按结构比较，并把 `skillIds`、`toolNames` 当作 allowlist 规范化排序；不能用原始 JSON 字符串比较。
+- `ai_agent_definitions.config_json` 写入前必须经过 schema 解析。比较执行配置时按结构比较，并把 `skillIds` 和 `toolRefs` 当作 allowlist 规范化排序（toolRefs 按 `name + version` 排序）；不能用原始 JSON 字符串比较。
 - 创建时 `revision=1`。模型、System Prompt、Skill、Tool、thinking level 或 max turns 变化使 revision 加 1；只改 name/description 或 status 不加 revision。status 变化只更新 `updatedAt`。
 - Agent 更新同时按当前 `revision` 和 `status` 条件写入；检测到并发变化时重新读取并重新校验，避免状态变化覆盖执行配置。
-- `/api/ai/admin/tools` 只返回 `{ name, description }`，不能把 `inputSchema` 或执行函数带到客户端。
+- 同一个 Agent 不能同时引用同名不同版本的 Tool（Pi 模型调用只携带 Tool name）；Registry 只按精确 `{ name, version }` 查找，不提供无版本查找。
+- `/api/ai/admin/tools` 只返回公开元数据 `{ name, version, description, scope }`，不能把 `inputSchema`、`execute` 或任何 runtime 对象带到客户端。
+- Run 启动时 Agent Service 解析精确 refs 并返回 `RegisteredAiTool[]`，Run Service 把已解析 Tool 直接交给 Executor；Run snapshot 只保存结构化的 `toolRefs`（无 handler、schema、arguments、result 或 secret）。
 
 ### 8.4 Validation & Error Matrix
 
@@ -373,7 +375,8 @@ GET   /api/ai/admin/tools
 | Admin 引用未知、停用或未允许的模型 | 400 `AI.AGENT_CONFIG_INVALID` |
 | System Prompt 不存在或未启用 | 400 `AI.AGENT_CONFIG_INVALID` |
 | Skill 不存在或未启用 | 400 `AI.AGENT_CONFIG_INVALID` |
-| Tool name 不在 Registry | 400 `AI.AGENT_CONFIG_INVALID` |
+| Tool ref 不在 Registry（精确 name@version 缺失） | 400 `AI.AGENT_CONFIG_INVALID` |
+| 同一 Agent 引用同名不同版本 | 400 `AI.AGENT_CONFIG_INVALID` |
 | draft 缺少 model 或 systemPrompt | 可以保存；启用时返回 400 `AI.AGENT_CONFIG_INVALID` |
 | 普通用户读取 draft/disabled Agent | 404 `COMMON.NOT_FOUND`，列表不返回 |
 | 无 session | 401 `AUTH.UNAUTHENTICATED` |

@@ -23,11 +23,11 @@ Provider 列表来自 pi-ai 的 `builtinProviders()`，不在本仓维护。`app
 
 ### 2.2 新增 Tool
 
-1. 用 `apps/api/src/modules/ai/tool/tool-registry.ts` 的 `defineAiTool` 定义：`name`、`description`、`inputSchema`（Zod）、`timeoutMs`、`requiredPermission`、可选 `scope`、`execute`。
-2. `execute` 只能返回 `{ modelText, safeSummary }`。`modelText` 给模型，`safeSummary` 给界面和事件，上限 1000 字符。原始入参、原始结果和上游负载都不能返回，也不能落库。
-3. 注册：面向所有租户的工具挂在 `createRuntime` 的 `aiTools`；需要访问业务仓库的工具在 `ai.route.ts` 里构造后加进 `createAiToolRegistry`，`read_skill` 就是这么接的。
-4. `requiredPermission` 不为空时，权限检查直接拿 `externalUserId` 去查 Starter 授权表，没有 principalKind 判据：应用凭据传的 id 在 Starter 里不存在就报 `AI.TOOL_FORBIDDEN`，恰好等于某个 Starter 用户 id 时反而会拿到那个用户的权限。新增带权限的工具前先补上这层判据；给第三方用的工具把它设成 `null`，靠 `scope` 限定范围。
-5. Agent 要用这个工具，得在 Agent Definition 的 `toolNames` 里加名称，管理员在 Admin 改。
+1. 用 `apps/api/src/modules/ai/tool/tool-registry.ts` 的 `defineAiTool` 定义：`name`（小写字母开头）、精确 `version`（`\d+.\d+.\d+`）、`description`、`inputSchema`（object 类型 Zod）、`timeoutMs`（100-30000）、`scope`、`requiredPermission`、`execute`。
+2. `execute` 只能返回 `{ modelText, safeSummary }`。`modelText` 上限 16000 字符，给模型；`safeSummary` 上限 1000 字符，给界面和事件。原始入参、原始结果和上游负载都不能返回，也不能落库。handler 只拿受限执行上下文（principal、scope、requestId、signal、reportProgress），不拿裸 userId、Hono Context、Session 或数据库。
+3. 注册：所有内置 Tool 统一在 `apps/api/src/modules/ai/tool/tool-catalog.ts` 的 `createBuiltinAiToolRegistry` 显式组装；业务 Tool 留在自己的模块下实现，通过受控 service/repository 访问业务数据，`read_skill` 就是样例。不扫描目录、不动态 import。
+4. `requiredPermission` 不为空时由 adapter 按 principal kind 分流：只有 `starter_user` 用 `principalId` 查 Starter 授权表；`product_app` 直接 `AI.TOOL_FORBIDDEN`，伪造与 Starter 用户相同的 external user ID 也不能通过。权限查询异常同样按拒绝处理。给第三方用的工具可以不设权限，靠 `scope` 限定范围。
+5. Agent 要用这个工具，得在 Agent Definition 配置里加精确 `toolRefs`（`{ name, version }`），管理员在 Admin 选 `name@version`。同一个 Agent 不能同时选同名不同版本。
 6. 测试：`apps/api/src/test/pi-tool-adapter.test.ts` 覆盖参数校验、权限、超时和审计，`ai-test-tools.test.ts` 是内置测试工具的样例。
 
 ### 2.3 新增 Skill

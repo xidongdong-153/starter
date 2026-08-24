@@ -1,4 +1,10 @@
 import { ApiErrorCodes } from "@starter/contracts";
+import { z } from "zod";
+
+import {
+  createAiToolRegistry,
+  defineAiTool,
+} from "@api/modules/ai/tool/tool-registry.js";
 import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 
@@ -76,11 +82,11 @@ it("agentDefinition CRUD、revision、状态和公开边界可用", async () => 
       status: "draft",
       revision: 1,
       config: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         model: null,
         systemPromptId: null,
         skillIds: [],
-        toolNames: [],
+        toolRefs: [],
         thinkingLevel: "off",
         maxTurns: 8,
       },
@@ -130,11 +136,11 @@ it("agentDefinition CRUD、revision、状态和公开边界可用", async () => 
       admin.cookie,
       {
         config: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           model,
           systemPromptId: promptBody.data.id,
           skillIds: [skillBody.data.id],
-          toolNames: ["read_skill"],
+          toolRefs: [{ name: "read_skill", version: "1.0.0" }],
           thinkingLevel: "medium",
           maxTurns: 12,
         },
@@ -153,11 +159,11 @@ it("agentDefinition CRUD、revision、状态和公开边界可用", async () => 
         config: {
           maxTurns: 12,
           thinkingLevel: "medium",
-          toolNames: ["read_skill"],
+          toolRefs: [{ name: "read_skill", version: "1.0.0" }],
           skillIds: [skillBody.data.id],
           systemPromptId: promptBody.data.id,
           model,
-          schemaVersion: 1,
+          schemaVersion: 2,
         },
       },
     );
@@ -174,11 +180,11 @@ it("agentDefinition CRUD、revision、状态和公开边界可用", async () => 
         admin.cookie,
         {
           config: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             model,
             systemPromptId: promptBody.data.id,
             skillIds: [skillBody.data.id],
-            toolNames: ["read_skill"],
+            toolRefs: [{ name: "read_skill", version: "1.0.0" }],
             thinkingLevel: "medium",
             maxTurns: 13,
           },
@@ -190,11 +196,11 @@ it("agentDefinition CRUD、revision、状态和公开边界可用", async () => 
         admin.cookie,
         {
           config: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             model,
             systemPromptId: promptBody.data.id,
             skillIds: [skillBody.data.id],
-            toolNames: ["read_skill"],
+            toolRefs: [{ name: "read_skill", version: "1.0.0" }],
             thinkingLevel: "medium",
             maxTurns: 14,
           },
@@ -296,7 +302,7 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
         {
           model,
           systemPromptId: promptBody.data.id,
-          toolNames: ["missing_tool"],
+          toolRefs: [{ name: "missing_tool", version: "1.0.0" }],
         },
       ],
     ] as const) {
@@ -307,11 +313,11 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
         {
           name,
           config: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             model: config.model,
             systemPromptId: config.systemPromptId ?? null,
             skillIds: [],
-            toolNames: config.toolNames ?? [],
+            toolRefs: config.toolRefs ?? [],
             thinkingLevel: "off",
             maxTurns: 8,
           },
@@ -337,11 +343,11 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
       {
         name: "invalid-skill",
         config: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           model,
           systemPromptId: promptBody.data.id,
           skillIds: [disabledSkillBody.data.id],
-          toolNames: [],
+          toolRefs: [],
           thinkingLevel: "off",
           maxTurns: 8,
         },
@@ -359,11 +365,11 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
       {
         name: "references-prompt",
         config: {
-          schemaVersion: 1,
+          schemaVersion: 2,
           model,
           systemPromptId: promptBody.data.id,
           skillIds: [],
-          toolNames: [],
+          toolRefs: [],
           thinkingLevel: "off",
           maxTurns: 8,
         },
@@ -394,6 +400,70 @@ it("agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
     expect((await readFailure(enableIncomplete)).error.code).toBe(
       ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
     );
+  } finally {
+    cleanup();
+  }
+});
+
+it("同一个 Agent 不能引用同名不同版本的 Tool，返回稳定配置错误", async () => {
+  const lookupV1 = defineAiTool({
+    name: "lookup",
+    version: "1.0.0",
+    description: "Lookup v1",
+    inputSchema: z.object({}),
+    timeoutMs: 1000,
+    scope: "platform",
+    requiredPermission: null,
+    async execute() {
+      return { modelText: "v1", safeSummary: null };
+    },
+  });
+  const lookupV2 = defineAiTool({
+    name: "lookup",
+    version: "2.0.0",
+    description: "Lookup v2",
+    inputSchema: z.object({}),
+    timeoutMs: 1000,
+    scope: "platform",
+    requiredPermission: null,
+    async execute() {
+      return { modelText: "v2", safeSummary: null };
+    },
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    { aiTools: createAiToolRegistry([lookupV1, lookupV2]) },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const model = seedModel(runtime);
+    const prompt = await postJson(app, "/api/ai/system-prompts", admin.cookie, {
+      name: "same-name-tool-prompt",
+      content: "只返回事实。",
+    });
+    const promptBody = await readSuccess<{ id: string }>(prompt);
+
+    const response = await postJson(app, "/api/ai/admin/agents", admin.cookie, {
+      name: "same-name-tool-agent",
+      config: {
+        schemaVersion: 2,
+        model,
+        systemPromptId: promptBody.data.id,
+        skillIds: [],
+        toolRefs: [
+          { name: "lookup", version: "1.0.0" },
+          { name: "lookup", version: "2.0.0" },
+        ],
+        thinkingLevel: "off",
+        maxTurns: 8,
+      },
+    });
+    expect(response.status).toBe(400);
+    const failure = await readFailure(response);
+    expect(failure.error.code).toBe(ApiErrorCodes.AI_AGENT_CONFIG_INVALID);
+    expect(failure.error.details).toEqual({
+      resource: "tool",
+    });
   } finally {
     cleanup();
   }

@@ -223,7 +223,9 @@ function UsageDetail({ item }: { item: AiModelCallAuditDetail | undefined }) {
       ) : (
         item.toolExecutions.map((tool) => (
           <div key={tool.id} className="flex flex-wrap items-center justify-between gap-2 border-b py-2 text-sm">
-            <span className="break-all">{tool.toolName}</span>
+            <span className="break-all">
+              {tool.toolVersion ? `${tool.toolName}@${tool.toolVersion}` : tool.toolName}
+            </span>
             <Tag>{tool.status}</Tag>
           </div>
         ))

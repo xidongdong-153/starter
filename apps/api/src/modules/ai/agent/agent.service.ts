@@ -3,6 +3,8 @@ import type {
   AgentDefinitionDetail,
   AgentDefinitionListQuery,
   AgentDefinitionSummary,
+  AiToolRef,
+  AiToolSummary,
   CreateAgentDefinitionInput,
   UpdateAgentDefinitionInput,
   UpdateAgentDefinitionStatusInput,
@@ -83,12 +85,7 @@ export interface AiAgentDefinitionService {
     id: string,
     access: RuntimeAccessContext,
   ) => Promise<ResolvedAgentDefinition>;
-  listTools: () => Array<{
-    name: string;
-    version: string;
-    description: string;
-    scope: "platform" | { tenantId: string; projectId: string };
-  }>;
+  listTools: () => AiToolSummary[];
 }
 
 export function createAiAgentDefinitionService(input: {
@@ -286,8 +283,8 @@ export function createAiAgentDefinitionService(input: {
         description: skill.description,
       };
     });
-    const tools = config.toolNames.map((name) => {
-      const tool = toolRegistry.find(name);
+    const tools = config.toolRefs.map((ref) => {
+      const tool = toolRegistry.find(ref);
       if (!tool || !isAiToolAvailableInScope(tool, access.scope)) {
         throw invalidConfig("tool");
       }
@@ -337,8 +334,15 @@ export function createAiAgentDefinitionService(input: {
       const skill = skillRepository.findSkillById(skillId);
       if (!skill || !skill.enabled) throw invalidConfig("skill");
     }
-    for (const toolName of config.toolNames) {
-      if (!toolRegistry.list().some((tool) => tool.name === toolName)) {
+    // 精确 ref 必须存在，且同一个 Agent 不能引用同名不同版本
+    // （Pi 模型调用只携带 Tool name，没有第二个版本选择字段）。
+    const toolNames = new Set<string>();
+    for (const ref of config.toolRefs) {
+      if (toolNames.has(ref.name)) throw invalidConfig("tool");
+      toolNames.add(ref.name);
+      try {
+        toolRegistry.require(ref);
+      } catch {
         throw invalidConfig("tool");
       }
     }
@@ -350,18 +354,8 @@ export function createAiAgentDefinitionService(input: {
     return record;
   }
 
-  function listTools(): Array<{
-    name: string;
-    version: string;
-    description: string;
-    scope: "platform" | { tenantId: string; projectId: string };
-  }> {
-    return toolRegistry.list().map(({ name, version, description, scope }) => ({
-      name,
-      version,
-      description,
-      scope,
-    }));
+  function listTools(): AiToolSummary[] {
+    return [...toolRegistry.listPublic()];
   }
 
   return {
@@ -383,7 +377,11 @@ function normalizeConfig(config: AgentDefinitionConfig): AgentDefinitionConfig {
   return {
     ...parsed.data,
     skillIds: [...parsed.data.skillIds].sort(),
-    toolNames: [...parsed.data.toolNames].sort(),
+    toolRefs: [...parsed.data.toolRefs].sort((left, right) =>
+      left.name === right.name
+        ? left.version.localeCompare(right.version)
+        : left.name.localeCompare(right.name),
+    ),
   };
 }
 
@@ -404,9 +402,23 @@ function sameConfig(
     modelsEqual &&
     normalizedLeft.systemPromptId === normalizedRight.systemPromptId &&
     sameStringArray(normalizedLeft.skillIds, normalizedRight.skillIds) &&
-    sameStringArray(normalizedLeft.toolNames, normalizedRight.toolNames) &&
+    sameToolRefs(normalizedLeft.toolRefs, normalizedRight.toolRefs) &&
     normalizedLeft.thinkingLevel === normalizedRight.thinkingLevel &&
     normalizedLeft.maxTurns === normalizedRight.maxTurns
+  );
+}
+
+function sameToolRefs(left: AiToolRef[], right: AiToolRef[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((ref, index) => {
+      const other = right[index];
+      return (
+        other !== undefined &&
+        ref.name === other.name &&
+        ref.version === other.version
+      );
+    })
   );
 }
 

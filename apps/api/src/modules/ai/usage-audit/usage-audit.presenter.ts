@@ -55,6 +55,7 @@ function toToolExecutionAudit(
   return {
     id: record.id,
     toolName: record.toolName,
+    toolVersion: record.toolVersion,
     status: record.status as AiToolExecutionAuditSummary["status"],
     startedAt: record.startedAt.toISOString(),
     finishedAt: record.finishedAt?.toISOString() ?? null,

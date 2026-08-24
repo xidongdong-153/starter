@@ -105,7 +105,7 @@ const streamFn = createPiNativeStreamFn({
 })
 const tool = createPiToolAdapter(
   [registeredTool],
-  { userId, requestId, hasPermission, audit },
+  { principal, scope, requestId, hasPermission, audit },
 ).tools[0]
 const agent = new Agent({
   initialState: { model, tools: tool ? [tool] : [] },

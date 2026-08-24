@@ -40,7 +40,7 @@ import type {
   PrincipalContext,
   ResourceScope,
 } from "@api/modules/ai/principal.js";
-import type { AiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import type { RegisteredAiTool } from "@api/modules/ai/tool/tool-registry.js";
 import { createPiNativeStreamFn } from "@api/infra/ai/pi-native-stream.js";
 import type {
   PiModelCallAudit,
@@ -68,7 +68,8 @@ export interface ResolvedAgentExecutorConfig {
   systemPrompt?: string;
   thinkingLevel?: AgentDefinitionConfig["thinkingLevel"];
   maxTurns: number;
-  toolNames?: readonly string[];
+  /** Run 启动时已解析的 Tool 定义；Executor 不再按名称查询 Registry。 */
+  tools: readonly RegisteredAiTool[];
 }
 
 export interface AgentExecutorInput {
@@ -117,7 +118,6 @@ export interface PiAgentExecutorOptions {
   models?: Models;
   resolveModel?: (model: AiModelRef) => Model<Api> | undefined;
   streamFn?: StreamFn;
-  tools?: AiToolRegistry;
   hasPermission?: (userId: string, permission: Permission) => Promise<boolean>;
   getProviderRequestEnv?: (providerId: string) => Record<string, string>;
   audit?: PiModelCallAudit;
@@ -248,43 +248,39 @@ export class PiAgentExecutor {
           this.options.compaction,
         );
         let mapper!: PiEventMapper;
-        const toolAdapter = createPiToolAdapter(
-          selectTools(this.options.tools, config.toolNames),
-          {
-            principal: input.principal ?? {
-              kind: "starter_user",
-              principalId: input.userId,
-              tenantId: "starter",
-              projectId: "starter",
-              externalUserId: input.userId,
-              appId: null,
-            },
-            scope: input.scope ?? {
-              tenantId: "starter",
-              projectId: "starter",
-              subjectType: null,
-              subjectId: null,
-            },
-            userId: input.userId,
-            requestId: input.requestId,
-            hasPermission: this.options.hasPermission ?? (async () => false),
-            getModelCallId: () => currentModelCallId,
-            getRemainingRunMs: () => remainingRunMs(deadlineAt),
-            audit: this.options.toolAudit,
-            onTerminalFailure: (reason) => {
-              if (terminalOverride) return;
-              terminalOverride = {
-                status: reason === "cancelled" ? "aborted" : "failed",
-                finalEntryId: mapper.lastAssistantEntryId,
-                errorCode:
-                  reason === "timed_out"
-                    ? ApiErrorCodes.AI_TOOL_TIMED_OUT
-                    : ApiErrorCodes.AI_REQUEST_ABORTED,
-              };
-              agent?.abort();
-            },
+        const toolAdapter = createPiToolAdapter(config.tools, {
+          principal: input.principal ?? {
+            kind: "starter_user",
+            principalId: input.userId,
+            tenantId: "starter",
+            projectId: "starter",
+            externalUserId: input.userId,
+            appId: null,
           },
-        );
+          scope: input.scope ?? {
+            tenantId: "starter",
+            projectId: "starter",
+            subjectType: null,
+            subjectId: null,
+          },
+          requestId: input.requestId,
+          hasPermission: this.options.hasPermission ?? (async () => false),
+          getModelCallId: () => currentModelCallId,
+          getRemainingRunMs: () => remainingRunMs(deadlineAt),
+          audit: this.options.toolAudit,
+          onTerminalFailure: (reason) => {
+            if (terminalOverride) return;
+            terminalOverride = {
+              status: reason === "cancelled" ? "aborted" : "failed",
+              finalEntryId: mapper.lastAssistantEntryId,
+              errorCode:
+                reason === "timed_out"
+                  ? ApiErrorCodes.AI_TOOL_TIMED_OUT
+                  : ApiErrorCodes.AI_REQUEST_ABORTED,
+            };
+            agent?.abort();
+          },
+        });
 
         mapper = new PiEventMapper({
           session,
@@ -541,17 +537,6 @@ function resolveModel(
   } catch {
     return undefined;
   }
-}
-
-function selectTools(
-  registry: AiToolRegistry | undefined,
-  names: readonly string[] | undefined,
-) {
-  if (!registry) return [];
-  const tools = registry.list();
-  if (names === undefined) return tools;
-  const allowed = new Set(names);
-  return tools.filter((tool) => allowed.has(tool.name));
 }
 
 function userMessage(text: string): AgentMessage {

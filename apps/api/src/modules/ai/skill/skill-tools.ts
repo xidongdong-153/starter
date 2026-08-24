@@ -14,12 +14,14 @@ export function createReadSkillTool(
 ): RegisteredAiTool {
   return defineAiTool({
     name: "read_skill",
+    version: "1.0.0",
     description:
       "读取技能的完整内容。可用的技能列表（名称与描述）在系统提示词的 <available_skills> 中，输入技能 name 返回该技能的完整内容。",
     inputSchema: z.object({
       name: z.string().trim().min(1).max(64),
     }),
     timeoutMs: 5000,
+    scope: "platform",
     requiredPermission: null,
     async execute(_context, input) {
       const skill = repository.findEnabledSkillByName(input.name);

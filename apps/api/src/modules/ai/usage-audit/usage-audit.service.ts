@@ -142,6 +142,7 @@ export function createAiUsageAuditService(
     modelCallId: string | null;
     requestId?: string;
     toolName: string;
+    toolVersion: string | null;
     timeoutMs: number;
   }): AiToolExecutionAuditHandle | null {
     if (!input.modelCallId) return null;
@@ -155,6 +156,7 @@ export function createAiUsageAuditService(
         id: handle.id,
         aiCallId: input.modelCallId,
         toolName: input.toolName,
+        toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
         startedAt: handle.startedAt,
       });

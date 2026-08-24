@@ -210,11 +210,11 @@ it.each(protocols)(
         body: JSON.stringify({
           name: `${providerId}-agent`,
           config: {
-            schemaVersion: 1,
+            schemaVersion: 2,
             model: modelRef,
             systemPromptId: prompt.data.id,
             skillIds: [],
-            toolNames: [],
+            toolRefs: [],
             thinkingLevel: "off",
             maxTurns: 1,
           },
@@ -344,11 +344,11 @@ it.each(protocols)(
           },
           body: JSON.stringify({
             config: {
-              schemaVersion: 1,
+              schemaVersion: 2,
               model: null,
               systemPromptId: null,
               skillIds: [],
-              toolNames: [],
+              toolRefs: [],
               thinkingLevel: "off",
               maxTurns: 1,
             },

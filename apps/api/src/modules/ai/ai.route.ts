@@ -44,8 +44,7 @@ import { createAiPromptService } from "./prompt/prompt.service.js";
 import { createAiSkillRepository } from "./skill/skill.repository.js";
 import { createAiSkillRoute } from "./skill/skill.route.js";
 import { createAiSkillService } from "./skill/skill.service.js";
-import { createReadSkillTool } from "./skill/skill-tools.js";
-import { createAiToolRegistry } from "./tool/tool-registry.js";
+import { createBuiltinAiToolRegistry } from "./tool/tool-catalog.js";
 import { createAiUsageAuditRepository } from "./usage-audit/usage-audit.repository.js";
 import { createAiUsageAuditRoute } from "./usage-audit/usage-audit.route.js";
 import {
@@ -86,10 +85,10 @@ export function createAiRoute(runtime: AppRuntime) {
   );
   const authorizationRepository = createAuthorizationRepository(runtime.db);
   const skillRepository = createAiSkillRepository(runtime.db);
-  const toolRegistry = createAiToolRegistry([
-    ...runtime.aiTools.list(),
-    createReadSkillTool(skillRepository),
-  ]);
+  const toolRegistry = createBuiltinAiToolRegistry({
+    injectedTools: runtime.aiTools.list(),
+    skillRepository,
+  });
   const configurationService = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
@@ -143,7 +142,6 @@ export function createAiRoute(runtime: AppRuntime) {
     createPiAgentExecutor({
       sessionStore: runtime.agentSessionStore,
       models: runtime.ai.getModelsCollection(),
-      tools: toolRegistry,
       hasPermission: authorizationRepository.hasPermission,
       getProviderRequestEnv: runtime.ai.getProviderRequestEnv,
       audit: usageAuditService.createAgentModelCallAudit(),

@@ -4,6 +4,8 @@ import type {
   AgentDefinitionStatus,
   AgentThinkingLevel,
   AiModelRef,
+  AiToolRef,
+  AiToolSummary,
   CreateAgentDefinitionInput,
   UpdateAgentDefinitionInput,
 } from '@starter/contracts'
@@ -49,7 +51,8 @@ interface AgentFormValues {
   modelKey?: string
   systemPromptId?: string
   skillIds: string[]
-  toolNames: string[]
+  /** Tool ref UI key：name + '\u0000' + version，合法 name/version 不可能包含该分隔符。 */
+  toolRefs: string[]
   thinkingLevel: AgentThinkingLevel
   maxTurns: number
 }
@@ -60,14 +63,26 @@ function refKey(ref: AiModelRef): string {
   return `${ref.providerId}\u0000${ref.modelId}`
 }
 
+function toolRefKey(ref: AiToolRef): string {
+  return `${ref.name}\u0000${ref.version}`
+}
+
+function parseToolRefKey(key: string): AiToolRef {
+  const [name, version] = key.split('\u0000')
+  if (!name || !version) {
+    throw new Error(`无效的工具引用: ${key}`)
+  }
+  return { name, version }
+}
+
 function toConfig(values: AgentFormValues): AgentDefinitionConfig {
   const [providerId, modelId] = values.modelKey?.split('\u0000') ?? []
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     model: providerId && modelId ? { providerId, modelId } : null,
     systemPromptId: values.systemPromptId ?? null,
     skillIds: values.skillIds,
-    toolNames: values.toolNames,
+    toolRefs: values.toolRefs.map(parseToolRefKey),
     thinkingLevel: values.thinkingLevel,
     maxTurns: values.maxTurns,
   }
@@ -80,7 +95,7 @@ function toFormValues(agent: AgentDefinitionDetail): AgentFormValues {
     modelKey: agent.config.model ? refKey(agent.config.model) : undefined,
     systemPromptId: agent.config.systemPromptId ?? undefined,
     skillIds: agent.config.skillIds,
-    toolNames: agent.config.toolNames,
+    toolRefs: agent.config.toolRefs.map(toolRefKey),
     thinkingLevel: agent.config.thinkingLevel,
     maxTurns: agent.config.maxTurns,
   }
@@ -139,7 +154,14 @@ export function Agents() {
         .map((skill) => ({ label: `${skill.name} — ${skill.description}`, value: skill.id })),
     [editing?.config.skillIds, skills],
   )
-  const toolOptions = useMemo(() => tools.map((tool) => ({ label: tool.name, value: tool.name })), [tools])
+  const toolOptions = useMemo(
+    () =>
+      tools.map((tool: AiToolSummary) => ({
+        label: `${tool.name}@${tool.version} — ${tool.description}`,
+        value: toolRefKey(tool),
+      })),
+    [tools],
+  )
 
   const openCreate = () => {
     setEditing(null)
@@ -149,7 +171,7 @@ export function Agents() {
       maxTurns: 8,
       skillIds: [],
       thinkingLevel: 'off',
-      toolNames: [],
+      toolRefs: [],
     })
     setDrawerOpen(true)
   }
@@ -167,6 +189,19 @@ export function Agents() {
   }
 
   const submit = async (values: AgentFormValues) => {
+    // 同名不同版本的引用不能共存：Pi 模型调用只携带 Tool name，
+    // 服务端仍是最终校验边界，这里只是提前给出可读错误。
+    const refs = values.toolRefs.map(parseToolRefKey)
+    const seenNames = new Set<string>()
+    const hasDuplicateName = refs.some((ref) => {
+      if (seenNames.has(ref.name)) return true
+      seenNames.add(ref.name)
+      return false
+    })
+    if (hasDuplicateName) {
+      message.error(t('ai.agents.toolsVersionConflict'))
+      return
+    }
     const config = toConfig(values)
     try {
       if (editing) {
@@ -362,7 +397,7 @@ export function Agents() {
             form={form}
             layout="vertical"
             onFinish={(values) => void submit(values)}
-            initialValues={{ description: '', maxTurns: 8, skillIds: [], thinkingLevel: 'off', toolNames: [] }}
+            initialValues={{ description: '', maxTurns: 8, skillIds: [], thinkingLevel: 'off', toolRefs: [] }}
           >
             <Form.Item
               label={t('ai.agents.name')}
@@ -411,7 +446,7 @@ export function Agents() {
                 optionFilterProp="label"
               />
             </Form.Item>
-            <Form.Item label={t('ai.agents.tools')} name="toolNames">
+            <Form.Item label={t('ai.agents.tools')} name="toolRefs">
               <Select
                 loading={toolsQuery.isLoading}
                 mode="multiple"
