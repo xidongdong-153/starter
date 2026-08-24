@@ -46,7 +46,8 @@ export interface SkippedTranscriptEntry {
  * 规则：
  * - `message` entry 按 role 分派为 user / assistant / tool activity。
  * - `compaction` entry 投影为 system item（runId 固定为 null）。
- * - `starter.run.v1`（custom）及其它 Pi 内部 entry 过滤，不投影，并回调 onSkipped。
+ * - `starter.run.v1`（custom）是系统写入的 Run 终态记录，直接过滤，不回调 onSkipped。
+ * - 其它识别不了的 entry 过滤后回调 onSkipped，由调用方记录 WARN。
  * - runId 读取顺序：`message.runId`（UUID 校验）优先，其次 `message.details.runId`；
  *   两者都缺失时不投影该 item，避免编造 Run 归属。
  */
@@ -83,6 +84,9 @@ function projectEntry(
       summary: entry.summary,
       tokensBefore: readTokensBefore(entry.tokensBefore),
     };
+  }
+  if (entry.type === "custom" && entry.customType === "starter.run.v1") {
+    return null;
   }
   onSkipped({
     entryType: entry.type,

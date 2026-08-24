@@ -7,6 +7,7 @@ import { ApiErrorCodes } from "@starter/contracts";
 import { expect, it, vi } from "vitest";
 
 import type { AgentSessionStore } from "@api/infra/agent/index.js";
+import { projectTranscript } from "@api/modules/ai/session/session.presenter.js";
 import {
   createAiAgentSessionRepository,
   createAiAgentSessionService,
@@ -253,6 +254,32 @@ it("session CRUD、owner 隔离、分页和幂等归档", async () => {
   } finally {
     cleanup();
   }
+});
+
+it("已知 starter.run.v1 entry 静默过滤，未知 entry 仍回调跳过原因", () => {
+  const onSkipped = vi.fn();
+  const entries = [
+    {
+      type: "custom",
+      id: "terminal-entry",
+      customType: "starter.run.v1",
+      data: {},
+    },
+    {
+      type: "custom",
+      id: "unknown-entry",
+      customType: "vendor.unknown",
+      data: {},
+    },
+  ] as unknown as Parameters<typeof projectTranscript>[0];
+
+  expect(projectTranscript(entries, "main", onSkipped)).toEqual([]);
+  expect(onSkipped).toHaveBeenCalledTimes(1);
+  expect(onSkipped).toHaveBeenCalledWith({
+    entryType: "custom",
+    entryId: "unknown-entry",
+    reason: "unknown_entry_type",
+  });
 });
 
 it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
