@@ -651,3 +651,12 @@ Web 用公开 AI Runtime API 做出最小 Chat：单 Session、单 lane、文本
 
 - 父任务 `08-21-audit-ai-frontend-decoupling` 三个子任务已全部完成，剩父级集成审查
 - 找机会做一次真实模型的浏览器验收，覆盖上面 SKIP 的四项
+
+## 2026-08-24 · web-agent-session-list · 完成
+
+- 任务 08-24-web-agent-session-list 已完成并提交 a37db59（feat(web): add agent session list with switch, rename and archive）
+- 改动面：web 新增会话列表/切换/改名/归档；ai-chat.api +2 封装（PATCH/DELETE）、use-chat-run 增 4 个会话动作、chat-session-bar 新组件、chat-session-view 纯函数 + 10 例测试
+- 关键决策：单栏会话区、运行中禁用会话操作、不预建空会话、Run 终态重拉列表校准
+- 浏览器实测通过：会话栏渲染、切换会话、新建对话、改名完整流（改后已恢复原标题）；归档（DELETE 不可逆）和运行中禁用未在真实数据上执行
+- spec 已同步：ai-runtime-consumer.md 补 PATCH/DELETE 契约、会话操作 404、去掉「Session 列表切换」边界
+- 遗留：08-24-agent-transcript-custom-entry-noise 仍 in_progress（改动已在 2ecd495 提交，疑似未归档）
