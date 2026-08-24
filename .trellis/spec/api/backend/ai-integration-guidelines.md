@@ -416,3 +416,74 @@ const config = agentDefinitionConfigSchema.parse(JSON.parse(record.configJson))
 if (config.model) await modelService.resolveAgentModel(config.model)
 if (config.systemPromptId) promptService.assertSystemPromptAvailable(config.systemPromptId)
 ```
+
+## 9. Custom Provider Runtime 验证
+
+### 9.1 Scope / Trigger
+
+修改 `apps/api/src/infra/ai/` 的自定义 Provider、URL guard、Gateway 错误分类或数据库 definition 恢复逻辑时，必须按本节补充测试。
+
+### 9.2 Signatures
+
+- `createCustomAiProvider(definition, guardOptions)`：只接受固定协议 definition，返回统一 `pi-ai Provider`。
+- `createAiRuntime(db, crypto, options)`：启动时读取 `ai_custom_providers`，并通过 `reloadProvider` / `unloadProvider` 更新进程内 `Models`。
+- `createAiUrlGuard(options).fetch(input, init)`：固定解析后的 IP 发请求，拒绝 redirect、超时和超大 response body。
+
+### 9.3 Contracts
+
+- `openai-completions`、`openai-responses`、`anthropic-messages` 必须分别经过真实 fake HTTP/SSE upstream 测试；只检查 `model.api` 不算协议测试。
+- `APP_ENV` 为 `development` 或 `test` 时允许 loopback fake upstream；`production` 仍拒绝 loopback、private、link-local 和 metadata 地址。
+- Gateway 收到上游 401/403 时返回 `AiGatewayError("auth")`；对外只返回项目错误码，不返回 upstream error body。
+- `parseBoundedJson` 默认最大深度为 16；超过限制的 catalog 或 Provider definition 必须按无效配置处理。
+
+### 9.4 Validation & Error Matrix
+
+| 条件 | 结果 |
+| --- | --- |
+| 固定协议成功 stream | 产生 text delta 和 completed |
+| 上游 401/403 | `auth`，不含原始 body |
+| 上游 408/504 或 guard timeout | `timeout` |
+| 其他 4xx/5xx | `upstream` |
+| response body 超过限制 | `response_size` |
+| redirect | `redirect` |
+| definition JSON 深度超过限制 | definition 无效，单条记录隔离 |
+
+### 9.5 Good / Base / Bad Cases
+
+- Good：三协议都由本地 HTTP server 返回各自真实 SSE 格式，再经同一个 Gateway 断言结果和错误分类。
+- Base：runtime 卸载 Provider 后，新的 runtime 实例仍能从数据库恢复该 Provider 和最新 model revision。
+- Bad：测试只断言 `api` 字段，或把上游 response body 直接放进 SSE error。
+
+### 9.6 Tests Required
+
+- `custom-provider.integration.test.ts`：三协议 success、auth、timeout、upstream，以及 `PiNativeStream` 的 custom model 审计。
+- `ai-runtime-custom-provider.test.ts`：启动恢复、reload、unload、真实 status 分类和 bounded JSON 深度。
+- `ai.smoke.test.ts`：custom model 的模型测试 SSE 和 `ai_model_calls.scenario = model_test`，并断言 prompt/secret 不在审计记录。
+- 运行 `pnpm --filter @starter/api check-types`、`lint`、`format:check`、`test`、`build` 和 `db:check`。
+
+### 9.7 Wrong vs Correct
+
+错误写法：
+
+```ts
+expect(model.api).toBe("openai-responses")
+```
+
+正确写法：
+
+```ts
+const events = await collect(provider.streamSimple(model, context, options))
+expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" })
+```
+
+错误写法：
+
+```ts
+throw new Error(upstreamResponseBody)
+```
+
+正确写法：
+
+```ts
+throw new AiGatewayError("auth")
+```

@@ -62,7 +62,76 @@ pnpm --filter @starter/admin test
 - 切换语言时同时更新 `document.documentElement.lang`，并检查页面可见文案和 HTML 语言属性一致。
 - 一次性 secret 只出现在展示弹窗里：断言列表只有 `secretPrefix`，断言弹窗关闭后 mutation 已 reset，query cache 里搜不到 secret 字符串。
 
-## 变更后的检查重点
+## Custom Provider 管理页面规范
+
+### 1. Scope / Trigger
+
+修改 `apps/admin/src/features/ai/pages/AiProviders.tsx`、`CustomProviderDrawer`、`apps/admin/src/api/ai/` 的 custom Provider query/mutation 或相关 i18n 时，按本节执行。
+
+### 2. Signatures
+
+- custom Provider 创建、更新、credential、check、state、models、delete 请求必须通过 `apps/admin/src/api/ai/ai.api.ts` 和 RPC client。
+- query key 使用 `aiQueryKeys.customProviders()`；写操作成功或失败后的失效范围必须覆盖 Provider、管理员模型、用户模型和偏好。
+- custom Provider 表单使用 contracts 导出的 schema/type；页面只做 trim、空值转换和显示 key 删除。
+
+### 3. Contracts
+
+- Provider 行用 `kind: 'built_in' | 'custom'` 区分来源；内置 Provider 不渲染 custom delete、protocol/base URL 编辑和 custom model 管理入口。
+- 支持 `openai-completions`、`openai-responses`、`anthropic-messages` 三种协议；compat 字段按协议显示。
+- API Key 只作为 mutation input 发送，列表、详情和页面 state 不回填完整 secret；成功后只显示 mask/status。
+- custom Provider 配置保存后显示 `needs_check`，不能在前端假设 Provider 已启用。
+- delete 只对 disabled Provider 开放；API 返回 in-use/版本冲突时保留表单并展示服务端错误。
+
+### 4. Validation & Error Matrix
+
+| 条件 | Admin 行为 |
+| --- | --- |
+| 无 `ai:config:read` | 路由和 Provider 列表不可见 |
+| 无 `ai:config:manage` | 创建、编辑、credential、check、state、models、delete 动作隐藏；API 仍由服务端拒绝 |
+| 详情加载中或失败 | 禁用编辑表单和保存按钮，展示加载/重试状态，不走创建流程 |
+| Provider 已启用 | 禁用删除按钮并提示先停用 |
+| API Key 保存成功 | mutation reset，MutationCache 不保留 secret |
+| API 返回 409 | 保留输入，不关闭 Drawer，不显示成功反馈 |
+
+### 5. Good / Base / Bad Cases
+
+- Good：新建和编辑使用独立 `CustomProviderDrawer`，页面主组件继续负责 Provider 表格、模型白名单和全局默认。
+- Good：mutation 使用真实 QueryClient 测试 cache invalidation，并验证 secret marker 不在 MutationCache。
+- Base：Admin 页面可展示自定义 Provider 的协议、模型数量、认证状态和 needs_check；真实凭据检查由 API 完成。
+- Bad：在 `AiProviders.tsx` 直接拼接 custom Provider HTTP 请求或复制 contracts schema。
+- Bad：把 API Key 放进 Zustand/localStorage，或在编辑详情中回填完整 secret。
+
+### 6. Tests Required
+
+- `ai-custom-provider.test.tsx`：创建、编辑、三协议表单转换、模型校验、credential、check、state、delete 和冲突错误。
+- `ai-query.test.tsx`：custom Provider query key、成功/失败 mutation cache invalidation、MutationCache secret reset。
+- 覆盖 loading、error、empty、pending、无 read/manage 权限、已启用 Provider 删除禁用和窄视口关键操作不截断。
+- 运行 `pnpm --filter @starter/contracts build` 后，再运行 Admin check-types、lint、format:check、test、build。
+
+### 7. Wrong vs Correct
+
+错误写法：
+
+```tsx
+const apiKey = provider.configuredSettings.apiKey
+localStorage.setItem('provider-key', apiKey)
+```
+
+正确写法：
+
+```tsx
+const mutation = useMutation({
+  gcTime: 0,
+  mutationFn: updateCredential,
+  onSettled: () => {
+    mutation.reset()
+    return invalidateCustomAi(queryClient)
+  },
+})
+```
+
+页面只提交一次性 secret，mutation 结束后立即 reset；API 返回脱敏状态，前端不持久化 Provider secret。
+
 
 新增 API query 时确认 query key 唯一、mutation 成功后的 cache 更新正确；新增路由时确认登录守卫、标签栏元数据和移动端导航都能得到该路由；新增表单时确认提交值经过 schema 对应的转换。
 
