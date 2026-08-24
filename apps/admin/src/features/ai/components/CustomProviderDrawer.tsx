@@ -31,7 +31,7 @@ import {
   Tag,
   Tooltip,
 } from 'antd'
-import type { TableProps } from 'antd'
+import type { TableColumnType, TableProps } from 'antd'
 import { KeyRound, Plus, Save, ShieldCheck, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -138,6 +138,15 @@ const compatFields: Record<CustomAiProviderProtocol, CompatField[]> = {
   ],
 }
 
+const costFields = ['inputCost', 'outputCost', 'cacheReadCost', 'cacheWriteCost'] as const
+const capabilityFields = ['supportsImageInput', 'supportsReasoning', 'supportsTools'] as const
+
+/** 模型表格所有列宽之和：220 + 180 + 130 + 130 + 110 * 4 + 88 * 3 + 60，改列宽要同步这个值 */
+const modelTableWidth = 1424
+
+/** 表格单元里的 Form.Item 要去掉默认底部间距；antd 的 .ant-form-item 样式优先级高于 Tailwind 类，只能用行内样式 */
+const cellItemStyle = { marginBottom: 0 } as const
+
 function emptyModel(): ModelFormValue {
   return {
     key: crypto.randomUUID(),
@@ -243,7 +252,8 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
   }, [editing, form, open, currentProvider])
 
   const protocol = Form.useWatch('protocol', form) ?? 'openai-completions'
-  const models = Form.useWatch('models', form) ?? []
+  // preserve 让 useWatch 读完整 store：默认只收集已挂载字段的值，删掉中间一行时会多出一条没有 key 的空记录
+  const models = Form.useWatch('models', { form, preserve: true }) ?? []
   const compat = useMemo(() => compatFields[protocol], [protocol])
 
   const submit = async () => {
@@ -308,12 +318,43 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
     )
   }
 
+  const costColumns: TableColumnType<ModelFormValue>[] = costFields.map((field) => ({
+    title: t(`ai.customProviders.models.${field}`),
+    dataIndex: field,
+    width: 110,
+    render: (_, model, index) => (
+      <Form.Item style={cellItemStyle} name={['models', index, field]}>
+        <InputNumber
+          min={0}
+          controls={false}
+          className="w-full"
+          aria-label={`${t(`ai.customProviders.models.${field}`)} ${index + 1}`}
+        />
+      </Form.Item>
+    ),
+  }))
+
+  const capabilityColumns: TableColumnType<ModelFormValue>[] = capabilityFields.map((field) => ({
+    title: t(`ai.customProviders.models.${field}`),
+    dataIndex: field,
+    width: 88,
+    align: 'center',
+    render: (_, model, index) => (
+      <Form.Item style={cellItemStyle} name={['models', index, field]} valuePropName="checked">
+        <Switch size="small" aria-label={`${t(`ai.customProviders.models.${field}`)} ${index + 1}`} />
+      </Form.Item>
+    ),
+  }))
+
   const modelColumns: TableProps<ModelFormValue>['columns'] = [
     {
       title: t('ai.customProviders.models.modelId'),
       dataIndex: 'modelId',
+      width: 220,
+      fixed: 'left',
       render: (_, model, index) => (
         <Form.Item
+          style={cellItemStyle}
           name={['models', index, 'modelId']}
           rules={[{ required: true, message: t('ai.customProviders.modelRequired') }]}
         >
@@ -324,8 +365,10 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
     {
       title: t('ai.customProviders.models.name'),
       dataIndex: 'name',
+      width: 180,
       render: (_, model, index) => (
         <Form.Item
+          style={cellItemStyle}
           name={['models', index, 'name']}
           rules={[{ required: true, message: t('ai.customProviders.modelRequired') }]}
         >
@@ -336,61 +379,56 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
     {
       title: t('ai.customProviders.models.contextWindow'),
       dataIndex: 'contextWindow',
-      width: 140,
+      width: 130,
       render: (_, model, index) => (
         <Form.Item
+          style={cellItemStyle}
           name={['models', index, 'contextWindow']}
           rules={[{ required: true, message: t('ai.customProviders.modelRequired') }]}
         >
-          <InputNumber min={1} className="w-full" />
+          <InputNumber
+            min={1}
+            precision={0}
+            controls={false}
+            className="w-full"
+            aria-label={`${t('ai.customProviders.models.contextWindow')} ${index + 1}`}
+          />
         </Form.Item>
       ),
     },
     {
       title: t('ai.customProviders.models.maxOutputTokens'),
       dataIndex: 'maxOutputTokens',
-      width: 140,
+      width: 130,
       render: (_, model, index) => (
-        <Form.Item name={['models', index, 'maxOutputTokens']}>
-          <InputNumber min={1} className="w-full" />
+        <Form.Item
+          style={cellItemStyle}
+          name={['models', index, 'maxOutputTokens']}
+          rules={[{ required: true, message: t('ai.customProviders.modelRequired') }]}
+        >
+          <InputNumber
+            min={1}
+            precision={0}
+            controls={false}
+            className="w-full"
+            aria-label={`${t('ai.customProviders.models.maxOutputTokens')} ${index + 1}`}
+          />
         </Form.Item>
       ),
     },
     {
       title: t('ai.customProviders.models.costs'),
-      width: 220,
-      render: (_, model, index) => (
-        <div className="grid grid-cols-2 gap-1">
-          {(['inputCost', 'outputCost', 'cacheReadCost', 'cacheWriteCost'] as const).map((field) => (
-            <Form.Item key={field} name={['models', index, field]} noStyle>
-              <InputNumber
-                min={0}
-                step={0.000001}
-                className="w-full"
-                aria-label={`${t(`ai.customProviders.models.${field}`)} ${index + 1}`}
-                placeholder={t(`ai.customProviders.models.${field}`)}
-              />
-            </Form.Item>
-          ))}
-        </div>
-      ),
+      children: costColumns,
     },
     {
       title: t('ai.customProviders.models.capabilities'),
-      width: 260,
-      render: (_, model, index) => (
-        <Space wrap>
-          {(['supportsImageInput', 'supportsReasoning', 'supportsTools'] as const).map((field) => (
-            <Form.Item key={field} name={['models', index, field]} valuePropName="checked" noStyle>
-              <Switch size="small" checkedChildren={t(`ai.customProviders.models.${field}`)} />
-            </Form.Item>
-          ))}
-        </Space>
-      ),
+      children: capabilityColumns,
     },
     {
       title: t('common.actions'),
-      width: 56,
+      width: 60,
+      align: 'center',
+      fixed: 'right',
       render: (_, model, index) => (
         <Tooltip title={t('common.delete')}>
           <Button
@@ -413,7 +451,7 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
     <Drawer
       destroyOnHidden
       open={open}
-      width="min(860px, 100vw)"
+      width="min(1120px, 100vw)"
       title={editing ? `${provider?.name} / ${t('ai.customProviders.edit')}` : t('ai.customProviders.create')}
       onClose={onClose}
       extra={
@@ -496,7 +534,7 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
         </Form.Item>
         <section className="border-border-subtle mb-5 border-t pt-4">
           <div className="text-fg mb-3 text-sm font-semibold">{t('ai.customProviders.compatTitle')}</div>
-          <div className="grid gap-x-4 sm:grid-cols-2">
+          <div className="grid gap-x-4 sm:grid-cols-2 xl:grid-cols-3">
             {compat.map((field) =>
               field.type === 'select' ? (
                 <Form.Item key={field.key} name={['compat', field.key]} label={protocolFieldLabel(t, field.key)}>
@@ -554,17 +592,16 @@ export function CustomProviderDrawer({ provider, open, onClose, onSaved }: Custo
               </Button>
             </Space>
           </div>
-          <div className="overflow-x-auto">
-            <Table<ModelFormValue>
-              size="small"
-              pagination={false}
-              rowKey="key"
-              columns={modelColumns}
-              dataSource={models}
-              locale={{ emptyText: t('ai.customProviders.models.empty') }}
-              scroll={{ x: 760 }}
-            />
-          </div>
+          <Table<ModelFormValue>
+            bordered
+            size="small"
+            pagination={false}
+            rowKey="key"
+            columns={modelColumns}
+            dataSource={models}
+            locale={{ emptyText: t('ai.customProviders.models.empty') }}
+            scroll={{ x: modelTableWidth, y: 420 }}
+          />
           <Form.Item
             name="models"
             hidden
