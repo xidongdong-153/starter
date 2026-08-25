@@ -43,6 +43,15 @@ const files = filesQuery.data ?? [];
 - 表单字段对应 contracts 里已有 schema 时，用 `schema.safeParse(value)` 做 `validator` 而不是手抄正则，参考 `AiApplications.tsx` 的 `aiScopeIdSchema` 和 `RoleFormDrawers.tsx` 的 `roleKeySchema`。
 - 页面同时存在侧边栏/局部搜索框与主文本域时，搜索框显式指定 `role="searchbox"`，确保无障碍语义与测试定位隔离。
 
+## 资源型多选
+
+资源名称、版本和描述较长时，不要把完整描述拼进 `Select` 的 `label`。在页面 feature 内使用可搜索的资源列表展示主名称和辅助信息，并将已选资源收进可折叠区域。
+
+- 表单值继续保持 DTO 需要的简单值数组，例如 `string[]`；展示对象只在组件内部使用。
+- 搜索文本应包含用户可见的名称、版本、描述和 scope，确保输入这些关键词都能筛选。
+- 已选区域默认折叠，展开后提供逐项移除；资源列表和已选列表都使用固定最大高度并滚动，避免撑开 Drawer。
+- 工具等存在版本约束的资源，展示精确版本，但将同名版本冲突校验保留在提交函数的统一业务校验中。
+
 ## 一次性凭据展示
 
 创建或轮换应用凭据这类只返回一次的 secret，按 `features/ai/pages/AiApplications.tsx` 的做法：

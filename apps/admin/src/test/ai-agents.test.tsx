@@ -241,12 +241,11 @@ describe('agentDefinition 管理页', () => {
     fireEvent.click(screen.getByRole('button', { name: '新建 Agent' }))
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'Conflict Agent' } })
 
-    fireEvent.mouseDown(screen.getByLabelText('工具'))
-    await waitFor(() => expect(screen.getByTitle(/read_skill@1\.0\.0/)).toBeTruthy())
-    fireEvent.click(screen.getByTitle(/read_skill@1\.0\.0/))
-    // multiple 模式下选择后下拉保持打开，直接选第二个版本
-    await waitFor(() => expect(screen.getByTitle(/read_skill@2\.0\.0/)).toBeTruthy())
-    fireEvent.click(screen.getByTitle(/read_skill@2\.0\.0/))
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索工具' }), { target: { value: '2.0.0' } })
+    expect(screen.queryByRole('checkbox', { name: /read_skill.*1\.0\.0/ })).toBeNull()
+    fireEvent.change(screen.getByRole('searchbox', { name: '搜索工具' }), { target: { value: '' } })
+    fireEvent.click(screen.getByRole('checkbox', { name: /read_skill.*1\.0\.0/ }))
+    fireEvent.click(screen.getByRole('checkbox', { name: /read_skill.*2\.0\.0/ }))
 
     fireEvent.click(screen.getByRole('button', { name: '保存' }))
 

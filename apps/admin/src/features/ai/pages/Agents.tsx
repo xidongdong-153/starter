@@ -27,6 +27,7 @@ import {
   Alert,
   App,
   Button,
+  Checkbox,
   Drawer,
   Empty,
   Form,
@@ -39,7 +40,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { Bot, Check, Pencil, Plus, Power, Save } from 'lucide-react'
+import { Bot, Check, ChevronDown, Pencil, Plus, Power, Save, X } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
@@ -107,6 +108,148 @@ function statusColor(status: AgentDefinitionStatus): string | undefined {
   return undefined
 }
 
+interface ResourcePickerOption {
+  value: string
+  name: string
+  description: string
+  meta?: string
+  searchText: string
+}
+
+interface ResourcePickerProps {
+  emptyText: string
+  loading?: boolean
+  loadingText: string
+  onChange?: (value: string[]) => void
+  removeLabel: string
+  options: ResourcePickerOption[]
+  placeholder: string
+  searchLabel: string
+  selectedLabel: string
+  value?: string[]
+}
+
+function ResourcePicker({
+  emptyText,
+  loading = false,
+  loadingText,
+  onChange,
+  removeLabel,
+  options,
+  placeholder,
+  searchLabel,
+  selectedLabel,
+  value = [],
+}: ResourcePickerProps) {
+  const [search, setSearch] = useState('')
+  const [expanded, setExpanded] = useState(false)
+  const selectedSet = useMemo(() => new Set(value), [value])
+  const selectedOptions = value
+    .map((selectedValue) => options.find((option) => option.value === selectedValue))
+    .filter((option): option is ResourcePickerOption => option !== undefined)
+  const filteredOptions = useMemo(() => {
+    const normalizedSearch = search.trim().toLocaleLowerCase()
+    if (!normalizedSearch) return options
+    return options.filter((option) => option.searchText.toLocaleLowerCase().includes(normalizedSearch))
+  }, [options, search])
+
+  const toggleOption = (optionValue: string) => {
+    const nextValue = selectedSet.has(optionValue)
+      ? value.filter((valueItem) => valueItem !== optionValue)
+      : [...value, optionValue]
+    onChange?.(nextValue)
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="grid min-w-0 gap-3 sm:grid-cols-2">
+        <div className="border-border-subtle min-w-0 rounded-md border">
+          <div className="border-border-subtle border-b p-2">
+            <Input.Search
+              allowClear
+              aria-label={searchLabel}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder={placeholder}
+              value={search}
+            />
+          </div>
+          <div className="max-h-56 min-h-20 overflow-y-auto p-1">
+            {loading ? (
+              <div className="text-fg-muted flex min-h-20 items-center justify-center text-sm">{loadingText}</div>
+            ) : filteredOptions.length === 0 ? (
+              <div className="text-fg-muted flex min-h-20 items-center justify-center px-3 text-center text-sm">
+                {emptyText}
+              </div>
+            ) : (
+              filteredOptions.map((option) => (
+                <label
+                  className="hover:bg-fill-tertiary flex min-w-0 cursor-pointer items-start gap-2 rounded px-2 py-2"
+                  key={option.value}
+                >
+                  <Checkbox
+                    aria-label={`${option.name}${option.meta ? ` ${option.meta}` : ''}`}
+                    checked={selectedSet.has(option.value)}
+                    onChange={() => toggleOption(option.value)}
+                  />
+                  <span className="min-w-0 flex-1">
+                    <span className="text-fg block truncate text-sm font-medium">{option.name}</span>
+                    {option.meta ? <span className="text-fg-muted block truncate text-xs">{option.meta}</span> : null}
+                    <span className="text-fg-muted block truncate text-xs">{option.description}</span>
+                  </span>
+                </label>
+              ))
+            )}
+          </div>
+        </div>
+        <div className="border-border-subtle min-w-0 rounded-md border">
+          <Button
+            block
+            className="justify-between"
+            icon={<ChevronDown className={`size-4 transition-transform ${expanded ? 'rotate-180' : ''}`} />}
+            onClick={() => setExpanded((current) => !current)}
+            type="text"
+          >
+            <span className="flex min-w-0 items-center gap-2 text-left">
+              <span className="truncate">{selectedLabel}</span>
+              <Tag className="mr-0" color={value.length ? 'blue' : undefined}>
+                {value.length}
+              </Tag>
+            </span>
+          </Button>
+          {expanded ? (
+            <div className="border-border-subtle max-h-56 overflow-y-auto border-t p-2">
+              {selectedOptions.length === 0 ? (
+                <div className="text-fg-muted py-6 text-center text-sm">{emptyText}</div>
+              ) : (
+                <div className="space-y-1">
+                  {selectedOptions.map((option) => (
+                    <div
+                      className="bg-fill-tertiary flex min-w-0 items-center gap-2 rounded px-2 py-1.5"
+                      key={option.value}
+                    >
+                      <span className="min-w-0 flex-1 truncate text-sm">{option.name}</span>
+                      {option.meta ? (
+                        <span className="text-fg-muted max-w-24 truncate text-xs">{option.meta}</span>
+                      ) : null}
+                      <Button
+                        aria-label={`${removeLabel} ${option.name}`}
+                        icon={<X className="size-3.5" />}
+                        onClick={() => toggleOption(option.value)}
+                        size="small"
+                        type="text"
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Agents() {
   const { t } = useTranslation()
   const { message } = App.useApp()
@@ -151,13 +294,21 @@ export function Agents() {
     () =>
       skills
         .filter((skill) => skill.enabled || editing?.config.skillIds.includes(skill.id))
-        .map((skill) => ({ label: `${skill.name} — ${skill.description}`, value: skill.id })),
+        .map((skill) => ({
+          description: skill.description,
+          name: skill.name,
+          searchText: `${skill.name} ${skill.description}`,
+          value: skill.id,
+        })),
     [editing?.config.skillIds, skills],
   )
   const toolOptions = useMemo(
     () =>
       tools.map((tool: AiToolSummary) => ({
-        label: `${tool.name}@${tool.version} — ${tool.description}`,
+        description: tool.description,
+        meta: `${tool.name}@${tool.version} · ${tool.scope}`,
+        name: tool.name,
+        searchText: `${tool.name} ${tool.version} ${tool.description} ${tool.scope}`,
         value: toolRefKey(tool),
       })),
     [tools],
@@ -438,23 +589,27 @@ export function Agents() {
               />
             </Form.Item>
             <Form.Item label={t('ai.agents.skills')} name="skillIds">
-              <Select
+              <ResourcePicker
+                emptyText={t('ai.agents.resourcePicker.empty')}
                 loading={skillsQuery.isLoading}
-                mode="multiple"
-                options={skillOptions}
+                loadingText={t('ai.agents.resourcePicker.loading')}
                 placeholder={t('ai.agents.skillsPlaceholder')}
-                showSearch
-                optionFilterProp="label"
+                removeLabel={t('ai.agents.resourcePicker.remove')}
+                options={skillOptions}
+                searchLabel={t('ai.agents.resourcePicker.searchSkills')}
+                selectedLabel={t('ai.agents.resourcePicker.selectedSkills')}
               />
             </Form.Item>
             <Form.Item label={t('ai.agents.tools')} name="toolRefs">
-              <Select
+              <ResourcePicker
+                emptyText={t('ai.agents.resourcePicker.empty')}
                 loading={toolsQuery.isLoading}
-                mode="multiple"
-                options={toolOptions}
+                loadingText={t('ai.agents.resourcePicker.loading')}
                 placeholder={t('ai.agents.toolsPlaceholder')}
-                showSearch
-                optionFilterProp="label"
+                removeLabel={t('ai.agents.resourcePicker.remove')}
+                options={toolOptions}
+                searchLabel={t('ai.agents.resourcePicker.searchTools')}
+                selectedLabel={t('ai.agents.resourcePicker.selectedTools')}
               />
             </Form.Item>
             <div className="grid gap-4 sm:grid-cols-2">
