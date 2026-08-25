@@ -17,6 +17,11 @@ const mocks = vi.hoisted(() => ({
   useRotateAiApplicationSecretMutation: vi.fn(),
 }))
 
+const fixedUuid = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
+const scopeFromUuid = (prefix: 'ten' | 'prj', uuid: string) => `${prefix}_${uuid.replaceAll('-', '')}`
+const fixedTenantId = scopeFromUuid('ten', fixedUuid)
+const fixedProjectId = scopeFromUuid('prj', fixedUuid)
+
 const { getCurrentPermissions } = vi.hoisted(() => ({
   getCurrentPermissions: vi.fn(),
 }))
@@ -64,6 +69,7 @@ function renderPage() {
 }
 
 beforeEach(() => {
+  vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedUuid)
   getCurrentPermissions.mockReset()
   getCurrentPermissions.mockResolvedValue(createCurrentPermissions([PermissionKeys.AI_CONFIG_MANAGE]))
   mocks.useAiApplicationsQuery.mockReturnValue({
@@ -91,7 +97,7 @@ describe('应用凭据管理页', () => {
     expect(screen.getAllByText('未调用过')).toHaveLength(2)
   })
 
-  it('创建成功后用一次性弹窗展示完整 secret', async () => {
+  it('创建成功后用一次性弹窗展示完整 secret，scope 自动生成', async () => {
     const mutateAsync = vi.fn().mockResolvedValue({
       application: activeApplication,
       secret: 'ai_abcd012345678901234567890123456789012345678',
@@ -100,13 +106,19 @@ describe('应用凭据管理页', () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: '新建应用' }))
+    // 高级设置默认收起（jsdom 不应用 CSS 隐藏，用 aria-expanded 断言）
+    await waitFor(() =>
+      expect(screen.getByText('高级设置').closest('[role="button"]')?.getAttribute('aria-expanded')).toBe('false'),
+    )
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'web-chat' } })
-    fireEvent.change(screen.getByLabelText('Tenant ID'), { target: { value: 'acme' } })
-    fireEvent.change(screen.getByLabelText('Project ID'), { target: { value: 'chat' } })
     fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
 
     await waitFor(() =>
-      expect(mutateAsync).toHaveBeenCalledWith({ name: 'web-chat', tenantId: 'acme', projectId: 'chat' }),
+      expect(mutateAsync).toHaveBeenCalledWith({
+        name: 'web-chat',
+        tenantId: fixedTenantId,
+        projectId: fixedProjectId,
+      }),
     )
     expect(await screen.findByText('ai_abcd012345678901234567890123456789012345678')).toBeTruthy()
     expect(screen.getByText('应用：web-chat')).toBeTruthy()
@@ -114,13 +126,66 @@ describe('应用凭据管理页', () => {
     expect(screen.getByRole('button', { name: '复制 secret' })).toBeTruthy()
   })
 
+  it('展开高级设置可看到并修改自动生成的 scope', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue({
+      application: activeApplication,
+      secret: 'ai_abcd012345678901234567890123456789012345678',
+    })
+    mocks.useCreateAiApplicationMutation.mockReturnValue({ mutateAsync, isPending: false })
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '新建应用' }))
+    fireEvent.click(screen.getByText('高级设置'))
+
+    const tenantInput = screen.getByLabelText('Tenant ID') as HTMLInputElement
+    expect(tenantInput.value).toBe(fixedTenantId)
+    expect((screen.getByLabelText('Project ID') as HTMLInputElement).value).toBe(fixedProjectId)
+
+    fireEvent.change(tenantInput, { target: { value: 'acme' } })
+    fireEvent.change(screen.getByLabelText('Project ID'), { target: { value: 'chat' } })
+    fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'web-chat' } })
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    await waitFor(() =>
+      expect(mutateAsync).toHaveBeenCalledWith({ name: 'web-chat', tenantId: 'acme', projectId: 'chat' }),
+    )
+  })
+
+  it('每次打开弹窗都重新生成 scope', async () => {
+    const uuids = [
+      '00000000-0000-4000-8000-000000000001',
+      '00000000-0000-4000-8000-000000000002',
+      '00000000-0000-4000-8000-000000000003',
+      '00000000-0000-4000-8000-000000000004',
+    ] as const
+    let index = 0
+    const uuidSpy = vi
+      .mocked(crypto.randomUUID)
+      .mockReset()
+      .mockImplementation(() => uuids[index++] ?? uuids[0]!)
+    renderPage()
+
+    fireEvent.click(await screen.findByRole('button', { name: '新建应用' }))
+    fireEvent.click(screen.getByText('高级设置'))
+    expect((screen.getByLabelText('Tenant ID') as HTMLInputElement).value).toBe(scopeFromUuid('ten', uuids[0]!))
+    expect(uuidSpy).toHaveBeenCalledTimes(2)
+
+    // 关闭弹窗不会重新生成
+    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }))
+    expect(uuidSpy).toHaveBeenCalledTimes(2)
+
+    // 再次打开时生成新值，不沿用上次
+    fireEvent.click(screen.getByRole('button', { name: '新建应用' }))
+    expect(uuidSpy).toHaveBeenCalledTimes(4)
+  })
+
   it('scope 字段不符合格式时给出具体提示', async () => {
     renderPage()
 
     fireEvent.click(await screen.findByRole('button', { name: '新建应用' }))
+    fireEvent.click(screen.getByText('高级设置'))
     fireEvent.change(screen.getByLabelText('名称'), { target: { value: 'web-chat' } })
     fireEvent.change(screen.getByLabelText('Tenant ID'), { target: { value: 'acme 1' } })
-    fireEvent.change(screen.getByLabelText('Project ID'), { target: { value: 'chat' } })
     fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
 
     expect(await screen.findByText('只能用字母、数字、下划线、点、冒号和连字符，首字符不能是点或冒号')).toBeTruthy()

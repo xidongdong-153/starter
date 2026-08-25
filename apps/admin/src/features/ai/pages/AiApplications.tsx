@@ -2,7 +2,21 @@ import type { AiApplication, AiApplicationSecret, CreateAiApplicationInput } fro
 import type { TableProps } from 'antd'
 
 import { PermissionKeys, aiScopeIdSchema } from '@starter/contracts'
-import { Alert, App, Button, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, Typography } from 'antd'
+import {
+  Alert,
+  App,
+  Button,
+  Collapse,
+  Form,
+  Input,
+  Modal,
+  Popconfirm,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  Typography,
+} from 'antd'
 import { Copy, KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -22,6 +36,11 @@ interface ApplicationFormValues {
   projectId: string
 }
 
+/** 生成满足 aiScopeIdSchema 的随机 scope id：前缀 + 32 位 hex。 */
+function generateScopeId(prefix: 'ten' | 'prj'): string {
+  return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`
+}
+
 export function AiApplications() {
   const { t } = useTranslation()
   const { message } = App.useApp()
@@ -31,6 +50,8 @@ export function AiApplications() {
   const revokeApplication = useRevokeAiApplicationMutation()
 
   const [createOpen, setCreateOpen] = useState(false)
+  // 每次打开弹窗重新生成，随 destroyOnHidden 重建表单时作为 initialValues 生效。
+  const [generatedScopes, setGeneratedScopes] = useState({ tenantId: '', projectId: '' })
   const [form] = Form.useForm<ApplicationFormValues>()
   // secret 只留在组件 state：不进 query cache、不进 URL、不写 localStorage。
   const [issuedSecret, setIssuedSecret] = useState<AiApplicationSecret | null>(null)
@@ -38,7 +59,10 @@ export function AiApplications() {
   const applications = applicationsQuery.data ?? []
 
   const openCreate = () => {
-    form.resetFields()
+    setGeneratedScopes({
+      tenantId: generateScopeId('ten'),
+      projectId: generateScopeId('prj'),
+    })
     setCreateOpen(true)
   }
 
@@ -271,7 +295,7 @@ export function AiApplications() {
         confirmLoading={createApplication.isPending}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical">
+        <Form form={form} layout="vertical" initialValues={generatedScopes}>
           <Form.Item
             name="name"
             label={t('ai.applications.name')}
@@ -279,21 +303,36 @@ export function AiApplications() {
           >
             <Input maxLength={120} placeholder={t('ai.applications.namePlaceholder')} />
           </Form.Item>
-          <Form.Item
-            name="tenantId"
-            label={t('ai.applications.tenantId')}
-            rules={scopeRules(t('ai.applications.tenantIdRequired'))}
-          >
-            <Input maxLength={120} />
-          </Form.Item>
-          <Form.Item
-            name="projectId"
-            label={t('ai.applications.projectId')}
-            rules={scopeRules(t('ai.applications.projectIdRequired'))}
-            extra={t('ai.applications.scopeHint')}
-          >
-            <Input maxLength={120} />
-          </Form.Item>
+          <Collapse
+            ghost
+            items={[
+              {
+                key: 'advanced',
+                label: t('ai.applications.advanced'),
+                // 收起时也要保持字段挂载，否则值不进入表单 store，提交时拿不到。
+                forceRender: true,
+                children: (
+                  <>
+                    <Form.Item
+                      name="tenantId"
+                      label={t('ai.applications.tenantId')}
+                      rules={scopeRules(t('ai.applications.tenantIdRequired'))}
+                    >
+                      <Input maxLength={120} />
+                    </Form.Item>
+                    <Form.Item
+                      name="projectId"
+                      label={t('ai.applications.projectId')}
+                      rules={scopeRules(t('ai.applications.projectIdRequired'))}
+                      extra={t('ai.applications.scopeHint')}
+                    >
+                      <Input maxLength={120} />
+                    </Form.Item>
+                  </>
+                ),
+              },
+            ]}
+          />
         </Form>
       </Modal>
 

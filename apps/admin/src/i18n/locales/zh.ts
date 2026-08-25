@@ -183,6 +183,7 @@ export default {
       updateSuccess: 'Agent 已更新',
     },
     applications: {
+      advanced: '高级设置',
       columns: {
         createdAt: '创建时间',
         lastUsedAt: '最近调用',

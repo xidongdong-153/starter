@@ -186,6 +186,7 @@ export default {
       updateSuccess: 'Agent updated',
     },
     applications: {
+      advanced: 'Advanced Settings',
       columns: {
         createdAt: 'Created At',
         lastUsedAt: 'Last Used',
