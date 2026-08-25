@@ -5,7 +5,7 @@ import type { Dayjs } from 'dayjs'
 import { AuditActions } from '@starter/contracts'
 
 import { useAuthorizationAuditEventsQuery } from '@admin/api/authorization'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 import { projectAuditPayload } from '@admin/features/authorization/audit-presentation'
 
 import { Alert, Button, DatePicker, Form, Input, Select, Table, Tag, Typography } from 'antd'
@@ -166,12 +166,48 @@ export function AuthorizationAudit() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('audit.title')}
-        description={t('audit.description')}
-        summaryItems={[{ label: t('audit.summary.total'), value: auditQuery.data?.total ?? 0 }]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('audit.title')} description={t('audit.description')} />
+        <PageToolbar
+          summaryItems={[{ label: t('audit.summary.total'), value: auditQuery.data?.total ?? 0 }]}
+          filters={
+            <Form form={filterForm} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
+              <Form.Item name="action" className="m-0 w-full sm:w-auto">
+                <Select
+                  allowClear
+                  className="w-full sm:w-64"
+                  placeholder={t('audit.filters.action')}
+                  options={actionOptions}
+                />
+              </Form.Item>
+              <Form.Item name="actorId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-64" placeholder={t('audit.filters.actorId')} />
+              </Form.Item>
+              <Form.Item name="targetId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-64" placeholder={t('audit.filters.targetId')} />
+              </Form.Item>
+              <Form.Item name="timeRange" className="m-0 w-full sm:w-auto">
+                <DatePicker.RangePicker
+                  showTime
+                  className="w-full sm:w-80"
+                  placeholder={[t('audit.filters.from'), t('audit.filters.to')]}
+                />
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
+                  {t('audit.filters.apply')}
+                </Button>
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
+                  {t('audit.filters.clear')}
+                </Button>
+              </Form.Item>
+            </Form>
+          }
+        />
+      </div>
 
       {auditQuery.error ? (
         <Alert
@@ -182,40 +218,6 @@ export function AuthorizationAudit() {
           action={<Button onClick={() => void auditQuery.refetch()}>{t('common.retry')}</Button>}
         />
       ) : null}
-
-      <Form form={filterForm} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
-        <Form.Item name="action" className="m-0 w-full sm:w-auto">
-          <Select
-            allowClear
-            className="w-full sm:w-64"
-            placeholder={t('audit.filters.action')}
-            options={actionOptions}
-          />
-        </Form.Item>
-        <Form.Item name="actorId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-64" placeholder={t('audit.filters.actorId')} />
-        </Form.Item>
-        <Form.Item name="targetId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-64" placeholder={t('audit.filters.targetId')} />
-        </Form.Item>
-        <Form.Item name="timeRange" className="m-0 w-full sm:w-auto">
-          <DatePicker.RangePicker
-            showTime
-            className="w-full sm:w-80"
-            placeholder={[t('audit.filters.from'), t('audit.filters.to')]}
-          />
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
-            {t('audit.filters.apply')}
-          </Button>
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
-            {t('audit.filters.clear')}
-          </Button>
-        </Form.Item>
-      </Form>
 
       <section className="min-w-0">
         <Table<AuthorizationAuditEvent>

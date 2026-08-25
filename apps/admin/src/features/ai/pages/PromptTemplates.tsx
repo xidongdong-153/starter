@@ -25,7 +25,7 @@ import {
   usePromptTemplatesQuery,
   useUpdatePromptTemplateMutation,
 } from '@admin/api/ai'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 
 const { TextArea } = Input
 
@@ -167,15 +167,16 @@ export function PromptTemplates() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
-      <AdminPageHeader
-        title={t('menu.aiPromptTemplates')}
-        description={t('ai.promptTemplates.pageDescription')}
-        actions={
-          <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
-            {t('ai.promptTemplates.create')}
-          </Button>
-        }
-      />
+      <div className="space-y-2">
+        <AdminPageHeader title={t('menu.aiPromptTemplates')} description={t('ai.promptTemplates.pageDescription')} />
+        <PageToolbar
+          actions={
+            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
+              {t('ai.promptTemplates.create')}
+            </Button>
+          }
+        />
+      </div>
       <section className="flex min-h-0 flex-1 flex-col">
         <Table<PromptTemplate>
           rowKey="id"

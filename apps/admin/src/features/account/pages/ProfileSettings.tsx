@@ -12,7 +12,7 @@ import {
   useSetProfileAvatarMutation,
   useUpdateProfileMutation,
 } from '@admin/api/profile'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { usePermission } from '@admin/hooks/usePermission'
 import { formatDate } from '@admin/utils/dayjs'
 import { Alert, App, Button, Form, Input, Spin, Switch, Tag } from 'antd'
@@ -218,15 +218,16 @@ export function ProfileSettings() {
   }
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('profile.title')}
-        description={t('profile.description')}
-        summaryItems={[
-          { label: t('profile.summary.providers'), value: profile?.providers.length ?? 0 },
-          { label: t('profile.summary.updatedAt'), value: profile ? formatDate(profile.updatedAt) : '-' },
-        ]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('profile.title')} description={t('profile.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('profile.summary.providers'), value: profile?.providers.length ?? 0 },
+            { label: t('profile.summary.updatedAt'), value: profile ? formatDate(profile.updatedAt) : '-' },
+          ]}
+        />
+      </div>
 
       {authConfigQuery.error ? (
         <Alert

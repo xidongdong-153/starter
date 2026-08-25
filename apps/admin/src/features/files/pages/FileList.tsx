@@ -11,7 +11,7 @@ import {
   useUploadFileMutation,
 } from '@admin/api/files'
 import { resolveApiUrl } from '@admin/api/client'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { formatDate } from '@admin/utils/dayjs'
 import { formatFileSize } from '@admin/utils/format'
 import { Alert, App, Button, Form, Input, Modal, Table, Tooltip, Upload } from 'antd'
@@ -212,24 +212,34 @@ export function FileList() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('files.title')}
-        description={t('files.description')}
-        summaryItems={[
-          { label: t('files.summary.total'), value: files.length },
-          { label: t('files.summary.currentResults'), value: filteredFiles.length },
-        ]}
-        actions={
-          <PermissionGuard permission={PermissionKeys.FILE_UPLOAD}>
-            <Upload accept="*/*" beforeUpload={handleUpload} maxCount={1} showUploadList={false}>
-              <Button type="primary" icon={<UploadCloud className="size-4" />} loading={uploadMutation.isPending}>
-                {t('files.upload')}
-              </Button>
-            </Upload>
-          </PermissionGuard>
-        }
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('files.title')} description={t('files.description')} />
+        <PageToolbar
+          filters={
+            <Input.Search
+              allowClear
+              placeholder={t('files.searchPlaceholder')}
+              value={keyword}
+              onChange={(event) => setKeyword(event.target.value)}
+              style={{ width: 256 }}
+            />
+          }
+          summaryItems={[
+            { label: t('files.summary.total'), value: files.length },
+            { label: t('files.summary.currentResults'), value: filteredFiles.length },
+          ]}
+          actions={
+            <PermissionGuard permission={PermissionKeys.FILE_UPLOAD}>
+              <Upload accept="*/*" beforeUpload={handleUpload} maxCount={1} showUploadList={false}>
+                <Button type="primary" icon={<UploadCloud className="size-4" />} loading={uploadMutation.isPending}>
+                  {t('files.upload')}
+                </Button>
+              </Upload>
+            </PermissionGuard>
+          }
+        />
+      </div>
 
       {filesQuery.error ? (
         <Alert
@@ -242,14 +252,6 @@ export function FileList() {
       ) : null}
 
       <section className="space-y-4">
-        <Input.Search
-          allowClear
-          placeholder={t('files.searchPlaceholder')}
-          value={keyword}
-          onChange={(event) => setKeyword(event.target.value)}
-          className="max-w-md"
-        />
-
         <Table<FileItem>
           rowKey="id"
           columns={columns}

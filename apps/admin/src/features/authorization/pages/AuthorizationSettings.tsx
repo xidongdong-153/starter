@@ -26,7 +26,7 @@ import {
 } from '@admin/api/authorization'
 import { useAdminSessionQuery } from '@admin/api/auth'
 import { isConflictError } from '@admin/api/http'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { RoleAssignmentDrawers } from '@admin/features/authorization/components/RoleAssignmentDrawers'
 import { RoleFormDrawers } from '@admin/features/authorization/components/RoleFormDrawers'
 import { RoleLifecycleOverlays } from '@admin/features/authorization/components/RoleLifecycleOverlays'
@@ -513,16 +513,17 @@ export function AuthorizationSettings() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('authorization.title')}
-        description={t('authorization.description')}
-        summaryItems={[
-          { label: t('authorization.summary.users'), value: usersQuery.data?.length ?? 0 },
-          { label: t('authorization.summary.roles'), value: roles.length },
-          { label: t('authorization.summary.permissions'), value: permissions.length },
-        ]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('authorization.title')} description={t('authorization.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('authorization.summary.users'), value: usersQuery.data?.length ?? 0 },
+            { label: t('authorization.summary.roles'), value: roles.length },
+            { label: t('authorization.summary.permissions'), value: permissions.length },
+          ]}
+        />
+      </div>
 
       {usersQuery.error ? (
         <Alert

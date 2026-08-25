@@ -2,7 +2,7 @@ import type { SystemLogEntry, SystemLogLevel } from '@starter/contracts'
 import type { TableProps } from 'antd'
 
 import { LOGS_DEFAULT_PAGE_SIZE, useSystemLogsByRequestIdQuery, useSystemLogsQuery } from '@admin/api/system'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 
 import { Alert, Button, Drawer, Form, Input, Select, Table, Tag, Typography } from 'antd'
 import { GitBranch, RotateCcw, Search } from 'lucide-react'
@@ -202,12 +202,45 @@ export function LogViewer() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('systemLogs.title')}
-        description={t('systemLogs.description')}
-        summaryItems={[{ label: t('systemLogs.summary.total'), value: total }]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('systemLogs.title')} description={t('systemLogs.description')} />
+        <PageToolbar
+          summaryItems={[{ label: t('systemLogs.summary.total'), value: total }]}
+          filters={
+            <Form form={filterForm} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
+              <Form.Item name="requestId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('systemLogs.filters.requestId')} />
+              </Form.Item>
+              <Form.Item name="level" className="m-0 w-full sm:w-auto">
+                <Select
+                  allowClear
+                  className="w-full sm:w-36"
+                  placeholder={t('systemLogs.filters.level')}
+                  options={[
+                    { label: 'info', value: 'info' },
+                    { label: 'warn', value: 'warn' },
+                    { label: 'error', value: 'error' },
+                  ]}
+                />
+              </Form.Item>
+              <Form.Item name="query" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('systemLogs.filters.query')} />
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
+                  {t('systemLogs.filters.apply')}
+                </Button>
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
+                  {t('systemLogs.filters.clear')}
+                </Button>
+              </Form.Item>
+            </Form>
+          }
+        />
+      </div>
 
       {logsQuery.error ? (
         <Alert
@@ -219,38 +252,7 @@ export function LogViewer() {
         />
       ) : null}
 
-      <Form form={filterForm} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
-        <Form.Item name="requestId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('systemLogs.filters.requestId')} />
-        </Form.Item>
-        <Form.Item name="level" className="m-0 w-full sm:w-auto">
-          <Select
-            allowClear
-            className="w-full sm:w-36"
-            placeholder={t('systemLogs.filters.level')}
-            options={[
-              { label: 'info', value: 'info' },
-              { label: 'warn', value: 'warn' },
-              { label: 'error', value: 'error' },
-            ]}
-          />
-        </Form.Item>
-        <Form.Item name="query" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('systemLogs.filters.query')} />
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
-            {t('systemLogs.filters.apply')}
-          </Button>
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
-            {t('systemLogs.filters.clear')}
-          </Button>
-        </Form.Item>
-      </Form>
-
-      <section className="mt-6 min-w-0">
+      <section className="min-w-0">
         <Table<SystemLogEntry>
           rowKey={(entry, index) =>
             `${String(entry.time ?? 0)}-${String(entry.requestId ?? '')}-${String(entry.msg ?? '')}-${index ?? 0}`

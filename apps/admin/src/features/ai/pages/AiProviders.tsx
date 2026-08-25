@@ -15,7 +15,7 @@ import {
   useSetCustomAiProviderStateMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { usePermission } from '@admin/hooks/usePermission'
 import { CustomProviderDrawer } from '@admin/features/ai/components/CustomProviderDrawer'
 import {
@@ -514,25 +514,26 @@ export function AiProviders() {
   })
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
-      <AdminPageHeader
-        title={t('ai.providers.title')}
-        description={t('ai.providers.description')}
-        summaryItems={[
-          { label: t('ai.providers.summary.total'), value: providersQuery.data?.length ?? 0 },
-          {
-            label: t('ai.providers.summary.enabled'),
-            value: providersQuery.data?.filter((provider) => provider.enabled).length ?? 0,
-          },
-        ]}
-        actions={
-          <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCustomProvider}>
-              {t('ai.customProviders.create')}
-            </Button>
-          </PermissionGuard>
-        }
-      />
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('ai.providers.title')} description={t('ai.providers.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('ai.providers.summary.total'), value: providersQuery.data?.length ?? 0 },
+            {
+              label: t('ai.providers.summary.enabled'),
+              value: providersQuery.data?.filter((provider) => provider.enabled).length ?? 0,
+            },
+          ]}
+          actions={
+            <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+              <Button type="primary" icon={<Plus className="size-4" />} onClick={openCustomProvider}>
+                {t('ai.customProviders.create')}
+              </Button>
+            </PermissionGuard>
+          }
+        />
+      </div>
 
       <div className="border-border-subtle bg-surface/85 flex min-h-0 flex-1 flex-col rounded-2xl border p-5 shadow-sm backdrop-blur-xs sm:p-6">
         <Tabs

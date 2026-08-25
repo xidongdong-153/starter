@@ -8,7 +8,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { useAiUsageCallQuery, useAiUsageCallsQuery } from '@admin/api/ai'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 
 interface FilterValues {
   userId?: string
@@ -118,12 +118,50 @@ export function AiUsageAudit() {
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
-      <AdminPageHeader
-        title={t('ai.usage.title')}
-        description={t('ai.usage.description')}
-        summaryItems={[{ label: t('ai.usage.summary.total'), value: callsQuery.data?.total ?? 0 }]}
-      />
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('ai.usage.title')} description={t('ai.usage.description')} />
+        <PageToolbar
+          summaryItems={[{ label: t('ai.usage.summary.total'), value: callsQuery.data?.total ?? 0 }]}
+          filters={
+            <Form form={form} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
+              <Form.Item name="userId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.userId')} />
+              </Form.Item>
+              <Form.Item name="providerId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.providerId')} />
+              </Form.Item>
+              <Form.Item name="modelId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.modelId')} />
+              </Form.Item>
+              <Form.Item name="result" className="m-0 w-full sm:w-auto">
+                <Select
+                  allowClear
+                  className="w-full sm:w-52"
+                  placeholder={t('ai.usage.filters.result')}
+                  options={Object.keys(resultColors).map((value) => ({ value, label: t(`ai.usage.results.${value}`) }))}
+                />
+              </Form.Item>
+              <Form.Item name="requestId" className="m-0 w-full sm:w-auto">
+                <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.requestId')} />
+              </Form.Item>
+              <Form.Item name="timeRange" className="m-0 w-full sm:w-auto">
+                <DatePicker.RangePicker showTime className="w-full sm:w-80" />
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
+                  {t('ai.usage.filters.apply')}
+                </Button>
+              </Form.Item>
+              <Form.Item className="m-0">
+                <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
+                  {t('ai.usage.filters.clear')}
+                </Button>
+              </Form.Item>
+            </Form>
+          }
+        />
+      </div>
       {callsQuery.error ? (
         <Alert
           showIcon
@@ -132,41 +170,6 @@ export function AiUsageAudit() {
           action={<Button onClick={() => void callsQuery.refetch()}>{t('common.retry')}</Button>}
         />
       ) : null}
-      <Form form={form} layout="inline" onFinish={applyFilters} className="flex flex-wrap gap-y-3">
-        <Form.Item name="userId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.userId')} />
-        </Form.Item>
-        <Form.Item name="providerId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.providerId')} />
-        </Form.Item>
-        <Form.Item name="modelId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.modelId')} />
-        </Form.Item>
-        <Form.Item name="result" className="m-0 w-full sm:w-auto">
-          <Select
-            allowClear
-            className="w-full sm:w-52"
-            placeholder={t('ai.usage.filters.result')}
-            options={Object.keys(resultColors).map((value) => ({ value, label: t(`ai.usage.results.${value}`) }))}
-          />
-        </Form.Item>
-        <Form.Item name="requestId" className="m-0 w-full sm:w-auto">
-          <Input allowClear className="w-full sm:w-56" placeholder={t('ai.usage.filters.requestId')} />
-        </Form.Item>
-        <Form.Item name="timeRange" className="m-0 w-full sm:w-auto">
-          <DatePicker.RangePicker showTime className="w-full sm:w-80" />
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button type="primary" htmlType="submit" icon={<Search className="size-4" />}>
-            {t('ai.usage.filters.apply')}
-          </Button>
-        </Form.Item>
-        <Form.Item className="m-0">
-          <Button icon={<RotateCcw className="size-4" />} onClick={clearFilters}>
-            {t('ai.usage.filters.clear')}
-          </Button>
-        </Form.Item>
-      </Form>
       <section className="flex min-h-0 flex-1 flex-col">
         <Table<AiModelCallAudit>
           rowKey="id"

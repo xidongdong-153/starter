@@ -1,7 +1,7 @@
 import { apiBaseUrl } from '@admin/api/client'
 import { useProfileQuery } from '@admin/api/profile'
 import { useSystemHealthQuery } from '@admin/api/system'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { PermissionKeys } from '@starter/contracts'
 import { Link } from '@tanstack/react-router'
 import { Button, Tag } from 'antd'
@@ -30,21 +30,22 @@ export function Home() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('home.title')}
-        description={t('home.description')}
-        summaryItems={[
-          {
-            label: t('home.summary.account'),
-            value: profileQuery.data?.name ?? '-',
-          },
-          {
-            label: t('home.summary.framework'),
-            value: t('home.summary.frameworkValue'),
-          },
-        ]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('home.title')} description={t('home.description')} />
+        <PageToolbar
+          summaryItems={[
+            {
+              label: t('home.summary.account'),
+              value: profileQuery.data?.name ?? '-',
+            },
+            {
+              label: t('home.summary.framework'),
+              value: t('home.summary.frameworkValue'),
+            },
+          ]}
+        />
+      </div>
 
       <section className="border-border-subtle bg-surface rounded-lg border">
         <div className="border-border-subtle border-b px-5 py-4">

@@ -1,4 +1,5 @@
 export { AdminPageHeader } from './AdminPageHeader'
 export { Breadcrumb } from './Breadcrumb'
+export { PageToolbar } from './PageToolbar'
 export { PermissionGuard } from './PermissionGuard'
 export { PermissionQueryStatus } from './PermissionQueryStatus'

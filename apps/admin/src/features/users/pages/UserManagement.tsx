@@ -3,7 +3,7 @@ import type { TableProps } from 'antd'
 
 import { useAuthorizationRolesQuery } from '@admin/api/authorization'
 import { useUpdateUserStatusMutation, useUsersListQuery, useUserDetailQuery } from '@admin/api/users'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 
 import { Alert, Button, Drawer, Input, message, Popconfirm, Select, Space, Table, Tag, Tooltip } from 'antd'
 import dayjs from 'dayjs'
@@ -179,34 +179,35 @@ export function UserManagement() {
   )
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('users.title')}
-        description=""
-        summaryItems={[{ label: t('users.total', { count: listQuery.data?.total ?? 0 }), value: '' }]}
-      />
-
-      <Space wrap>
-        <Input.Search
-          placeholder={t('users.searchPlaceholder')}
-          allowClear
-          enterButton={<Search className="size-4" />}
-          onSearch={handleSearch}
-          style={{ width: 280 }}
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('users.title')} description="" />
+        <PageToolbar
+          filters={
+            <Space wrap>
+              <Input.Search
+                placeholder={t('users.searchPlaceholder')}
+                allowClear
+                enterButton={<Search className="size-4" />}
+                onSearch={handleSearch}
+                style={{ width: 280 }}
+              />
+              <Select
+                placeholder={t('users.roleFilterPlaceholder')}
+                allowClear
+                options={roleOptions}
+                value={roleKey}
+                onChange={handleRoleChange}
+                style={{ width: 200 }}
+                loading={rolesQuery.isLoading}
+              />
+              <Button icon={<RotateCcw className="size-4" />} onClick={handleClearFilters}>
+                {t('users.clearFilters')}
+              </Button>
+            </Space>
+          }
         />
-        <Select
-          placeholder={t('users.roleFilterPlaceholder')}
-          allowClear
-          options={roleOptions}
-          value={roleKey}
-          onChange={handleRoleChange}
-          style={{ width: 200 }}
-          loading={rolesQuery.isLoading}
-        />
-        <Button icon={<RotateCcw className="size-4" />} onClick={handleClearFilters}>
-          {t('users.clearFilters')}
-        </Button>
-      </Space>
+      </div>
 
       {listQuery.error ? (
         <Alert

@@ -22,7 +22,7 @@ import {
   useUpdateAgentDefinitionMutation,
   useUpdateAgentDefinitionStatusMutation,
 } from '@admin/api/ai'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import {
   Alert,
   App,
@@ -309,25 +309,26 @@ export function Agents() {
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
-      <AdminPageHeader
-        title={t('ai.agents.title')}
-        description={t('ai.agents.description')}
-        summaryItems={[
-          { label: t('ai.agents.summary.total'), value: agentsQuery.data?.total ?? 0 },
-          {
-            label: t('ai.agents.summary.enabled'),
-            value: agentsQuery.data?.items.filter((agent) => agent.status === 'enabled').length ?? 0,
-          },
-        ]}
-        actions={
-          <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
-              {t('ai.agents.create')}
-            </Button>
-          </PermissionGuard>
-        }
-      />
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('ai.agents.title')} description={t('ai.agents.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('ai.agents.summary.total'), value: agentsQuery.data?.total ?? 0 },
+            {
+              label: t('ai.agents.summary.enabled'),
+              value: agentsQuery.data?.items.filter((agent) => agent.status === 'enabled').length ?? 0,
+            },
+          ]}
+          actions={
+            <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+              <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
+                {t('ai.agents.create')}
+              </Button>
+            </PermissionGuard>
+          }
+        />
+      </div>
 
       {agentsQuery.error ? (
         <Alert

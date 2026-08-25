@@ -1,7 +1,7 @@
 import type { TableProps } from 'antd'
 import type { ReactNode } from 'react'
 
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 import { Alert, Button, DatePicker, Input, Progress, Select, Slider, Switch, Table, Tabs, Tag } from 'antd'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -79,15 +79,16 @@ export function UiShowcase() {
   }).format(new Date())
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('example.ui.title')}
-        description={t('example.ui.description')}
-        summaryItems={[
-          { label: t('example.ui.summary.status'), value: t('example.ui.summary.ready') },
-          { label: t('example.ui.summary.updatedAt'), value: updatedAt },
-        ]}
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('example.ui.title')} description={t('example.ui.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('example.ui.summary.status'), value: t('example.ui.summary.ready') },
+            { label: t('example.ui.summary.updatedAt'), value: updatedAt },
+          ]}
+        />
+      </div>
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
         <ShowcasePanel title={t('example.ui.form.title')} description={t('example.ui.form.description')}>

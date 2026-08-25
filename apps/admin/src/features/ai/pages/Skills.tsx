@@ -13,7 +13,7 @@ import {
   useSkillsQuery,
   useUpdateAiSkillMutation,
 } from '@admin/api/ai'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 
 const { TextArea } = Input
 
@@ -146,15 +146,16 @@ export function Skills() {
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
-      <AdminPageHeader
-        title={t('menu.aiSkills')}
-        description={t('ai.skills.description')}
-        actions={
-          <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
-            {t('ai.skills.create')}
-          </Button>
-        }
-      />
+      <div className="space-y-2">
+        <AdminPageHeader title={t('menu.aiSkills')} description={t('ai.skills.description')} />
+        <PageToolbar
+          actions={
+            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
+              {t('ai.skills.create')}
+            </Button>
+          }
+        />
+      </div>
       <section className="flex min-h-0 flex-1 flex-col">
         <Table<AiSkillSummary>
           rowKey="id"

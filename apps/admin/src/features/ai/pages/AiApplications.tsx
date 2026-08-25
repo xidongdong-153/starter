@@ -13,7 +13,7 @@ import {
   useRevokeAiApplicationMutation,
   useRotateAiApplicationSecretMutation,
 } from '@admin/api/ai'
-import { AdminPageHeader, PermissionGuard } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { formatDate } from '@admin/utils/dayjs'
 
 interface ApplicationFormValues {
@@ -217,25 +217,26 @@ export function AiApplications() {
   ]
 
   return (
-    <div className="flex h-full min-h-0 flex-1 flex-col gap-6">
-      <AdminPageHeader
-        title={t('ai.applications.title')}
-        description={t('ai.applications.description')}
-        summaryItems={[
-          { label: t('ai.applications.summary.total'), value: applications.length },
-          {
-            label: t('ai.applications.summary.active'),
-            value: applications.filter((application) => application.status === 'active').length,
-          },
-        ]}
-        actions={
-          <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
-            <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
-              {t('ai.applications.create')}
-            </Button>
-          </PermissionGuard>
-        }
-      />
+    <div className="flex h-full min-h-0 flex-1 flex-col gap-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('ai.applications.title')} description={t('ai.applications.description')} />
+        <PageToolbar
+          summaryItems={[
+            { label: t('ai.applications.summary.total'), value: applications.length },
+            {
+              label: t('ai.applications.summary.active'),
+              value: applications.filter((application) => application.status === 'active').length,
+            },
+          ]}
+          actions={
+            <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
+              <Button type="primary" icon={<Plus className="size-4" />} onClick={openCreate}>
+                {t('ai.applications.create')}
+              </Button>
+            </PermissionGuard>
+          }
+        />
+      </div>
 
       {applicationsQuery.error ? (
         <Alert

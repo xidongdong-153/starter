@@ -2,7 +2,7 @@ import type { ReactNode } from 'react'
 
 import { apiBaseUrl, adminEnv } from '@admin/api/client'
 import { useSystemHealthQuery } from '@admin/api/system'
-import { AdminPageHeader } from '@admin/components/common'
+import { AdminPageHeader, PageToolbar } from '@admin/components/common'
 import { Button, Tag } from 'antd'
 import { Monitor, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -80,22 +80,23 @@ export function EnvExample() {
   ]
 
   return (
-    <div className="space-y-6">
-      <AdminPageHeader
-        title={t('example.env.title')}
-        description={t('example.env.description')}
-        summaryItems={[{ label: t('example.env.summary.appEnv'), value: adminEnv.VITE_APP_ENV }]}
-        actions={
-          <Button
-            icon={<RefreshCw size={15} />}
-            loading={healthQuery.isFetching}
-            onClick={() => void healthQuery.refetch()}
-            size="small"
-          >
-            {t('common.refresh')}
-          </Button>
-        }
-      />
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <AdminPageHeader title={t('example.env.title')} description={t('example.env.description')} />
+        <PageToolbar
+          summaryItems={[{ label: t('example.env.summary.appEnv'), value: adminEnv.VITE_APP_ENV }]}
+          actions={
+            <Button
+              icon={<RefreshCw size={15} />}
+              loading={healthQuery.isFetching}
+              onClick={() => void healthQuery.refetch()}
+              size="small"
+            >
+              {t('common.refresh')}
+            </Button>
+          }
+        />
+      </div>
 
       <section className="grid gap-4 lg:grid-cols-2">
         <EnvPanel
