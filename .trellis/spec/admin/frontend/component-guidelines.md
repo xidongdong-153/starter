@@ -23,7 +23,14 @@ const files = filesQuery.data ?? [];
 
 ## 共享组件
 
-跨 feature 的页面标题和错误状态放入 `components/common/` 或 `components/ui/`。`AdminPageHeader` 通过 `summaryItems` 和 `actions` 组合页面信息；`ErrorBoundary` 统一提供重试和返回首页操作。
+跨 feature 的页面标题、工具栏和错误状态放入 `components/common/` 或 `components/ui/`。
+
+- `AdminPageHeader` 渲染无卡片的单行页头，props 只有 `title`、`description?`、`onBack?`、`backLabel?`；描述与标题同行（`text-sm` 小字、过长截断）。
+- `PageToolbar` 渲染表格上方的统一工具栏，props 为 `filters?`、`summaryItems?`、`actions?`；三个都为空时返回 `null`。布局约定：筛选控件和摘要标签在左侧，操作按钮在右侧。
+- 页面级操作按钮（新建、上传、刷新）和筛选控件（搜索、下拉、清除）一律放进 `PageToolbar`，不再传给 `AdminPageHeader`；没有工具栏内容的页面只渲染页头。
+- `ErrorBoundary` 统一提供重试和返回首页操作。
+
+> **Warning**: antd 的 `Input` 放进 flex 容器会被 antd 的无层级 CSS 撑成 `width: 100%`，把工具栏挤成多行。`Input.Search` 或 `Select` 放进 `PageToolbar` 的 `filters` 时用固定宽度（如 `style={{ width: 256 }}`），参考 `FileList.tsx` 和 `UserManagement.tsx`。
 
 ## 表单与交互
 
