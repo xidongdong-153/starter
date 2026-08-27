@@ -25,7 +25,7 @@ export const registerOpenApi: AppRegistrar = (app, runtime) => {
         {
           name: "AI Runtime",
           description:
-            "AI 运行面：Session、Agent Run、Transcript 和 HarnessEvent SSE。",
+            "AI 运行面：Session、Agent Run、Transcript 和 RunEvent SSE。",
         },
         {
           name: "AI Compatibility",

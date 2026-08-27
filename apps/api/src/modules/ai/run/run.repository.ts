@@ -1,8 +1,15 @@
 import { and, eq, sql } from "drizzle-orm";
+import { runEventSchema, type RunEvent } from "@starter/contracts";
+import { generateId } from "@api/shared/id.js";
+import type { RunEventDraft } from "./run-event.repository.js";
 
 import type { AppDatabase } from "@api/infra/db/client.js";
 import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
-import { aiAgentRuns, aiAgentSessions } from "@api/modules/ai/ai.schema.js";
+import {
+  aiAgentRuns,
+  aiAgentSessions,
+  aiRunEvents,
+} from "@api/modules/ai/ai.schema.js";
 import type { AiAgentSessionRepository } from "../session/session.repository.js";
 
 export type AiAgentRunRecord = typeof aiAgentRuns.$inferSelect;
@@ -35,7 +42,9 @@ export interface AiAgentRunRepository {
   ) => AiAgentRunRecord | undefined;
   findById: (id: string) => AiAgentRunRecord | undefined;
   markRunning: (id: string, now: Date) => boolean;
-  updateTerminal: (input: AiAgentRunTerminalInput) => boolean;
+  completeWithTerminalEvent: (
+    input: AiAgentRunTerminalInput & { event: RunEventDraft },
+  ) => RunEvent | false;
   listNonTerminal: () => AiAgentRunRecord[];
 }
 
@@ -95,23 +104,51 @@ export function createAiAgentRunRepository(
     return result.changes > 0;
   }
 
-  function updateTerminal(input: AiAgentRunTerminalInput): boolean {
-    const result = db
-      .update(aiAgentRuns)
-      .set({
-        status: input.status,
-        finalEntryId: input.finalEntryId,
-        errorCode: input.errorCode,
-        finishedAt: input.finishedAt,
-      })
-      .where(
-        and(
-          eq(aiAgentRuns.id, input.id),
-          sql`${aiAgentRuns.status} IN ('starting', 'running')`,
-        ),
-      )
-      .run();
-    return result.changes > 0;
+  function completeWithTerminalEvent(
+    input: AiAgentRunTerminalInput & { event: RunEventDraft },
+  ): RunEvent | false {
+    return db.transaction((tx) => {
+      const updated = tx
+        .update(aiAgentRuns)
+        .set({
+          status: input.status,
+          finalEntryId: input.finalEntryId,
+          errorCode: input.errorCode,
+          finishedAt: input.finishedAt,
+        })
+        .where(
+          and(
+            eq(aiAgentRuns.id, input.id),
+            sql`${aiAgentRuns.status} IN ('starting', 'running')`,
+          ),
+        )
+        .run();
+      if (updated.changes === 0) return false;
+      const sequenceRow = tx
+        .select({
+          value: sql<number>`coalesce(max(${aiRunEvents.sequence}), 0) + 1`,
+        })
+        .from(aiRunEvents)
+        .where(eq(aiRunEvents.runId, input.id))
+        .get();
+      const event = runEventSchema.parse({
+        ...input.event,
+        eventId: input.event.eventId ?? generateId(),
+        sequence: sequenceRow?.value ?? 1,
+        occurredAt: input.event.occurredAt ?? input.finishedAt.toISOString(),
+      });
+      tx.insert(aiRunEvents)
+        .values({
+          eventId: event.eventId,
+          runId: event.runId,
+          sequence: event.sequence,
+          type: event.type,
+          payloadJson: JSON.stringify(event),
+          occurredAt: new Date(event.occurredAt),
+        })
+        .run();
+      return event;
+    });
   }
 
   function listNonTerminal(): AiAgentRunRecord[] {
@@ -127,7 +164,7 @@ export function createAiAgentRunRepository(
     findInScope,
     findById,
     markRunning,
-    updateTerminal,
+    completeWithTerminalEvent,
     listNonTerminal,
   };
 }

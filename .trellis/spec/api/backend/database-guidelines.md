@@ -57,24 +57,29 @@ status: text("status").notNull().default("active"),
 status: text("status").notNull().default("active"),
 ```
 
-## Harness 主库结构
+## AI Runtime 主库结构
 
 ### 1. 适用范围
 
-修改 Agent、Session、Run 业务表或 `ai_model_calls` Run 关联时，按本节检查。Pi transcript 不进入 Starter 主库。旧 Conversation 三表（`ai_conversations`、`ai_conversation_messages`、`ai_generations`）已在 destructive migration 中删除，不再存在于 schema 和运行时。
+修改 Agent、Session、Run 业务表、RunEvent 时间线或 Model Call/Tool Execution 关联时，按本节检查。Pi transcript 不进入 Starter 主库。旧 Conversation 三表（`ai_conversations`、`ai_conversation_messages`、`ai_generations`）已在 destructive migration 中删除，不再存在于 schema 和运行时。
 
 ### 2. 数据库签名
 
 - `ai_agent_definitions`：`id`、`name`、`description`、`status`、`revision`、`config_json`、创建/更新人和时间。
 - `ai_agent_sessions`：`id`、`owner_id`、`title`、`default_agent_id`、`archived_at` 和时间。
 - `ai_agent_runs`：`id`、`session_id`、`agent_id`、`lane`、`status`、`agent_revision`、`snapshot_json`、`request_id`、终态摘要和时间。
-- `ai_model_calls.run_id`：可空，引用 `ai_agent_runs.id`，索引为 `(run_id, started_at, id)`，`scenario` 为 `model_test | agent_run | legacy`。
+- `ai_run_turns`：Run 下的 `turn_index`、`outcome` 和时间，`(run_id, turn_index)` 唯一。
+- `ai_run_steps`：Run/Turn 下的 `kind`、`attempt`、`outcome`、错误码和时间。
+- `ai_run_events`：`event_id`、`run_id`、连续 `sequence`、事件 `type`、`payload_json` 和时间，`(run_id, sequence)` 唯一。
+- `ai_structured_outputs`：Run/Step 关联、Contract 名称/版本、schema hash、render kind 和校验后的 value。
+- `ai_model_calls.run_id`：可空，引用 `ai_agent_runs.id`，索引为 `(run_id, started_at, id)`，`scenario` 为 `model_test | agent_run | legacy`；Agent Run 记录同时保存 `turn_id`、`step_id` 和模型调用观测字段。
+- `ai_tool_executions`：使用唯一的 `model_call_id`、`run_id`、`step_id`、`tool_call_id` 和 `tool_execution_id` 关联执行，不再使用 `ai_call_id`。
 
 时间列使用 `timestamp_ms`；`final_entry_id` 不建立跨数据库外键。
 
 ### 3. 数据契约
 
-`config_json` 和 `snapshot_json` 由 `packages/contracts/src/ai.ts` 的严格 Zod schema 校验，数据库只检查 JSON 语法。`ai_model_calls` 的 `scenario` 分布：模型测试无 Run 关联，新 Run 调用写 `run_id`，destructive migration 后旧 Conversation 调用归为 `legacy` 且 `run_id` 为 `NULL`。
+`config_json`、`snapshot_json`、RunEvent `payload_json` 和 Structured Output `value_json` 由 `packages/contracts/src/ai.ts` 的严格 Zod schema 在写入和读取时校验，数据库同时检查 JSON 语法。`ai_model_calls` 的 `scenario` 分布：模型测试无 Run 关联，新 Run 调用写 `run_id`，destructive migration 后旧 Conversation 调用归为 `legacy` 且 `run_id` 为 `NULL`。
 
 ### 4. 校验与错误矩阵
 
@@ -122,3 +127,45 @@ DROP TABLE __keep_tool_executions;
 ```
 
 注意：drizzle-kit migrate 在单个事务内执行 SQL，事务内 `PRAGMA foreign_keys=OFF` 是 no-op，所以重建父表前必须显式解除子表引用，不能依赖外键开关。
+
+## AI Run 事件与关联数据
+
+### 1. Scope / Trigger
+
+修改 `ai_run_turns`、`ai_run_steps`、`ai_run_events`、`ai_structured_outputs` 或 AI 审计关联列时，必须同时检查 schema、migration、repository、JSON 校验和恢复测试。
+
+### 2. Signatures
+
+- `ai_run_events` 通过 `(run_id, sequence)` 唯一键保存 RunEvent；`event_id` 是主键。
+- `ai_tool_executions` 只使用 `model_call_id` 关联 `ai_model_calls`，新记录不能为空；删除 Model Call 时按 schema 定义级联删除 Tool Execution。
+- `RunEvent` 的 sequence 由 Publisher 在持久化时分配，repository 按 Run 和 sequence 正序读取。
+
+### 3. Contracts
+
+- `payload_json` 必须先通过 `runEventSchema`，读取时再次 parse；解析失败按数据损坏处理，不使用类型断言跳过。
+- `value_json` 必须是已注册 Output Contract 的 Zod 校验结果。
+- migration `0020_amusing_plazm.sql` 从旧 Tool 表重建新表，用 `COALESCE(model_call_id, ai_call_id)` 保留旧关联值，并删除 `ai_call_id`。
+
+### 4. Validation & Error Matrix
+
+- 重复 `(run_id, sequence)`：数据库拒绝，不产生第二条事件。
+- 旧 Tool 行没有 `model_call_id` 但有 `ai_call_id`：迁移时回填；回填后仍无关联值则迁移失败，不静默丢行。
+- `PRAGMA foreign_key_check` 非空：停止迁移验证，不能继续使用该数据库。
+
+### 5. Good / Base / Bad Cases
+
+- Good：重建 `ai_tool_executions` 前保留旧行，复制列时显式把旧 `ai_call_id` 回填到 `model_call_id`，再检查列集合和外键。
+- Base：历史 Model Call 的 `run_id` 可以为空，但新 Agent Run 的 Tool Execution 必须有 Model Call 关联。
+- Bad：保留 `ai_call_id` 与 `model_call_id` 双写，或在删除父表后才尝试恢复 Tool 审计。
+
+### 6. Tests Required
+
+- migration 后检查 `ai_call_id` 不存在、旧 Tool 行数和 `model_call_id` 值保留。
+- 检查 `PRAGMA foreign_key_check` 返回空结果。
+- 检查 Run 删除级联事件、Turn、Step 和 Structured Output；Model Call 删除按 schema 级联 Tool Execution。
+
+### 7. Wrong vs Correct
+
+错误做法是在事务里执行 `PRAGMA foreign_keys=OFF` 后直接删除被引用的父表，认为子表可以稍后恢复。
+
+正确做法是先保存受影响的子表数据；本次 `0020` 只重建子表，不重建 `ai_model_calls`，并用 `COALESCE` 回填旧 Tool 关联，迁移后再执行外键检查。

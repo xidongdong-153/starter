@@ -1,4 +1,5 @@
 import type {
+  AiOutputContractRef,
   AgentDefinitionConfig,
   AgentDefinitionDetail,
   AgentDefinitionListQuery,
@@ -21,6 +22,10 @@ import type {
   RegisteredAiTool,
 } from "../tool/tool-registry.js";
 import { isAiToolAvailableInScope } from "../tool/tool-registry.js";
+import type {
+  AiOutputContractRegistry,
+  ResolvedAiOutputContract,
+} from "../output/output-contract-registry.js";
 import type { AiPromptService } from "../prompt/prompt.service.js";
 import type {
   AiSkillRecord,
@@ -48,6 +53,7 @@ export interface ResolvedAgentDefinition {
   systemPrompt: string;
   skills: Array<Pick<AiSkillRecord, "id" | "name" | "description">>;
   tools: RegisteredAiTool[];
+  outputContract: ResolvedAiOutputContract | null;
   thinkingLevel: AgentDefinitionConfig["thinkingLevel"];
   maxTurns: number;
 }
@@ -96,6 +102,7 @@ export function createAiAgentDefinitionService(input: {
   promptService: AiPromptService;
   skillRepository: AiSkillRepository;
   toolRegistry: AiToolRegistry;
+  outputContractRegistry: AiOutputContractRegistry;
 }): AiAgentDefinitionService {
   const {
     repository,
@@ -103,6 +110,7 @@ export function createAiAgentDefinitionService(input: {
     promptService,
     skillRepository,
     toolRegistry,
+    outputContractRegistry,
   } = input;
 
   function listPublic(query: AgentDefinitionListQuery) {
@@ -291,6 +299,10 @@ export function createAiAgentDefinitionService(input: {
       return tool;
     });
 
+    const outputContract = config.outputContract
+      ? resolveOutputContract(config.outputContract)
+      : null;
+
     return {
       id: record.id,
       revision: record.revision,
@@ -299,6 +311,7 @@ export function createAiAgentDefinitionService(input: {
       systemPrompt,
       skills,
       tools,
+      outputContract,
       thinkingLevel: config.thinkingLevel,
       maxTurns: config.maxTurns,
     };
@@ -338,13 +351,34 @@ export function createAiAgentDefinitionService(input: {
     // （Pi 模型调用只携带 Tool name，没有第二个版本选择字段）。
     const toolNames = new Set<string>();
     for (const ref of config.toolRefs) {
-      if (toolNames.has(ref.name)) throw invalidConfig("tool");
+      if (toolNames.has(ref.name) || ref.name === "emit_structured_output")
+        throw invalidConfig("tool");
       toolNames.add(ref.name);
       try {
         toolRegistry.require(ref);
       } catch {
         throw invalidConfig("tool");
       }
+    }
+    if (config.outputContract) resolveOutputContract(config.outputContract);
+  }
+
+  function resolveOutputContract(
+    ref: AiOutputContractRef,
+  ): ResolvedAiOutputContract {
+    try {
+      const contract = outputContractRegistry.resolve(ref);
+      if (
+        contract.schemaHash !== ref.schemaHash ||
+        contract.renderKind !== ref.renderKind ||
+        contract.visibility !== ref.visibility ||
+        contract.mode !== ref.mode
+      ) {
+        throw new Error("Output Contract ref metadata mismatch");
+      }
+      return contract;
+    } catch {
+      throw invalidConfig("outputContract");
     }
   }
 
@@ -404,7 +438,27 @@ function sameConfig(
     sameStringArray(normalizedLeft.skillIds, normalizedRight.skillIds) &&
     sameToolRefs(normalizedLeft.toolRefs, normalizedRight.toolRefs) &&
     normalizedLeft.thinkingLevel === normalizedRight.thinkingLevel &&
-    normalizedLeft.maxTurns === normalizedRight.maxTurns
+    normalizedLeft.maxTurns === normalizedRight.maxTurns &&
+    sameOutputContractRefs(
+      normalizedLeft.outputContract,
+      normalizedRight.outputContract,
+    ) &&
+    normalizedLeft.outputMode === normalizedRight.outputMode
+  );
+}
+
+function sameOutputContractRefs(
+  left: AiOutputContractRef | null,
+  right: AiOutputContractRef | null,
+): boolean {
+  if (left === null || right === null) return left === right;
+  return (
+    left.name === right.name &&
+    left.version === right.version &&
+    left.schemaHash === right.schemaHash &&
+    left.renderKind === right.renderKind &&
+    left.visibility === right.visibility &&
+    left.mode === right.mode
   );
 }
 

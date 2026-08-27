@@ -7,6 +7,7 @@ import type {
 } from "@starter/contracts";
 import { agentRunSnapshotSchema } from "@starter/contracts";
 
+import { parseStoredJson } from "@api/shared/stored-json.js";
 import type { AiAgentRunRecord } from "./run.repository.js";
 
 /**
@@ -62,5 +63,9 @@ export function toStarterRunData(input: {
 }
 
 function parseSnapshot(snapshotJson: string): AgentRunSnapshot {
-  return agentRunSnapshotSchema.parse(JSON.parse(snapshotJson));
+  return parseStoredJson({
+    column: "ai_agent_runs.snapshot_json",
+    json: snapshotJson,
+    schema: agentRunSnapshotSchema,
+  });
 }

@@ -16,11 +16,36 @@ export interface AiToolExecutionContext {
   requestId: string;
   signal: AbortSignal;
   reportProgress: (safeSummary: string) => void;
+  /**
+   * 上报一条引用来源，服务端校验通过后发布 `source.available`。
+   *
+   * 可选字段，工具内部用 `?.` 调用；内容不进 `modelText`、不产生审计记录，
+   * 非法 source（schema 不合法、URL 不安全）被丢弃，不影响 Tool 结果。
+   */
+  reportSource?: (source: AiToolSourceInput) => void;
+  runId?: string;
+  turnId?: string | null;
+  stepId?: string | null;
+  modelCallId?: string | null;
+  toolCallId?: string;
+  toolExecutionId?: string | null;
+  turnIndex?: number | null;
+}
+
+/** 工具上报 source 的输入；`uri` 和 `excerpt` 省略时按 null 处理。 */
+export interface AiToolSourceInput {
+  sourceId: string;
+  kind: string;
+  title: string;
+  uri?: string | null;
+  excerpt?: string | null;
 }
 
 export interface AiToolResult {
   modelText: string;
   safeSummary: string | null;
+  terminate?: boolean;
+  structuredOutputId?: string;
 }
 
 export type AiToolScope = "platform" | { tenantId: string; projectId: string };
@@ -33,6 +58,7 @@ export interface AiToolDefinitionInput<TInput> {
   timeoutMs: number;
   scope: AiToolScope;
   requiredPermission: Permission | null;
+  internal?: boolean;
   execute: (
     context: AiToolExecutionContext,
     input: TInput,
@@ -47,6 +73,7 @@ export interface RegisteredAiTool {
   timeoutMs: number;
   scope: AiToolScope;
   requiredPermission: Permission | null;
+  internal?: boolean;
   execute: (
     context: AiToolExecutionContext,
     input: unknown,
@@ -77,6 +104,7 @@ export function defineAiTool<TInput>(
     timeoutMs: input.timeoutMs,
     scope: input.scope,
     requiredPermission: input.requiredPermission,
+    internal: input.internal,
     execute: (context: AiToolExecutionContext, value: unknown) =>
       input.execute(context, value as TInput),
   });
@@ -140,10 +168,14 @@ function validateToolDefinition(
     | "timeoutMs"
     | "scope"
     | "requiredPermission"
+    | "internal"
   >,
 ): void {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(tool.name)) {
     throw new Error(`AI 工具名称无效: ${tool.name}`);
+  }
+  if (tool.name === "emit_structured_output" && !tool.internal) {
+    throw new Error("AI 工具名称保留给 Structured Output");
   }
   if (!/^\d+\.\d+\.\d+$/.test(tool.version)) {
     throw new Error(`AI 工具版本无效: ${tool.name}`);

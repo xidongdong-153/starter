@@ -1,4 +1,9 @@
 import { PermissionKeys, type Permission } from "@starter/contracts";
+import { InMemoryTelemetryContext } from "@earendil-works/pi-telemetry";
+import type {
+  TelemetryContext,
+  TelemetrySpan,
+} from "@earendil-works/pi-telemetry";
 import { z } from "zod";
 import { describe, expect, it, vi } from "vitest";
 
@@ -6,41 +11,48 @@ import {
   createPiToolAdapter,
   PiToolExecutionError,
 } from "@api/infra/agent/pi-tool-adapter.js";
+import { createAiTelemetryContext } from "@api/infra/telemetry/index.js";
 import {
   createAiToolRegistry,
   defineAiTool,
 } from "@api/modules/ai/tool/tool-registry.js";
+import type { RunExecutionContext } from "@api/infra/agent/run-execution-context.js";
+import { testRunExecution } from "./run-execution.js";
 
+/** 审计 mock 按真实实现回传调用方给的 toolExecutionId。 */
 function createAudit() {
-  const handle = { id: "audit-tool-1", startedAt: new Date() };
+  const ids: string[] = [];
   return {
-    beginToolExecution: vi.fn(() => handle),
+    ids,
+    beginToolExecution: vi.fn((input: { id: string }) => {
+      ids.push(input.id);
+      return { id: input.id, startedAt: new Date() };
+    }),
     finalizeToolExecution: vi.fn(),
   };
 }
 
-function options(audit: ReturnType<typeof createAudit>, allowed = true) {
+/** Tool 执行时的关联上下文：已经有 Turn、Step 和 Model Call。 */
+function toolExecution(
+  overrides: Partial<Parameters<typeof testRunExecution>[0]> = {},
+): RunExecutionContext {
+  const execution = testRunExecution(overrides);
+  execution.beginTurn(1);
+  execution.beginStep("assistant", 1);
+  execution.setModelCall("model-call-1");
+  return execution;
+}
+
+function options(
+  audit: ReturnType<typeof createAudit>,
+  allowed = true,
+  execution: RunExecutionContext = toolExecution(),
+) {
   return {
-    principal: {
-      kind: "starter_user" as const,
-      principalId: "user-1",
-      tenantId: "starter",
-      projectId: "starter",
-      externalUserId: "user-1",
-      appId: null,
-    },
-    scope: {
-      tenantId: "starter",
-      projectId: "starter",
-      subjectType: null,
-      subjectId: null,
-    },
-    userId: "user-1",
-    requestId: "request-1",
+    execution,
     hasPermission: vi.fn(
       async (_userId: string, _permission: Permission) => allowed,
     ),
-    getModelCallId: () => "model-call-1",
     audit,
   };
 }
@@ -94,7 +106,7 @@ describe("pi tool adapter", () => {
       expect.objectContaining({ requestId: "request-1" }),
     );
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "audit-tool-1" }),
+      expect.objectContaining({ id: audit.ids[0] }),
       "succeeded",
       null,
     );
@@ -188,7 +200,7 @@ describe("pi tool adapter", () => {
       },
     });
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "audit-tool-1" }),
+      expect.objectContaining({ id: audit.ids[0] }),
       "forbidden",
       "AI.TOOL_FORBIDDEN",
     );
@@ -230,7 +242,7 @@ describe("pi tool adapter", () => {
     // 工具自身超时不终止 Run，模型要能拿到失败原因继续回复
     expect(onTerminalFailure).not.toHaveBeenCalled();
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "audit-tool-1" }),
+      expect.objectContaining({ id: audit.ids[0] }),
       "timed_out",
       "AI.TOOL_TIMED_OUT",
     );
@@ -288,7 +300,7 @@ describe("pi tool adapter", () => {
 
     expect(onTerminalFailure).toHaveBeenCalledWith("cancelled");
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "audit-tool-1" }),
+      expect.objectContaining({ id: audit.ids[0] }),
       "cancelled",
       "AI.TOOL_CANCELLED",
     );
@@ -344,9 +356,193 @@ describe("pi tool adapter sensitive marker isolation", () => {
       expect.objectContaining({ toolName: "leaky", toolVersion: "1.0.0" }),
     );
     expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
-      expect.objectContaining({ id: "audit-tool-1" }),
+      expect.objectContaining({ id: audit.ids[0] }),
       "failed",
       "AI.TOOL_FAILED",
     );
+  });
+});
+
+describe("pi tool adapter telemetry", () => {
+  function lookupRegistry(
+    execute: () => Promise<{ modelText: string; safeSummary: string }>,
+  ) {
+    return createAiToolRegistry([
+      defineAiTool({
+        name: "lookup",
+        version: "2.1.0",
+        description: "Look up a value",
+        inputSchema: z.object({ value: z.string() }),
+        timeoutMs: 1000,
+        scope: "platform",
+        requiredPermission: null,
+        execute,
+      }),
+    ]);
+  }
+
+  it("tool_execution span 记录名称、版本、关联 ID、状态和耗时", async () => {
+    const audit = createAudit();
+    const recorder = new InMemoryTelemetryContext();
+    const telemetry = createAiTelemetryContext(recorder);
+    const registry = lookupRegistry(async () => ({
+      modelText: "result",
+      safeSummary: "done",
+    }));
+    const execution = toolExecution({ runId: "run-1" });
+    const adapter = createPiToolAdapter(registry.list(), {
+      ...options(audit, true, execution),
+      getTelemetryParent: () => telemetry,
+    });
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    await tool.execute(
+      "tool-call-telemetry",
+      { value: "input" },
+      new AbortController().signal,
+    );
+
+    const spans = recorder.getSpans();
+    expect(spans.map((span) => span.name)).toEqual([
+      "starter.ai.tool_execution",
+    ]);
+    const span = spans[0];
+    if (!span) throw new Error("缺少 tool_execution span");
+    expect(span.attributes).toMatchObject({
+      "starter.ai.run.id": "run-1",
+      "starter.ai.turn.id": execution.turnId,
+      "starter.ai.step.id": execution.step?.id,
+      "starter.ai.model_call.id": "model-call-1",
+      "starter.ai.tool.name": "lookup",
+      "starter.ai.tool.version": "2.1.0",
+      "starter.ai.tool.call_id": "tool-call-telemetry",
+      // span 记的执行 ID 就是写进审计的那个
+      "starter.ai.tool.execution_id": audit.ids[0],
+      "starter.ai.tool.attempt": 1,
+      "starter.ai.tool.recovery": false,
+      "starter.ai.tool.status": "succeeded",
+      "starter.ai.tool.timeout_ms": 1000,
+    });
+    expect(typeof span.attributes["starter.ai.duration_ms"]).toBe("number");
+    expect(span.status).toMatchObject({ status: "ok" });
+    // 同一 toolCallId 再执行一次记为 attempt 2 的恢复执行
+    await expect(
+      tool.execute(
+        "tool-call-telemetry",
+        { value: "input" },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ details: { status: "succeeded" } });
+    expect(recorder.getSpans()[1]?.attributes).toMatchObject({
+      "starter.ai.tool.attempt": 2,
+      "starter.ai.tool.recovery": true,
+    });
+  });
+
+  it("权限不足时 span 记录 forbidden 并标记 error，不写入参数", async () => {
+    const audit = createAudit();
+    const recorder = new InMemoryTelemetryContext();
+    const telemetry = createAiTelemetryContext(recorder);
+    const registry = createAiToolRegistry([
+      defineAiTool({
+        name: "restricted",
+        version: "1.0.0",
+        description: "Requires permission",
+        inputSchema: z.object({ value: z.string() }),
+        timeoutMs: 1000,
+        scope: "platform",
+        requiredPermission: PermissionKeys.AI_CONFIG_MANAGE,
+        execute: async () => ({ modelText: "result", safeSummary: "done" }),
+      }),
+    ]);
+    const adapter = createPiToolAdapter(registry.list(), {
+      ...options(audit, false),
+      getTelemetryParent: () => telemetry,
+    });
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    await expect(
+      tool.execute(
+        "tool-call-forbidden",
+        { value: "TOOL_ARGUMENT_SECRET_MARKER" },
+        new AbortController().signal,
+      ),
+    ).rejects.toBeInstanceOf(PiToolExecutionError);
+
+    const span = recorder.getSpans()[0];
+    if (!span) throw new Error("缺少 tool_execution span");
+    expect(span.attributes).toMatchObject({
+      "starter.ai.tool.status": "forbidden",
+      "starter.ai.error.code": "AI.TOOL_FORBIDDEN",
+    });
+    expect(span.status).toMatchObject({ status: "error" });
+    expect(JSON.stringify(recorder.getSpans())).not.toContain(
+      "TOOL_ARGUMENT_SECRET_MARKER",
+    );
+  });
+
+  it("telemetry context 抛错时 Tool 结果和审计保持不变", async () => {
+    const audit = createAudit();
+    const brokenSpan: TelemetrySpan = {
+      startSpan: (_options, callback) => Promise.resolve(callback(brokenSpan)),
+      setAttributes: () => {
+        throw new Error("attributes-broken");
+      },
+      setStatus: () => {
+        throw new Error("status-broken");
+      },
+      addEvent: () => undefined,
+    };
+    const brokenTelemetry: TelemetryContext = {
+      startSpan: () => {
+        throw new Error("start-span-broken");
+      },
+    };
+    const registry = lookupRegistry(async () => ({
+      modelText: "result",
+      safeSummary: "done",
+    }));
+    const adapter = createPiToolAdapter(registry.list(), {
+      ...options(audit),
+      getTelemetryParent: () => createAiTelemetryContext(brokenTelemetry),
+    });
+    const tool = adapter.tools[0];
+    if (!tool) throw new Error("tool missing");
+
+    await expect(
+      tool.execute(
+        "tool-call-broken-telemetry",
+        { value: "input" },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({
+      content: [{ type: "text", text: "result" }],
+      details: { status: "succeeded", safeSummary: "done" },
+    });
+    expect(audit.finalizeToolExecution).toHaveBeenCalledWith(
+      expect.objectContaining({ id: audit.ids[0] }),
+      "succeeded",
+      null,
+    );
+
+    const partiallyBroken = createPiToolAdapter(registry.list(), {
+      ...options(createAudit()),
+      getTelemetryParent: () =>
+        createAiTelemetryContext({
+          startSpan: (_options, callback) =>
+            Promise.resolve(callback(brokenSpan)),
+        }),
+    });
+    const brokenSpanTool = partiallyBroken.tools[0];
+    if (!brokenSpanTool) throw new Error("tool missing");
+    await expect(
+      brokenSpanTool.execute(
+        "tool-call-broken-span",
+        { value: "input" },
+        new AbortController().signal,
+      ),
+    ).resolves.toMatchObject({ details: { status: "succeeded" } });
   });
 });

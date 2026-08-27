@@ -25,7 +25,12 @@ import {
   aiAgentRuns,
   aiAgentSessions,
   aiEnabledModels,
+  aiModelCalls,
   aiProviderConfigs,
+  aiRunSteps,
+  aiRunTurns,
+  aiStructuredOutputs,
+  aiToolExecutions,
   permissions,
   rolePermissions,
   roles,
@@ -35,9 +40,13 @@ import {
   createAiToolRegistry,
   defineAiTool,
 } from "@api/modules/ai/tool/tool-registry.js";
+import { createAiOutputContractRegistry } from "@api/modules/ai/output/output-contract-registry.js";
+
 import {
   createAiAgentRunRepository,
   createAiAgentRunService,
+  createAiRunEventRepository,
+  createAiRunLifecycleRepository,
 } from "@api/modules/ai/run/index.js";
 import { createAiAgentSessionRepository } from "@api/modules/ai/session/index.js";
 import { generateId } from "@api/shared/id.js";
@@ -166,6 +175,7 @@ async function setupAgent(
   name: string,
   maxTurns = 8,
   toolRefs: Array<{ name: string; version: string }> = [],
+  outputContract?: import("@api/modules/ai/output/output-contract-registry.js").ResolvedAiOutputContract,
 ): Promise<{
   agentId: string;
   modelRef: { providerId: string; modelId: string };
@@ -185,6 +195,7 @@ async function setupAgent(
       systemPromptId: promptBody.data.id,
       skillIds: [],
       toolRefs,
+      ...(outputContract ? { outputContract: outputContract.ref } : {}),
       thinkingLevel: "off",
       maxTurns,
     },
@@ -300,14 +311,16 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
     expect(events.map((event) => event.type)).toEqual([
       "run.started",
       "turn.started",
+      "step.started",
       "message.started",
       "message.delta",
       "message.completed",
+      "step.completed",
       "turn.completed",
       "run.completed",
     ]);
     const sequences = events.map((event) => event.sequence as number);
-    expect(sequences).toEqual([1, 2, 3, 4, 5, 6, 7]);
+    expect(sequences).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
     expect(
       events.filter((event) => String(event.type).startsWith("run.")),
     ).toHaveLength(2);
@@ -343,8 +356,40 @@ it("文本 Run 从 starting/running 进入唯一 completed 终态，SSE 顺序�
         model: modelRef,
       },
     });
+    expect(
+      runtime.db
+        .select({ outcome: aiRunTurns.outcome })
+        .from(aiRunTurns)
+        .where(eq(aiRunTurns.runId, runId))
+        .all()
+        .every((row) => row.outcome !== "running"),
+    ).toBe(true);
+    expect(
+      runtime.db
+        .select({ outcome: aiRunSteps.outcome })
+        .from(aiRunSteps)
+        .where(eq(aiRunSteps.runId, runId))
+        .all()
+        .every((row) => row.outcome !== "running"),
+    ).toBe(true);
+    expect(
+      runtime.db
+        .select({ result: aiModelCalls.result })
+        .from(aiModelCalls)
+        .where(eq(aiModelCalls.runId, runId))
+        .all()
+        .every((row) => row.result !== "running"),
+    ).toBe(true);
+    expect(
+      runtime.db
+        .select({ status: aiToolExecutions.status })
+        .from(aiToolExecutions)
+        .where(eq(aiToolExecutions.runId, runId))
+        .all()
+        .every((row) => row.status !== "running"),
+    ).toBe(true);
 
-    // Pi 侧只写一条 starter.run.v1
+    // Pi 侧只写一条 starter.run
     const entries = await store.findRunTerminalEntries({
       sessionId,
       lane: "main",
@@ -621,7 +666,6 @@ it("撞上 maxTurns 时追加收尾轮，run.completed 的 reason 是 max_turns"
     const completed = events.filter((event) => event.type === "run.completed");
     expect(completed).toHaveLength(1);
     expect(completed[0]?.data).toMatchObject({
-      status: "completed",
       reason: "max_turns",
     });
     // 最后一条 assistant 消息是文字总结
@@ -1157,6 +1201,7 @@ it("启动恢复：无 terminal entry 标记 interrupted，唯一合法 entry �
       registry: createActiveRunRegistry(),
       executor: {} as never,
       logger,
+      eventRepository: createAiRunEventRepository(runtime.db),
     });
 
     // 无 terminal entry -> interrupted
@@ -1254,6 +1299,7 @@ it("启动恢复：唯一合法 entry 投影终态；重复 entry 标记 interru
       registry: createActiveRunRegistry(),
       executor: {} as never,
       logger,
+      eventRepository: createAiRunEventRepository(runtime.db),
     });
     const report = await service.recoverInterrupted();
     expect(report.recoveredFromEntry).toBe(1);
@@ -1399,6 +1445,7 @@ it("启动恢复：schema 解析失败标记 AI.RUN_INTERRUPTED", async () => {
       registry: createActiveRunRegistry(),
       executor: {} as never,
       logger,
+      eventRepository: createAiRunEventRepository(runtime.db),
     });
     const report = await service.recoverInterrupted();
     expect(report.corrupted).toBe(1);
@@ -1662,6 +1709,486 @@ async function seedAgentDefinition(
   return id;
 }
 
+it("required 输出缺失失败，optional 普通文本完成", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-output-mode-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const streamFn = () =>
+    streamResponse(
+      assistantMessage([{ type: "text", text: "plain text" }], "stop"),
+      "stop",
+    );
+  const contracts = createAiOutputContractRegistry();
+  const required = contracts.define({
+    name: "run.result",
+    version: "1.0.0",
+    description: "Run result",
+    schema: z.object({ result: z.string() }),
+    renderKind: "json",
+    visibility: "product",
+    mode: "required",
+  });
+  const optional = contracts.define({
+    ...required,
+    version: "2.0.0",
+    mode: "optional",
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (testRuntime) =>
+        createPiAgentExecutor({
+          sessionStore: store,
+          resolveModel: () => model,
+          streamFn,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(testRuntime.db),
+        }),
+      aiOutputContracts: contracts,
+    },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "output-mode@example.com");
+    const requiredAgent = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "required-output",
+      8,
+      [],
+      required,
+    );
+    const requiredSession = await createSession(app, user.cookie, "required");
+    const requiredResponse = await startRun(
+      app,
+      user.cookie,
+      requiredSession.sessionId,
+      {
+        agentId: requiredAgent.agentId,
+        input: "answer",
+      },
+    );
+    const requiredEvents = parseSseEvents(await readSse(requiredResponse));
+    expect(requiredEvents.at(-1)).toMatchObject({
+      type: "run.failed",
+      data: { error: { code: ApiErrorCodes.AI_AGENT_CONFIG_INVALID } },
+    });
+
+    const optionalAgent = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "optional-output",
+      8,
+      [],
+      optional,
+    );
+    const optionalSession = await createSession(app, user.cookie, "optional");
+    const optionalResponse = await startRun(
+      app,
+      user.cookie,
+      optionalSession.sessionId,
+      {
+        agentId: optionalAgent.agentId,
+        input: "answer",
+      },
+    );
+    expect(
+      parseSseEvents(await readSse(optionalResponse)).at(-1),
+    ).toMatchObject({
+      type: "run.completed",
+      data: { reason: "model_finished" },
+    });
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("结构化输出的数据库、Pi entry、事件和 Trace 关联一致，并按 visibility 投影", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-output-trace-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  let calls = 0;
+  const streamFn = () => {
+    calls += 1;
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: `structured-${calls}`,
+            name: "emit_structured_output",
+            arguments: { result: "approved" },
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const contracts = createAiOutputContractRegistry();
+  const product = contracts.define({
+    name: "visible.result",
+    version: "1.0.0",
+    description: "Visible result",
+    schema: z.object({ result: z.string() }),
+    renderKind: "decision",
+    visibility: "product",
+    mode: "optional",
+  });
+  const admin = contracts.define({
+    ...product,
+    version: "1.0.1",
+    visibility: "admin",
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (testRuntime) =>
+        createPiAgentExecutor({
+          sessionStore: store,
+          resolveModel: () => model,
+          streamFn,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(testRuntime.db),
+        }),
+      aiOutputContracts: contracts,
+    },
+  );
+  try {
+    const adminUser = await registerAdmin(app, runtime);
+    const user = await register(app, "output-trace@example.com");
+    for (const [contract, label] of [
+      [product, "product"],
+      [admin, "admin"],
+    ] as const) {
+      const agent = await setupAgent(
+        app,
+        runtime,
+        adminUser,
+        `visible-${label}`,
+        8,
+        [],
+        contract,
+      );
+      const session = await createSession(app, user.cookie, label);
+      const response = await startRun(app, user.cookie, session.sessionId, {
+        agentId: agent.agentId,
+        input: "emit",
+      });
+      const events = parseSseEvents(await readSse(response));
+      const outputEvent = events.find(
+        (event) => event.type === "structured_output.available",
+      );
+      expect(outputEvent).toBeDefined();
+      const runId = events[0]?.runId as string;
+      const output = runtime.db
+        .select()
+        .from(aiStructuredOutputs)
+        .where(eq(aiStructuredOutputs.runId, runId))
+        .get();
+      expect(output).toMatchObject({
+        contractName: contract.name,
+        contractVersion: contract.version,
+        schemaHash: contract.schemaHash,
+        renderKind: contract.renderKind,
+        valueJson: JSON.stringify({ result: "approved" }),
+      });
+      expect(outputEvent).toMatchObject({
+        data: {
+          contract: contract.ref,
+          value:
+            contract.visibility === "product" ? { result: "approved" } : null,
+          referenceId: output?.id,
+        },
+      });
+      const entries = await store.findRunTerminalEntries({
+        sessionId: session.sessionId,
+        lane: "main",
+        runId,
+      });
+      expect(entries).toHaveLength(1);
+      const transcript = await store.readTranscript({
+        sessionId: session.sessionId,
+        lane: "main",
+      });
+      const toolResult = transcript.find(
+        (entry) =>
+          entry.type === "message" && entry.message.role === "toolResult",
+      );
+      const toolResultDetails =
+        toolResult &&
+        toolResult.type === "message" &&
+        toolResult.message.role === "toolResult"
+          ? toolResult.message.details
+          : null;
+      expect(toolResultDetails).toMatchObject({
+        structuredOutputId: output?.id,
+      });
+      const trace = await app.request(
+        `/api/ai/sessions/${session.sessionId}/runs/${runId}/trace`,
+        { headers: { cookie: user.cookie } },
+      );
+      const traceBody = await readSuccess<{
+        nodes: Array<{ id: string; attributes: Record<string, string> }>;
+      }>(trace);
+      expect(
+        traceBody.data.nodes.find((node) => node.id === output?.stepId)
+          ?.attributes,
+      ).toMatchObject({ structuredOutputId: output?.id });
+    }
+    expect(calls).toBe(2);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("非法结构化参数可在下一轮修正，旧 Run snapshot 固定 Contract ref", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-output-retry-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  let calls = 0;
+  const streamFn = () => {
+    calls += 1;
+    const invalid = calls === 1;
+    return streamResponse(
+      assistantMessage(
+        [
+          invalid
+            ? {
+                type: "toolCall",
+                id: "bad",
+                name: "emit_structured_output",
+                arguments: { result: 42 },
+              }
+            : {
+                type: "toolCall",
+                id: "good",
+                name: "emit_structured_output",
+                arguments: { result: "fixed" },
+              },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const contracts = createAiOutputContractRegistry();
+  const contract = contracts.define({
+    name: "retry.result",
+    version: "1.0.0",
+    description: "Retry result",
+    schema: z.object({ result: z.string() }),
+    renderKind: "json",
+    visibility: "product",
+    mode: "optional",
+  });
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (testRuntime) =>
+        createPiAgentExecutor({
+          sessionStore: store,
+          resolveModel: () => model,
+          streamFn,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(testRuntime.db),
+        }),
+      aiOutputContracts: contracts,
+    },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "output-retry@example.com");
+    const agent = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "retry-output",
+      8,
+      [],
+      contract,
+    );
+    const session = await createSession(app, user.cookie, "retry");
+    const response = await startRun(app, user.cookie, session.sessionId, {
+      agentId: agent.agentId,
+      input: "fix",
+    });
+    const events = parseSseEvents(await readSse(response));
+    const runId = events[0]?.runId as string;
+    expect(
+      events.filter((event) => event.type === "structured_output.available"),
+    ).toHaveLength(1);
+    expect(events.at(-1)?.type).toBe("run.completed");
+    const replacement = contracts.define({
+      ...contract,
+      version: "2.0.0",
+      mode: "required",
+    });
+    expect(
+      runtime.db
+        .select()
+        .from(aiStructuredOutputs)
+        .where(eq(aiStructuredOutputs.runId, runId))
+        .all(),
+    ).toHaveLength(1);
+    const detail = await getRun(app, user.cookie, session.sessionId, runId);
+    const snapshot = (
+      await readSuccess<{
+        snapshot: {
+          outputContract: {
+            version: string;
+            schemaHash: string;
+            renderKind: string;
+            mode: string;
+          };
+        };
+      }>(detail)
+    ).data.snapshot.outputContract;
+    expect(snapshot).toMatchObject({
+      version: contract.version,
+      schemaHash: contract.schemaHash,
+      renderKind: contract.renderKind,
+      mode: contract.mode,
+    });
+    expect(snapshot).not.toMatchObject({
+      version: replacement.version,
+      schemaHash: replacement.schemaHash,
+    });
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("unknown Contract 和结构化输出持久化失败都有完整 failed Run 终态", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "starter-run-output-failure-"),
+  );
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const contracts = createAiOutputContractRegistry();
+  let calls = 0;
+  const streamFn = () => {
+    calls += 1;
+    return streamResponse(
+      assistantMessage(
+        [
+          {
+            type: "toolCall",
+            id: `storage-${calls}`,
+            name: "emit_structured_output",
+            arguments: { result: "x" },
+          },
+        ],
+        "toolUse",
+      ),
+      "toolUse",
+    );
+  };
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (testRuntime) =>
+        createPiAgentExecutor({
+          sessionStore: store,
+          resolveModel: () => model,
+          streamFn,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(testRuntime.db),
+        }),
+      aiOutputContracts: contracts,
+    },
+  );
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "output-unknown@example.com");
+    const unknown = {
+      name: "missing.result",
+      version: "1.0.0",
+      schemaHash: "0".repeat(64),
+      renderKind: "json",
+      visibility: "product",
+      mode: "optional",
+    };
+    const prompt = await postJson(app, "/api/ai/system-prompts", admin.cookie, {
+      name: "unknown-prompt",
+      content: "事实",
+    });
+    const promptId = (await readSuccess<{ id: string }>(prompt)).data.id;
+    const modelRef = seedModel(runtime);
+    const created = await postJson(app, "/api/ai/admin/agents", admin.cookie, {
+      name: "unknown-output",
+      config: {
+        schemaVersion: 2,
+        model: modelRef,
+        systemPromptId: promptId,
+        skillIds: [],
+        toolRefs: [],
+        thinkingLevel: "off",
+        maxTurns: 8,
+        outputContract: unknown,
+      },
+    });
+    expect(created.status).toBe(400);
+    expect((await readFailure(created)).error.code).toBe(
+      ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+    );
+
+    const contract = contracts.define({
+      name: "storage.result",
+      version: "1.0.0",
+      description: "Storage result",
+      schema: z.object({ result: z.string() }),
+      renderKind: "json",
+      visibility: "product",
+      mode: "optional",
+    });
+    const agent = await setupAgent(
+      app,
+      runtime,
+      admin,
+      "storage-output",
+      8,
+      [],
+      contract,
+    );
+    const session = await createSession(app, user.cookie, "storage");
+    runtime.database.sqlite.exec("DROP TABLE ai_structured_outputs");
+    const response = await startRun(app, user.cookie, session.sessionId, {
+      agentId: agent.agentId,
+      input: "emit",
+    });
+    const events = parseSseEvents(await readSse(response));
+    expect(events.at(-1)).toMatchObject({
+      type: "run.failed",
+      data: { error: { code: ApiErrorCodes.AI_SESSION_STORAGE_FAILED } },
+    });
+    expect(
+      events.find((event) => event.type === "structured_output.available"),
+    ).toBeUndefined();
+    expect(calls).toBe(1);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
 function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]): {
   providerId: string;
   modelId: string;
@@ -1680,6 +2207,7 @@ function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]): {
       createdAt: now,
       updatedAt: now,
     })
+    .onConflictDoNothing()
     .run();
   runtime.db
     .insert(aiEnabledModels)
@@ -1688,6 +2216,7 @@ function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]): {
       modelId: modelRef.modelId,
       enabledAt: now,
     })
+    .onConflictDoNothing()
     .run();
   return { providerId: modelRef.providerId, modelId: modelRef.modelId };
 }

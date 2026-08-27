@@ -10,6 +10,7 @@ import { describe, expect, it, vi } from "vitest";
 import { createAiGateway } from "./ai-gateway.js";
 import { createPiNativeStreamFn } from "./pi-native-stream.js";
 import { createCustomAiProvider } from "./custom-provider.factory.js";
+import { testRunExecution } from "@api/test/run-execution.js";
 
 const modelInput = {
   modelId: "fake-model",
@@ -67,15 +68,13 @@ describe("custom Provider real protocol streams", () => {
         upstream.url,
       );
       const audit = {
-        beginModelCall: vi.fn(() => "custom-agent-call"),
+        beginModelCall: vi.fn((input: { id: string }) => input.id),
         finalizeModelCall: vi.fn(),
       };
       const streamFn = createPiNativeStreamFn({
         models,
         timeoutMs: 1_000,
-        runId: "custom-run",
-        userId: "custom-user",
-        requestId: "custom-request",
+        execution: testRunExecution({ runId: "custom-run" }),
         audit,
       });
       const sdkModel = models.getModel(model.providerId, model.modelId)!;
@@ -90,7 +89,7 @@ describe("custom Provider real protocol streams", () => {
       );
       expect(audit.finalizeModelCall).toHaveBeenCalledWith(
         expect.objectContaining({
-          id: "custom-agent-call",
+          id: audit.beginModelCall.mock.calls[0]?.[0].id,
           result: "succeeded",
         }),
       );

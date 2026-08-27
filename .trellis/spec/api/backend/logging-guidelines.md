@@ -38,7 +38,7 @@ Drizzle SQL 只在非 production 环境输出 debug，`createDrizzleLogger` 只�
 
 原则：预期失败（AppError 4xx）用 warn 且不记堆栈；非预期异常用 error 并带 `err`。事件 payload 不记录请求 body、session token 或密码类字段。
 
-按设计过滤的已知数据不记 WARN：系统自己写入、读取时又按契约跳过的数据（如 transcript 里的 `starter.run.v1` entry）直接跳过，不进告警分支；只有认不出的输入才记 WARN。否则一次正常请求就能刷出成批告警，真的异常被埋掉。
+按设计过滤的已知数据不记 WARN：系统自己写入、读取时又按契约跳过的数据（如 transcript 里的 `starter.run` entry）直接跳过，不进告警分支；只有认不出的输入才记 WARN。否则一次正常请求就能刷出成批告警，真的异常被埋掉。
 
 ## 日志查询接口
 

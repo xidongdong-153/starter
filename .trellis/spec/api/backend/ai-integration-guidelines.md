@@ -168,7 +168,7 @@ interface AgentSessionStore {
 - `SqliteSessionRepository` 自己执行 Pi migration。Drizzle 不连接、不迁移该文件。
 - Session create 只写固定 `cwd` 和可选 Session ID，不写用户、Provider secret 或 Agent 配置。
 - lane transcript 先读取 lane leaf，再调用 `findEntriesOnBranch`。不能把 `view(lane).findEntries()` 当作 lane transcript；该方法会返回整棵 Session tree。
-- `starter.run.v1` 使用 Pi `CustomEntry`。S1 只按 `customType` 和 `data.runId` 查找，并原样返回 `data`；schema 校验由后续 Run 恢复逻辑负责。
+- `starter.run` 使用 Pi `CustomEntry`。S1 只按 `customType` 和 `data.runId` 查找，并原样返回 `data`；schema 校验由后续 Run 恢复逻辑负责。
 - API 关闭时先 `agentSessionStore.close()`，再关闭 Starter SQLite。关闭失败记录原始 `err`，并把第一个错误重新抛给进程退出边界。
 
 ### 4. 校验与错误
@@ -177,7 +177,7 @@ interface AgentSessionStore {
 | --- | --- |
 | Session ID 不存在 | adapter 拒绝操作，错误包含目标 Session ID |
 | lane 不存在、query 无效或写入冲突 | 保留 Pi `SessionError` 与原始 cause |
-| `starter.run.v1` 的 data 不符合后续 schema，但 `runId` 匹配 | 原样返回 entry，不在存储层决定恢复状态 |
+| `starter.run` 的 data 不符合后续 schema，但 `runId` 匹配 | 原样返回 entry，不在存储层决定恢复状态 |
 | Pi migration、SQLite 打开或写入失败 | 保留 backend 原始 cause，不改用 Starter 主库 |
 | Pi repository 关闭失败 | 记录原始 `err`，仍尝试关闭 Starter SQLite，最终抛出 Pi 关闭错误 |
 | Starter SQLite 关闭失败且 Pi 已失败 | 记录两个错误，最终保留第一个 Pi 错误 |
@@ -200,7 +200,7 @@ pnpm test
 pnpm build
 ```
 
-`apps/api/src/test/pi-session-store.test.ts` 必须覆盖 create/open、append/replay、lane branch、`starter.run.v1` 原样返回、delete、两个数据库隔离、重复 close 和临时目录删除。
+`apps/api/src/test/pi-session-store.test.ts` 必须覆盖 create/open、append/replay、lane branch、`starter.run` 原样返回、delete、两个数据库隔离、重复 close 和临时目录删除。
 
 ### 7. 错误与正确写法
 

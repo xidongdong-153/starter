@@ -1,6 +1,9 @@
 import {
   agentRunSchema,
   followUpAgentRunSchema,
+  runTimelineQuerySchema,
+  runTimelineSchema,
+  runTraceSchema,
   startAgentRunSchema,
   steerAgentRunSchema,
   uuidSchema,
@@ -25,6 +28,62 @@ const runParams = z.strictObject({
 });
 const sessionParams = z.strictObject({ sessionId: uuidSchema });
 
+const timelineResponse = apiSuccessResponse(
+  runTimelineSchema,
+  "Run Timeline",
+  "RunTimelineResponse",
+);
+const traceResponse = apiSuccessResponse(
+  runTraceSchema,
+  "Run Trace",
+  "RunTraceResponse",
+);
+const timelineRequest = {
+  params: runParams,
+  query: runTimelineQuerySchema,
+};
+
+export const getAgentRunTimelineRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/runs/{runId}/timeline",
+  tags,
+  security,
+  request: timelineRequest,
+  responses: {
+    200: timelineResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
+export const getAgentRunEventsRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/runs/{runId}/events",
+  tags,
+  security,
+  request: timelineRequest,
+  responses: {
+    200: timelineResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
+export const getAgentRunTraceRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/runs/{runId}/trace",
+  tags,
+  security,
+  request: { params: runParams },
+  responses: {
+    200: traceResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
 const runResponse = apiSuccessResponse(
   agentRunSchema,
   "Agent Run",
@@ -32,11 +91,22 @@ const runResponse = apiSuccessResponse(
 );
 const streamResponse = {
   content: { "text/event-stream": { schema: z.string() } },
+
   description: [
-    "Agent Run HarnessEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 HarnessEvent JSON。",
+    "Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。",
     "sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。",
-    "连接断开不会中止 Run；重连后先查询 Run live snapshot，Run 终态后读取 Session transcript。",
+    "连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。",
   ].join(""),
+};
+
+const streamRequest = {
+  params: sessionParams,
+  body: {
+    content: {
+      "application/json": { schema: startAgentRunSchema },
+    },
+    required: true,
+  },
 };
 
 export const startAgentRunRoute = createRoute({
@@ -45,16 +115,8 @@ export const startAgentRunRoute = createRoute({
   tags,
   security,
   description:
-    "启动 Agent Run 并返回 HarnessEvent SSE。当前接口使用 Starter Cookie 兼容认证；后续产品应用认证不会改变事件协议。",
-  request: {
-    params: sessionParams,
-    body: {
-      content: {
-        "application/json": { schema: startAgentRunSchema },
-      },
-      required: true,
-    },
-  },
+    "启动 Agent Run 并返回 RunEvent SSE。事件写入持久时间线成功后才发送；连接断开不会改变 Run。",
+  request: streamRequest,
   responses: {
     200: streamResponse,
     400: invalidRequestResponse,
@@ -62,6 +124,22 @@ export const startAgentRunRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
     500: internalErrorResponse,
+  },
+});
+
+export const getAgentRunEventsStreamRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/runs/{runId}/events/stream",
+  tags,
+  security,
+  description:
+    "恢复已有 Run 的 RunEvent SSE。支持 afterSequence 和 Last-Event-ID，不会创建新的 Run。",
+  request: { params: runParams, query: runTimelineQuerySchema },
+  responses: {
+    200: streamResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
   },
 });
 

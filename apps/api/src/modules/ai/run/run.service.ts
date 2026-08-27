@@ -1,8 +1,13 @@
 import type { Logger } from "pino";
+import { NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
+import type { TelemetryContext } from "@earendil-works/pi-telemetry";
 import type {
   AgentRun,
   AgentRunSnapshot,
-  HarnessEvent,
+  ApiErrorCode,
+  RunEvent,
+  RunTimeline,
+  RunTrace,
   StartAgentRunInput,
 } from "@starter/contracts";
 import { ApiErrorCodes, starterRunDataSchema } from "@starter/contracts";
@@ -11,20 +16,32 @@ import type {
   ActiveRunLease,
   ActiveRunRegistry,
   AgentSessionStore,
-  EventSequencer,
+  AttachableActiveRunControls,
   PiAgentExecutor,
   PreparedAgentExecution,
+  RunExecutionContext,
 } from "@api/infra/agent/index.js";
 import {
   ActiveRunRegistryError,
-  createEventSequencer,
+  createRunExecutionContext,
 } from "@api/infra/agent/index.js";
 import type { ExecutorTerminalResult } from "@api/infra/agent/agent-executor.js";
+import { createRunEventDraft } from "@api/infra/agent/run-execution-context.js";
+import type {
+  AiSpanEndAttributes,
+  AiSpanScope,
+} from "@api/infra/telemetry/index.js";
+import { openAiSpanScope } from "@api/infra/telemetry/index.js";
 import { AppError } from "@api/shared/app-error.js";
 import { generateId } from "@api/shared/id.js";
+import {
+  toAiErrorCategory,
+  isAiRetryableErrorCode,
+} from "@api/modules/ai/ai-error.js";
 import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import type { AiAgentDefinitionService } from "../agent/agent.service.js";
+import type { AiStructuredOutputRepository } from "../output/structured-output.repository.js";
 import type { AiAgentSessionRepository } from "../session/session.repository.js";
 import type { RunLiveSnapshotState } from "./run.live-snapshot.js";
 import {
@@ -37,14 +54,20 @@ import type {
   AiAgentRunRecord,
   AiAgentRunRepository,
 } from "./run.repository.js";
+import type {
+  AiRunEventRepository,
+  RunEventDraft,
+} from "./run-event.repository.js";
+import type { AiRunTraceRepository } from "./run-trace.repository.js";
 import { AsyncEventQueue } from "@api/infra/agent/pi-event-mapper.js";
+import { RunEventPublisher } from "./run-event.publisher.js";
 
 /** 对外 SSE 订阅队列的有界缓冲；超限时关闭 transport，不阻塞 Agent loop。 */
 const MAX_PENDING_EVENTS = 1024;
 
 export interface StartRunResult {
   runId: string;
-  events: AsyncIterable<HarnessEvent>;
+  events: AsyncIterable<RunEvent>;
 }
 
 export interface RunRecoveryReport {
@@ -83,19 +106,43 @@ export interface AiAgentRunService {
     runId: string,
     text: string,
   ) => AgentRun;
+  trace: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ) => RunTrace;
+  timeline: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    afterSequence: number,
+    pageSize: number,
+  ) => RunTimeline;
+  sequenceForEvent: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    eventId: string,
+  ) => number;
+  subscribe: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    afterSequence: number,
+  ) => AsyncIterable<RunEvent>;
   recoverInterrupted: () => Promise<RunRecoveryReport>;
 }
 
 interface RunContext {
-  runId: string;
-  sessionId: string;
-  lane: string;
-  agentId: string;
-  agentRevision: number;
-  requestId: string;
+  execution: RunExecutionContext;
   lease: ActiveRunLease;
-  sequencer: EventSequencer;
-  events: AsyncEventQueue<HarnessEvent>;
+  outputMode: "optional" | "required";
+  /** Publisher 写库失败后的确定出口标记；终态强制为存储失败。 */
+  storageFailed: boolean;
+  events: AsyncEventQueue<RunEvent>;
+  subscribers: Set<AsyncEventQueue<RunEvent>>;
+  publisher: RunEventPublisher;
+  telemetry: AiSpanScope<"starter.ai.run">;
   live: RunLiveSnapshotState;
 }
 
@@ -107,6 +154,11 @@ export function createAiAgentRunService(input: {
   registry: ActiveRunRegistry;
   executor: PiAgentExecutor;
   logger: Logger;
+  eventRepository: AiRunEventRepository;
+  traceRepository?: AiRunTraceRepository;
+  structuredOutputRepository?: AiStructuredOutputRepository;
+  /** Run span 的根上下文；默认 no-op。 */
+  telemetry?: TelemetryContext;
 }): AiAgentRunService {
   const {
     repository,
@@ -117,14 +169,15 @@ export function createAiAgentRunService(input: {
     executor,
     logger,
   } = input;
-
+  const structuredOutputRepository = input.structuredOutputRepository;
+  const eventRepository = input.eventRepository;
+  const telemetry = input.telemetry ?? NOOP_TELEMETRY_CONTEXT;
   /** 活跃 Run 的进程内快照，Run 终态后立即移除。 */
   const liveSnapshots = new Map<string, RunLiveSnapshotState>();
+  const contexts = new Map<string, RunContext>();
 
-  /** 事件进入对外队列的唯一入口：先折叠进快照，再推给订阅方。 */
-  function publish(context: RunContext, event: HarnessEvent): void {
-    applyRunEvent(context.live, event);
-    context.events.push(event);
+  function publish(context: RunContext, event: RunEventDraft): void {
+    context.publisher.publish(event);
   }
 
   async function startRun(startInput: {
@@ -179,20 +232,76 @@ export function createAiAgentRunService(input: {
       );
     }
 
-    const events = new AsyncEventQueue<HarnessEvent>(MAX_PENDING_EVENTS);
-    const sequencer = createEventSequencer();
-    const context: RunContext = {
+    if (!eventRepository) {
+      throw new Error("Run Event repository 未配置");
+    }
+    const events = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS);
+    // 关联上下文由 Run Service 创建，向下传给 Executor、事件映射、模型流和 Tool adapter。
+    const execution = createRunExecutionContext({
       runId,
       sessionId,
       lane,
+      requestId,
+      principal: access.principal,
+      scope: access.scope,
       agentId: resolved.id,
       agentRevision: resolved.revision,
-      requestId,
+      outputContract: resolved.outputContract ?? null,
+    });
+    let controls: AttachableActiveRunControls | null = null;
+    // Run span 包住整个异步 Run 执行，结束时机是终态事务。
+    const runTelemetry = openAiSpanScope(telemetry, "starter.ai.run", {
+      "starter.ai.run.id": runId,
+      "starter.ai.session.id": sessionId,
+      "starter.ai.lane": lane,
+      "starter.ai.request.id": requestId,
+      "starter.ai.principal.kind": access.principal.kind,
+      "starter.ai.tenant.id": access.scope.tenantId,
+      "starter.ai.project.id": access.scope.projectId,
+      "starter.ai.application.id": access.principal.appId ?? undefined,
+      "starter.ai.external_user.id":
+        access.principal.externalUserId ?? undefined,
+      "starter.ai.subject.type": access.scope.subjectType ?? undefined,
+      "starter.ai.subject.id": access.scope.subjectId ?? undefined,
+      "starter.ai.agent.id": resolved.id,
+      "starter.ai.agent.revision": resolved.revision,
+      "starter.ai.provider": resolved.model.providerId,
+      "starter.ai.model": resolved.model.modelId,
+      "starter.ai.output.mode":
+        resolved.outputContract?.mode ?? resolved.config.outputMode,
+      "starter.ai.output.contract.name": resolved.outputContract?.name,
+      "starter.ai.output.contract.version": resolved.outputContract?.version,
+    });
+    const context: RunContext = {
+      execution,
       lease,
-      sequencer,
+      outputMode: resolved.outputContract?.mode ?? resolved.config.outputMode,
+      storageFailed: false,
       events,
+      subscribers: new Set(),
+      publisher: new RunEventPublisher({
+        repository: eventRepository,
+        sink: {
+          push: (event) => {
+            for (const subscriber of context.subscribers)
+              subscriber.push(event);
+          },
+        },
+        onPersisted: (event) => applyRunEvent(context.live, event),
+        onStorageFailure: (error) => {
+          // 事件写库失败：停止当前 transport 的新事件，Run 转入存储失败终态。
+          context.storageFailed = true;
+          logger.error(
+            { err: error, runId, sessionId, requestId },
+            "Run 事件持久化失败，转入存储失败终态",
+          );
+          controls?.abort();
+        },
+      }),
+      telemetry: runTelemetry,
       live: createRunLiveSnapshot(resolved.maxTurns),
     };
+    contexts.set(runId, context);
     liveSnapshots.set(runId, context.live);
 
     try {
@@ -212,6 +321,14 @@ export function createAiAgentRunService(input: {
         { err: cause, runId, sessionId, requestId },
         "Agent Run row 创建失败",
       );
+      runTelemetry.close({
+        attributes: {
+          "starter.ai.run.outcome": "failed",
+          "starter.ai.error.code": ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
+          "starter.ai.error.category": "storage",
+        },
+        status: { status: "error" },
+      });
       throw new AppError(
         ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
         "创建 Agent Run 失败",
@@ -222,21 +339,46 @@ export function createAiAgentRunService(input: {
     let prepared: PreparedAgentExecution;
     try {
       prepared = executor.prepare({
-        runId,
-        sessionId,
-        lane,
-        principal: access.principal,
-        scope: access.scope,
-        userId: access.principal.externalUserId ?? access.principal.principalId,
-        requestId,
+        execution,
         input: startInput.input.input,
-        sequencer,
+        telemetry: context.telemetry.span,
         config: {
           model: resolved.model,
           systemPrompt: resolved.systemPrompt,
           thinkingLevel: resolved.thinkingLevel,
           maxTurns: resolved.maxTurns,
           tools: resolved.tools,
+          outputContract: resolved.outputContract,
+          structuredOutput:
+            resolved.outputContract && structuredOutputRepository
+              ? {
+                  persist: ({ runId, stepId, contract, value }) =>
+                    structuredOutputRepository.create({
+                      runId,
+                      stepId,
+                      contractName: contract.name,
+                      contractVersion: contract.version,
+                      schemaHash: contract.schemaHash,
+                      renderKind: contract.renderKind,
+                      value,
+                    }),
+                  publish: (event) => {
+                    publish(
+                      context,
+                      createRunEventDraft(
+                        execution,
+                        "structured_output.available",
+                        {
+                          contract: event.contract,
+                          value: event.value,
+                          referenceId: event.referenceId,
+                        },
+                        { toolCallId: event.toolCallId },
+                      ),
+                    );
+                  },
+                }
+              : undefined,
         },
       });
     } catch (cause) {
@@ -254,6 +396,7 @@ export function createAiAgentRunService(input: {
 
     try {
       registry.attach(lease, runId, prepared.controls);
+      controls = prepared.controls;
     } catch (cause) {
       logger.error(
         { err: cause, runId, sessionId, requestId },
@@ -280,15 +423,25 @@ export function createAiAgentRunService(input: {
       return { runId, events };
     }
 
-    // 正常路径：run.started 是 sequence 1 的第一个事件
-    publish(
-      context,
-      buildEvent(context, "run.started", {
-        agentId: resolved.id,
-        agentRevision: resolved.revision,
-        model: resolved.model,
-      }),
-    );
+    try {
+      publish(
+        context,
+        createRunEventDraft(execution, "run.started", {
+          agentId: execution.agentId,
+          agentRevision: execution.agentRevision,
+          model: resolved.model,
+          outputContract: execution.outputContract?.ref ?? null,
+        }),
+      );
+    } catch (cause) {
+      logger.error(
+        { err: cause, runId, sessionId, requestId },
+        "Run started 事件持久化失败",
+      );
+      prepared.controls.abort();
+      void finalizeRun(context, storageFailureTerminal());
+      return { runId, events };
+    }
 
     void prepared.start().catch((cause) => {
       logger.error(
@@ -300,6 +453,138 @@ export function createAiAgentRunService(input: {
     const pump = pumpExecutorEvents(prepared, context, publish);
     void runToTerminal(context, prepared, pump);
     return { runId, events };
+  }
+
+  function trace(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ): RunTrace {
+    requireScopedRun(access, sessionId, runId);
+    const result = input.traceRepository?.findByRunId(runId);
+    if (!result) throw notFound();
+    return result;
+  }
+
+  function timeline(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    afterSequence: number,
+    pageSize: number,
+  ): RunTimeline {
+    requireScopedRun(access, sessionId, runId);
+    const rows = eventRepository.listAfter(runId, afterSequence, pageSize + 1);
+    const items = rows.slice(0, pageSize);
+    return {
+      items,
+      afterSequence,
+      nextSequence:
+        rows.length > pageSize ? (items.at(-1)?.sequence ?? null) : null,
+      hasMore: rows.length > pageSize,
+    };
+  }
+
+  function sequenceForEvent(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    eventId: string,
+  ): number {
+    requireScopedRun(access, sessionId, runId);
+    const sequence = eventRepository.findSequenceByEventId(runId, eventId);
+    if (sequence === undefined) {
+      throw new AppError(
+        ApiErrorCodes.COMMON_INVALID_REQUEST,
+        "Last-Event-ID 不属于该 Run",
+        400,
+      );
+    }
+    return sequence;
+  }
+
+  function subscribe(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    afterSequence: number,
+  ): AsyncIterable<RunEvent> {
+    const record = requireScopedRun(access, sessionId, runId);
+    const context = contexts.get(runId);
+
+    return replayAndSubscribe({
+      record,
+      context,
+      runId,
+      afterSequence,
+    });
+  }
+
+  async function* replayAndSubscribe(input: {
+    record: AiAgentRunRecord;
+    context: RunContext | undefined;
+    runId: string;
+    afterSequence: number;
+  }): AsyncGenerator<RunEvent> {
+    const { record, context, runId, afterSequence } = input;
+    if (!context) {
+      yield* listAllEventsAfter(runId, afterSequence);
+      return;
+    }
+
+    const queue = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS);
+    context.subscribers.add(queue);
+    const watermark = eventRepository.watermark(runId);
+    try {
+      // 先回放订阅建立时的持久 watermark，回放期间产生的新事件留在实时队列。
+      yield* listEventsThrough(runId, afterSequence, watermark);
+      if (record.status !== "starting" && record.status !== "running") return;
+
+      for await (const event of queue) {
+        if (event.sequence <= watermark) continue;
+        yield event;
+      }
+    } finally {
+      context.subscribers.delete(queue);
+      queue.end();
+    }
+  }
+
+  function* listEventsThrough(
+    runId: string,
+    afterSequence: number,
+    watermark: number,
+  ): Generator<RunEvent> {
+    let cursor = afterSequence;
+    while (cursor < watermark) {
+      const rows = eventRepository.listAfter(
+        runId,
+        cursor,
+        Math.min(MAX_PENDING_EVENTS, watermark - cursor),
+      );
+      if (rows.length === 0) return;
+      for (const event of rows) {
+        if (event.sequence > watermark) return;
+        cursor = event.sequence;
+        yield event;
+      }
+    }
+  }
+
+  function* listAllEventsAfter(
+    runId: string,
+    afterSequence: number,
+  ): Generator<RunEvent> {
+    let cursor = afterSequence;
+    while (true) {
+      const rows = eventRepository.listAfter(runId, cursor, MAX_PENDING_EVENTS);
+      if (rows.length === 0) return;
+      for (const event of rows) {
+        cursor = event.sequence;
+        yield event;
+      }
+      if (rows.length < MAX_PENDING_EVENTS) return;
+    }
   }
 
   function get(
@@ -463,12 +748,18 @@ export function createAiAgentRunService(input: {
           continue;
         }
         if (
-          repository.updateTerminal({
+          repository.completeWithTerminalEvent({
             id: runId,
             status: data.status,
             finalEntryId: data.finalEntryId,
             errorCode: data.errorCode,
             finishedAt: new Date(data.finishedAt),
+            event: terminalEventForRecord(
+              run,
+              data.status,
+              data.finalEntryId,
+              data.errorCode,
+            ),
           })
         ) {
           report.recoveredFromEntry += 1;
@@ -509,12 +800,18 @@ export function createAiAgentRunService(input: {
   }
 
   function markInterrupted(run: AiAgentRunRecord): void {
-    repository.updateTerminal({
+    repository.completeWithTerminalEvent({
       id: run.id,
       status: "interrupted",
       finalEntryId: run.finalEntryId,
       errorCode: ApiErrorCodes.AI_RUN_INTERRUPTED,
       finishedAt: new Date(),
+      event: terminalEventForRecord(
+        run,
+        "failed",
+        run.finalEntryId,
+        ApiErrorCodes.AI_RUN_INTERRUPTED,
+      ),
     });
   }
 
@@ -523,17 +820,19 @@ export function createAiAgentRunService(input: {
     prepared: PreparedAgentExecution,
     pump: Promise<void>,
   ): Promise<void> {
+    const { runId, sessionId, requestId } = context.execution;
     let terminal: ExecutorTerminalResult;
     try {
-      terminal = await prepared.result;
-    } catch {
-      terminal = {
-        status: "failed",
-        finalEntryId: null,
-        errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR,
-      };
+      const [result] = await Promise.all([prepared.result, pump]);
+      terminal = result;
+    } catch (cause) {
+      prepared.controls.abort();
+      logger.error(
+        { err: cause, runId, sessionId, requestId },
+        "Run 事件持久化失败，转入存储失败终态",
+      );
+      terminal = storageFailureTerminal();
     }
-    await pump;
     await finalizeRun(context, terminal);
   }
 
@@ -541,8 +840,28 @@ export function createAiAgentRunService(input: {
     context: RunContext,
     terminal: ExecutorTerminalResult,
   ): Promise<void> {
-    const { runId, sessionId, lane, requestId, events } = context;
+    const { runId, sessionId, lane, requestId } = context.execution;
     const finishedAt = new Date();
+    // 终态事务前先把待合并的增量刷出，终态事件才能拿到最后一个 sequence。
+    try {
+      context.publisher.flush();
+    } catch {
+      // onStorageFailure 已经记录并标记，下面统一转存储失败终态。
+    }
+    if (context.storageFailed) {
+      terminal = storageFailureTerminal();
+    } else if (
+      terminal.status === "completed" &&
+      context.outputMode === "required" &&
+      (!structuredOutputRepository ||
+        structuredOutputRepository.listByRun(runId).length === 0)
+    ) {
+      terminal = {
+        status: "failed",
+        finalEntryId: terminal.finalEntryId,
+        errorCode: ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+      };
+    }
     try {
       await sessionStore.appendRunTerminalEntry({
         sessionId,
@@ -551,8 +870,8 @@ export function createAiAgentRunService(input: {
           runId,
           sessionId,
           lane,
-          agentId: context.agentId,
-          agentRevision: context.agentRevision,
+          agentId: context.execution.agentId,
+          agentRevision: context.execution.agentRevision,
           status: terminal.status,
           finalEntryId: terminal.finalEntryId,
           errorCode: terminal.errorCode,
@@ -562,57 +881,51 @@ export function createAiAgentRunService(input: {
     } catch (cause) {
       logger.error(
         { err: cause, runId, sessionId, requestId },
-        "starter.run.v1 写入失败",
+        "starter.run 写入失败",
       );
-      // 以 AI.SESSION_STORAGE_FAILED 写主库 failed 并发布 run.failed
-      const mainUpdated = repository.updateTerminal({
-        id: runId,
+      await commitTerminal(context, {
         status: "failed",
         finalEntryId: terminal.finalEntryId,
         errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
-        finishedAt,
       });
-      if (!mainUpdated) {
-        logger.error(
-          { runId, sessionId, requestId },
-          "Run 主库终态更新失败，关闭 transport 并 release",
-        );
-      } else {
-        publish(
-          context,
-          buildEvent(context, "run.failed", {
-            status: "failed",
-            finalEntryId: terminal.finalEntryId,
-            error: {
-              code: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
-              message: "Run 终态持久化失败",
-              retryable: false,
-            },
-          }),
-        );
-      }
-      events.end();
-      liveSnapshots.delete(runId);
-      release(registry, runId, context.lease);
       return;
     }
 
-    const updated = repository.updateTerminal({
+    await commitTerminal(context, terminal);
+  }
+
+  async function commitTerminal(
+    context: RunContext,
+    terminal: ExecutorTerminalResult,
+  ): Promise<void> {
+    const { runId, sessionId, lane, requestId } = context.execution;
+    const committed = repository.completeWithTerminalEvent({
       id: runId,
       status: terminal.status,
       finalEntryId: terminal.finalEntryId,
       errorCode: terminal.errorCode,
-      finishedAt,
+      finishedAt: new Date(),
+      event: terminalEvent({ runId, sessionId, lane }, terminal),
     });
-    if (updated) {
-      publish(context, terminalEvent(context, terminal));
+    if (committed) {
+      context.publisher.publishPersisted(committed);
     } else {
       logger.error(
         { runId, sessionId, requestId },
-        "Run 主库终态更新失败，不发布 terminal event 并 release",
+        "Run 主库终态事务未提交，不发布 terminal event",
       );
     }
-    events.end();
+    context.telemetry.close({
+      attributes: runSpanEndAttributes(terminal, committed !== false),
+      ...(terminal.status === "completed" && committed !== false
+        ? {}
+        : { status: { status: "error" as const } }),
+    });
+    // Run 结束：清掉合并定时器，不留悬挂 timer。
+    context.publisher.close();
+    for (const subscriber of context.subscribers) subscriber.end();
+    context.subscribers.clear();
+    contexts.delete(runId);
     liveSnapshots.delete(runId);
     release(registry, runId, context.lease);
   }
@@ -651,6 +964,10 @@ export function createAiAgentRunService(input: {
   return {
     startRun,
     get,
+    trace,
+    timeline,
+    sequenceForEvent,
+    subscribe,
     abort,
     steer,
     followUp,
@@ -661,111 +978,124 @@ export function createAiAgentRunService(input: {
 async function pumpExecutorEvents(
   prepared: PreparedAgentExecution,
   context: RunContext,
-  publish: (context: RunContext, event: HarnessEvent) => void,
+  publish: (context: RunContext, event: RunEventDraft) => void,
 ): Promise<void> {
-  try {
-    for await (const event of prepared.events) {
-      publish(context, event);
-    }
-  } catch {
-    // executor 事件流异常不影响 Run 终态；terminal 由 result 决定。
+  for await (const event of prepared.events) {
+    publish(context, event);
   }
 }
 
-function buildEvent<T extends HarnessEvent["type"]>(
-  context: RunContext,
-  type: T,
-  data: Extract<HarnessEvent, { type: T }>["data"],
-): Extract<HarnessEvent, { type: T }> {
+function storageFailureTerminal(): ExecutorTerminalResult {
   return {
-    version: 1,
-    eventId: generateId(),
-    sequence: context.sequencer.next(),
-    sessionId: context.sessionId,
-    runId: context.runId,
-    lane: context.lane,
-    createdAt: new Date().toISOString(),
-    type,
-    data,
-  } as Extract<HarnessEvent, { type: T }>;
-}
-
-function terminalEvent(
-  context: RunContext,
-  terminal: ExecutorTerminalResult,
-): HarnessEvent {
-  const base = {
-    version: 1,
-    eventId: generateId(),
-    sequence: context.sequencer.next(),
-    sessionId: context.sessionId,
-    runId: context.runId,
-    lane: context.lane,
-    createdAt: new Date().toISOString(),
-  } as const;
-  if (terminal.status === "completed") {
-    return {
-      ...base,
-      type: "run.completed",
-      data: {
-        status: "completed",
-        finalEntryId: terminal.finalEntryId!,
-        reason: terminal.completionReason ?? "model_finished",
-      },
-    };
-  }
-  if (terminal.status === "aborted") {
-    return {
-      ...base,
-      type: "run.aborted",
-      data: {
-        status: "aborted",
-        finalEntryId: terminal.finalEntryId,
-        errorCode: ApiErrorCodes.AI_REQUEST_ABORTED,
-      },
-    };
-  }
-  return {
-    ...base,
-    type: "run.failed",
-    data: {
-      status: "failed",
-      finalEntryId: terminal.finalEntryId,
-      error: {
-        code: terminal.errorCode ?? ApiErrorCodes.AI_UPSTREAM_ERROR,
-        message: errorMessage(terminal.errorCode),
-        retryable: errorRetryable(terminal.errorCode),
-      },
-    },
+    status: "failed",
+    finalEntryId: null,
+    errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
   };
 }
 
-function errorMessage(errorCode: string | null): string {
-  switch (errorCode) {
-    case ApiErrorCodes.AI_PROVIDER_AUTH_FAILED:
-      return "模型服务认证失败";
-    case ApiErrorCodes.AI_MODEL_NOT_FOUND:
-      return "模型不可用";
-    case ApiErrorCodes.AI_UPSTREAM_TIMEOUT:
-      return "模型请求超时";
-    case ApiErrorCodes.AI_SESSION_STORAGE_FAILED:
-      return "会话存储读写失败";
-    case ApiErrorCodes.AI_TOOL_FAILED:
-    case ApiErrorCodes.AI_TOOL_TIMED_OUT:
-      return "工具执行失败";
-    case ApiErrorCodes.AI_REQUEST_ABORTED:
-      return "请求已取消";
-    default:
-      return "模型请求失败";
+/** Run span 的终态属性；事务未提交时标记为存储失败。 */
+function runSpanEndAttributes(
+  terminal: ExecutorTerminalResult,
+  committed: boolean,
+): AiSpanEndAttributes<"starter.ai.run"> {
+  if (!committed) {
+    return {
+      "starter.ai.run.outcome": "failed",
+      "starter.ai.error.code": ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+      "starter.ai.error.category": "storage",
+    };
   }
+  if (terminal.status === "completed") {
+    return {
+      "starter.ai.run.outcome": "completed",
+      "starter.ai.run.completion_reason":
+        terminal.completionReason ?? "model_finished",
+    };
+  }
+  return {
+    "starter.ai.run.outcome": terminal.status,
+    "starter.ai.error.code":
+      terminal.errorCode ?? ApiErrorCodes.AI_UPSTREAM_ERROR,
+    "starter.ai.error.category": toAiErrorCategory(terminal.errorCode),
+  };
 }
 
-function errorRetryable(errorCode: string | null): boolean {
-  return (
-    errorCode === ApiErrorCodes.AI_UPSTREAM_ERROR ||
-    errorCode === ApiErrorCodes.AI_UPSTREAM_TIMEOUT ||
-    errorCode === ApiErrorCodes.AI_PROVIDER_AUTH_FAILED
-  );
+function buildEvent<T extends RunEvent["type"]>(
+  identity: { runId: string; sessionId: string; lane: string },
+  type: T,
+  data: Extract<RunEvent, { type: T }>["data"],
+): RunEventDraft {
+  return {
+    runId: identity.runId,
+    sessionId: identity.sessionId,
+    lane: identity.lane,
+    turnIndex: null,
+    stepId: null,
+    modelCallId: null,
+    messageId: null,
+    toolCallId: null,
+    toolExecutionId: null,
+    type,
+    data,
+  } as RunEventDraft;
+}
+
+function terminalEvent(
+  identity: { runId: string; sessionId: string; lane: string },
+  terminal: ExecutorTerminalResult,
+): RunEventDraft {
+  if (terminal.status === "completed") {
+    return buildEvent(identity, "run.completed", {
+      finalEntryId: terminal.finalEntryId,
+      reason: terminal.completionReason ?? "model_finished",
+    });
+  }
+  if (terminal.status === "aborted") {
+    return buildEvent(identity, "run.aborted", {
+      code: ApiErrorCodes.AI_REQUEST_ABORTED,
+    });
+  }
+  return buildEvent(identity, "run.failed", {
+    error: {
+      code: terminal.errorCode ?? ApiErrorCodes.AI_UPSTREAM_ERROR,
+      category: toAiErrorCategory(terminal.errorCode),
+      retryable: isAiRetryableErrorCode(terminal.errorCode),
+    },
+    finalEntryId: terminal.finalEntryId,
+  });
+}
+
+function terminalEventForRecord(
+  run: AiAgentRunRecord,
+  status: "completed" | "failed" | "aborted" | "interrupted",
+  finalEntryId: string | null,
+  errorCode: string | null,
+): RunEventDraft {
+  const identity = {
+    runId: run.id,
+    sessionId: run.sessionId,
+    lane: run.lane,
+  };
+  if (status === "completed") {
+    return terminalEvent(identity, {
+      status,
+      finalEntryId,
+      errorCode: errorCode as ApiErrorCode | null,
+      completionReason: "model_finished",
+    });
+  }
+  if (status === "aborted") {
+    return terminalEvent(identity, {
+      status,
+      finalEntryId,
+      errorCode: errorCode as ApiErrorCode | null,
+    });
+  }
+  return terminalEvent(identity, {
+    status: "failed",
+    finalEntryId,
+    errorCode: errorCode as ApiErrorCode | null,
+  });
 }
 
 function buildSnapshot(
@@ -781,6 +1111,8 @@ function buildSnapshot(
     systemPromptId: resolved.config.systemPromptId,
     skillIds: resolved.config.skillIds,
     toolRefs: resolved.config.toolRefs,
+    outputContract: resolved.outputContract?.ref ?? null,
+    outputMode: resolved.outputContract?.mode ?? resolved.config.outputMode,
     thinkingLevel: resolved.config.thinkingLevel,
     maxTurns: resolved.config.maxTurns,
   };

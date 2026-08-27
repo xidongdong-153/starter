@@ -24,8 +24,11 @@ export interface BeginAiModelCallInput {
   principalKind?: string;
   scenario: "model_test" | "agent_run" | "legacy";
   runId: string | null;
+  turnId?: string | null;
+  stepId?: string | null;
   providerId: string;
   modelId: string;
+  api?: string | null;
   startedAt: Date;
   timeoutMs: number;
 }
@@ -39,11 +42,23 @@ export interface FinalizeAiModelCallInput {
   errorCode: string | null;
   usage: AiUsage;
   cost: AiCost | null;
+  /** 首个模型输出相对请求开始的毫秒数；没有输出时为 null。 */
+  ttftMs?: number | null;
+  chunkCount?: number | null;
+  responseModel?: string | null;
+  responseId?: string | null;
+  httpStatus?: number | null;
 }
 
 export interface BeginAiToolExecutionInput {
   id: string;
-  aiCallId: string;
+  modelCallId: string;
+  runId?: string | null;
+  turnId?: string | null;
+  stepId?: string | null;
+  toolCallId?: string | null;
+  toolExecutionId?: string | null;
+  requestId?: string;
   toolName: string;
   toolVersion: string | null;
   startedAt: Date;
@@ -107,6 +122,11 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
         errorCode: input.errorCode,
         finishedAt: input.finishedAt,
         durationMs: input.finishedAt.getTime() - input.startedAt.getTime(),
+        ttftMs: input.ttftMs ?? null,
+        chunkCount: input.chunkCount ?? null,
+        responseModel: input.responseModel ?? null,
+        responseId: input.responseId ?? null,
+        httpStatus: input.httpStatus ?? null,
         inputTokens: input.usage.inputTokens,
         outputTokens: input.usage.outputTokens,
         cacheReadTokens: input.usage.cacheReadTokens,
@@ -131,7 +151,12 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
     db.insert(aiToolExecutions)
       .values({
         id: input.id,
-        aiCallId: input.aiCallId,
+        runId: input.runId ?? null,
+        turnId: input.turnId ?? null,
+        stepId: input.stepId ?? null,
+        toolCallId: input.toolCallId ?? null,
+        toolExecutionId: input.toolExecutionId ?? input.id,
+        modelCallId: input.modelCallId,
         toolName: input.toolName,
         toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
@@ -200,11 +225,11 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
     return db.select().from(aiModelCalls).where(eq(aiModelCalls.id, id)).get();
   }
 
-  function listToolExecutions(aiCallId: string): AiToolExecutionRecord[] {
+  function listToolExecutions(modelCallId: string): AiToolExecutionRecord[] {
     return db
       .select()
       .from(aiToolExecutions)
-      .where(eq(aiToolExecutions.aiCallId, aiCallId))
+      .where(eq(aiToolExecutions.modelCallId, modelCallId))
       .orderBy(aiToolExecutions.startedAt, aiToolExecutions.id)
       .all();
   }

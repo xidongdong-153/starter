@@ -18,10 +18,9 @@ import {
   createAiToolRegistry,
   defineAiTool,
 } from "@api/modules/ai/tool/tool-registry.js";
-import type {
-  PrincipalContext,
-  ResourceScope,
-} from "@api/modules/ai/principal.js";
+import type { PrincipalContext } from "@api/modules/ai/principal.js";
+import type { RunExecutionContext } from "@api/infra/agent/run-execution-context.js";
+import { testRunExecution } from "./run-execution.js";
 
 function record(secret: string): AiAppCredentialRecord {
   const now = new Date();
@@ -96,35 +95,44 @@ it("product app guard 从 credential 派生 scope，并拒绝缺失或不完整 
   expect(invalid.status).toBe(401);
 });
 
-function adapterOptions(): {
-  principal: PrincipalContext;
-  scope: ResourceScope;
-  requestId: string;
+function adapterOptions(
+  principal: PrincipalContext = {
+    kind: "product_app",
+    principalId: "app-credential-1",
+    tenantId: "tenant-a",
+    projectId: "project-a",
+    externalUserId: "user-42",
+    appId: "app-credential-1",
+  },
+): {
+  execution: RunExecutionContext;
   hasPermission: (userId: string, permission: Permission) => Promise<boolean>;
-  getModelCallId: () => string | null;
 } {
   return {
-    principal: {
-      kind: "product_app",
-      principalId: "app-credential-1",
-      tenantId: "tenant-a",
-      projectId: "project-a",
-      externalUserId: "user-42",
-      appId: "app-credential-1",
-    },
-    scope: {
-      tenantId: "tenant-a",
-      projectId: "project-a",
-      subjectType: null,
-      subjectId: null,
-    },
-    requestId: "product-request-1",
+    execution: testRunExecution({
+      requestId: "product-request-1",
+      principal,
+      scope: {
+        tenantId: principal.tenantId,
+        projectId: principal.projectId,
+        subjectType: null,
+        subjectId: null,
+      },
+    }),
     hasPermission: vi.fn(
       async (_userId: string, _permission: Permission) => true,
     ),
-    getModelCallId: () => null,
   };
 }
+
+const starterUserPrincipal: PrincipalContext = {
+  kind: "starter_user",
+  principalId: "user-42",
+  tenantId: "starter",
+  projectId: "starter",
+  externalUserId: "user-42",
+  appId: null,
+};
 
 function registerProtectedTool() {
   return createAiToolRegistry([
@@ -178,15 +186,7 @@ describe("product_app tool permission boundary", () => {
   });
 
   it("starter_user 权限查询抛错时按 forbidden 处理，不降级允许", async () => {
-    const options = adapterOptions();
-    options.principal = {
-      kind: "starter_user",
-      principalId: "user-42",
-      tenantId: "starter",
-      projectId: "starter",
-      externalUserId: "user-42",
-      appId: null,
-    };
+    const options = adapterOptions(starterUserPrincipal);
     options.hasPermission = vi.fn(async () => {
       throw new Error("user_roles query exploded");
     });
@@ -218,15 +218,7 @@ describe("product_app tool permission boundary", () => {
     const circularArgs: { self?: unknown } = {};
     circularArgs.self = circularArgs;
     for (const args of [bigArgs, circularArgs]) {
-      const options = adapterOptions();
-      options.principal = {
-        kind: "starter_user",
-        principalId: "user-42",
-        tenantId: "starter",
-        projectId: "starter",
-        externalUserId: "user-42",
-        appId: null,
-      };
+      const options = adapterOptions(starterUserPrincipal);
       const adapter = createPiToolAdapter(
         registerProtectedTool().list(),
         options,

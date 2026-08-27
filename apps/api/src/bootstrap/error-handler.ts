@@ -3,12 +3,26 @@ import { ApiErrorCodes } from "@starter/contracts";
 import { HTTPException } from "hono/http-exception";
 import { AppError } from "@api/shared/app-error.js";
 import { createFailureResponse } from "@api/shared/response.js";
+import { StoredJsonError } from "@api/shared/stored-json.js";
 
 export const registerErrorHandler: AppRegistrar = (
   app: AppInstance,
   runtime,
 ) => {
   app.onError((error, c) => {
+    if (error instanceof StoredJsonError) {
+      // 数据损坏只记安全字段：列名、原因分类和字段路径，不记被拒绝的值。
+      runtime.logger.error(
+        {
+          column: error.column,
+          reason: error.reason,
+          issues: error.issues,
+          requestId: c.var.requestId,
+        },
+        "主库 JSON 列数据损坏",
+      );
+    }
+
     if (error instanceof AppError) {
       return c.json(
         createFailureResponse(

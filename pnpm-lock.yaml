@@ -24,6 +24,9 @@ catalogs:
     '@earendil-works/pi-session-backend-sqlite-node':
       specifier: 0.84.1
       version: 0.84.1
+    '@earendil-works/pi-telemetry':
+      specifier: 0.84.1
+      version: 0.84.1
     '@hono/node-server':
       specifier: ^1.19.6
       version: 1.19.17
@@ -330,6 +333,9 @@ importers:
       '@earendil-works/pi-session-backend-sqlite-node':
         specifier: 'catalog:'
         version: 0.84.1(ws@8.21.3)(zod@4.4.3)
+      '@earendil-works/pi-telemetry':
+        specifier: 'catalog:'
+        version: 0.84.1
       '@hono/node-server':
         specifier: 'catalog:'
         version: 1.19.17(hono@4.13.0)

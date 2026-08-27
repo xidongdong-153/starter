@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-修改 `apps/api/src/infra/agent/`、Pi 原生 stream adapter、Agent Tool adapter、active Run registry 或 Run 用量审计 port 时，按本规范执行。S4 executor 不注册 HTTP Route、不写 `starter.run.v1`；Run Service 负责 registry 生命周期和 terminal event。
+修改 `apps/api/src/infra/agent/`、Pi 原生 stream adapter、Agent Tool adapter、active Run registry 或 Run 用量审计 port 时，按本规范执行。S4 executor 不注册 HTTP Route、不写 `starter.run`；Run Service 负责 registry 生命周期和 terminal event。
 
 ## 2. Signatures
 
@@ -17,13 +17,13 @@ interface AgentExecutorInput {
   requestId: string
   input: string
   signal?: AbortSignal
-  sequencer: EventSequencer
+  execution: RunExecutionContext
   config: ResolvedAgentExecutorConfig
 }
 
 interface PreparedAgentExecution {
   controls: AttachableActiveRunControls
-  events: AsyncIterable<HarnessEvent>
+  events: AsyncIterable<RunEventDraft>
   result: Promise<ExecutorTerminalResult>
   start: () => Promise<void>
 }
@@ -36,13 +36,13 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 ## 3. Contracts
 
 - Pi `Agent` 负责 prompt、Tool loop、并行/串行执行、steer、follow-up 和 abort；Starter 不复制这些循环。
-- `PiEventMapper` 是 Pi `AgentEvent` 到 HarnessEvent 的唯一转换位置。assistant message 在 `message_start` 预生成 entry ID，Tool 在写入 result entry 后发布 `tool.completed`；sequence 只由 caller 提供的 `EventSequencer` 分配。
+- `PiEventMapper` 是 Pi `AgentEvent` 到内部 `RunEventDraft` 的唯一转换位置。assistant message 在 `message_start` 预生成 entry ID，Tool 在写入 result entry 后发布 `tool.completed`；sequence 由 `RunEventPublisher` 在持久化时分配。
 - 原生 stream adapter 只使用现有 `Models` 的模型、Provider auth、provider env、timeout 和 AbortSignal；失败编码为 Pi `error`/`aborted` event。旧 `AiGatewayEvent` 不能作为 `StreamFn` 输入 Agent。
 - `ai_model_calls` 的新记录使用 `scenario='agent_run'`、`run_id=<runId>`。审计 begin/finalize 是 best-effort，不能把 secret、原始错误、prompt 或 response 写入日志或事件。
 - Tool 的模型参数来自 `z.toJSONSchema`；`AgentTool.execute` 前仍执行原 Zod schema parse，并合并 Tool timeout、Run deadline 和 AbortSignal。公开事件和 transcript projection 只允许 `safeSummary`，最多 1000 字符。
 - 工具失败不等于 Run 失败。只有用户取消和 Run 总时长耗尽会设 `terminate: true` 并调 `onTerminalFailure`；工具自身超时、抛错、参数无效、未注册和权限不足一律 `terminate: false`，把失败原因作为 tool result 交回模型，让它自己决定下一步。超时的 `modelText` 带上实际 timeout 毫秒数，模型才知道重试时要换参数。
 - Tool 进度通道：`AiToolExecutionContext.reportProgress(safeSummary)` 由 adapter 注入，内部转成 Pi 的 `onUpdate`，`PiEventMapper` 再把 `tool_execution_update` 映射成 `tool.progress`。上报内容只能是脱敏摘要，`modelText` 留空，空字符串忽略，不产生额外审计。`reportProgress` 是可选字段，工具内部用 `?.` 调用，单元测试可以不提供。
-- 轮次与 compaction 可观测：`PiEventMapper` 把 Pi 的 `turn_start` / `turn_end` 映射成 `turn.started` / `turn.completed`（带 `maxTurns`，从 `PiEventMapperOptions` 传入）；`compactIfNeeded` 写入 entry 成功后通过 `onCompacted` 回调发 `context.compacted`，事件由 `PiEventMapper.contextCompactedEvent()` 构造以复用同一个 sequencer。回调必须包 try/catch，发事件失败不能影响已写入的 compaction 结果。
+- 轮次与 compaction 可观测：`PiEventMapper` 把 Pi 的 `turn_start` / `turn_end` 映射成 `turn.started` / `turn.completed`（带 `maxTurns`，从 `PiEventMapperOptions` 传入）；`compactIfNeeded` 写入 entry 成功后通过 `onCompacted` 回调发 `context.compacted`，事件由 `PiEventMapper.contextCompactedEvent()` 构造并交给 RunEventPublisher。回调必须包 try/catch，发事件失败不能影响已写入的 compaction 结果。
 - 思考内容有公开出口：`mapMessageUpdate` 除了 `text_delta` 还要映射 `thinking_start` / `thinking_delta` / `thinking_end`，`blockIndex` 用 pi-ai 的 `contentIndex`。`assistantText` 和 `message.completed.content` 仍然只拼 text block，不把思考正文混进正文字段。
 - 撞到 `maxTurns` 要给模型一次收尾机会：Pi 的回调顺序是 `turn_end` → `prepareNextTurn` → `shouldStopAfterTurn`，所以清空工具只能在 `prepareNextTurnWithContext` 里做，停或不停由 `shouldStopAfterTurn` 决定。撞顶那一轮如果还有 toolCall，就返回 `tools: []` 的 context 并追加一条只进内存的收尾提示，再放一轮。`maxTurns` 语义是「最多 N 轮工具轮 + 1 轮收尾」，`ExecutorTerminalResult.completionReason` 只在 completed 时有值。
 - compaction 只能调用 Pi 的 `estimateContextTokens`、`shouldCompact`、`prepareCompaction` 和 `compact`；摘要或 entry 写入失败时 Run 失败且原 transcript 保留。
@@ -70,7 +70,7 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 - Good：无效 Tool 参数即使被 Pi JSON Schema 在 `execute` 前拒绝，也在 Tool lifecycle 中创建并 finalize 一条审计，模型只收到固定安全文本。
 - Base：没有 compaction 需要时直接使用 `buildSessionContext`；有 compaction 时写 Pi entry 后重建 retained context。
 - Bad：把旧 `AiGatewayEvent` 重新拼成自定义 Agent loop，或在 `toolcall_end` 收到时直接调用 handler。
-- Bad：把 Pi `details`、Tool arguments、modelText、Provider response 或原始 error 放入 HarnessEvent、公开 DTO、日志或主库审计表。
+- Bad：把 Pi `details`、Tool arguments、modelText、Provider response 或原始 error 放入 RunEvent、公开 DTO、日志或主库审计表。
 
 ## 6. Tests Required
 

@@ -28,6 +28,8 @@ pnpm --filter @starter/contracts build
 - `ApiMeta`、`ApiSuccess`、`ApiFailure`、`ApiResponse`：统一 HTTP JSON 类型。
 - `buildSuccess`、`buildFailure`：保持 `ok/data/error/meta` 结构的构造函数。
 - `updateProfileSchema`、`setAvatarSchema`、`renameFileSchema`：输入验证。
+- `runEventSchema`、`RunEvent`、`runTimelineSchema`、`runTraceSchema`：AI Runtime 事件、时间线和 Trace 契约。
+- `agentRunSnapshotSchema`、`aiOutputContractRefSchema`：Run snapshot 和 Structured Output 契约。
 - `AccountProfile`、`PublicProfile`、`FileItem`、`AuthConfig`：跨层 DTO。
 
 ## 文件索引

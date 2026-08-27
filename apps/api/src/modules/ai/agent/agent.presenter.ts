@@ -7,6 +7,7 @@ import { agentDefinitionConfigSchema, ApiErrorCodes } from "@starter/contracts";
 
 import type { AiAgentDefinitionRecord } from "./agent.repository.js";
 import { AppError } from "@api/shared/app-error.js";
+import { parseStoredJson } from "@api/shared/stored-json.js";
 
 export function toAgentDefinitionSummary(
   record: AiAgentDefinitionRecord,
@@ -34,16 +35,11 @@ export function toAgentDefinitionDetail(
 export function parseAgentDefinitionConfig(
   configJson: string,
 ): AgentDefinitionConfig {
-  let value: unknown;
-  try {
-    value = JSON.parse(configJson) as unknown;
-  } catch {
-    throw invalidStoredConfig();
-  }
-
-  const parsed = agentDefinitionConfigSchema.safeParse(value);
-  if (!parsed.success) throw invalidStoredConfig();
-  return parsed.data;
+  return parseStoredJson({
+    column: "ai_agent_definitions.config_json",
+    json: configJson,
+    schema: agentDefinitionConfigSchema,
+  });
 }
 
 function toStatus(value: string): AgentDefinitionSummary["status"] {

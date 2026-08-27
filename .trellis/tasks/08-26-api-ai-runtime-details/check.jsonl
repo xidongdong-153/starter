@@ -1,0 +1,16 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"检查新的 RunEvent、Timeline、Run Service 和 Pi Session 数据流是否符合系统边界"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"检查终态事务、SSE replay、恢复扫描、scope 和 lane 行为"}
+{"file":".trellis/spec/api/backend/pi-agent-execution-guidelines.md","reason":"检查 Pi loop、Tool adapter、terminate Tool、compaction 和模型流的生命周期"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"检查 replacement migration、索引、外键、JSON parse 和测试数据库要求"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"检查公共 Zod schema、DTO、OpenAPI 和消费者边界"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查事件从运行时到数据库、SSE、Timeline 和 Trace 的完整传递"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/agent/docs/telemetry-schema.md","reason":"复核 Run、Turn、Step、Tool、AI request span 的父子结构和终态属性"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/telemetry/README.md","reason":"检查 span API 和 telemetry adapter 边界，防止设计不存在的 end 生命周期"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/session-backends/sqlite-node/README.md","reason":"检查 Pi Session SQLite 的存储边界和读取方式"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/135-消息协议.md","reason":"检查产品 message parts 与模型消息的分层取舍"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/137-UIMessageStream.md","reason":"检查流式事件、step、Tool、reasoning 和 source 的字段范围"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/138-结构化输出.md","reason":"检查 Zod structured output 的 schema 指导、校验和错误边界"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/139-Tool-Calling.md","reason":"检查 Tool input schema、执行、进度、错误和终止动作"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/140-多步推理.md","reason":"检查 step 观察、工具循环和停止规则"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/147-可观测性：Telemetry.md","reason":"检查 AI telemetry 的延迟、用量、成本、错误和 Tool 指标"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/151-重构端到端-AI-Chat.md","reason":"检查 Hono API、共享 schema、流式响应、Tool 和 telemetry 的边界"}

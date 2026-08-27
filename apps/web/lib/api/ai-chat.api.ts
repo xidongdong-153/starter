@@ -20,7 +20,7 @@ import { apiRpc, unwrapApiData } from '@web/lib/rpc'
  *
  * 响应用 `@starter/contracts` 的 schema 校验，不在这里手写 guard：
  * transcript 和 Run live 快照是嵌套联合，手写一份等于把协议复制到 Web。
- * 启动 Run 的 SSE 不在这里，它的响应不是 `{ ok, data }` envelope，见 `lib/ai/harness-stream.ts`。
+ * 启动 Run 的 SSE 不在这里，它的响应不是 `{ ok, data }` envelope，见 `lib/ai/run-event-stream.ts`。
  */
 
 /** 服务端已经过滤掉未启用的 Agent，这里不再过滤。 */

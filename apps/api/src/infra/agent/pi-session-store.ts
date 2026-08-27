@@ -256,7 +256,7 @@ async function appendTerminalToSession(
   lane: string,
   data: unknown,
 ): Promise<CustomEntry> {
-  const id = await session.view(lane).appendCustomEntry("starter.run.v1", data);
+  const id = await session.view(lane).appendCustomEntry("starter.run", data);
   const entry = await session.getEntry(id);
   if (!entry || entry.type !== "custom") {
     throw new Error(`Pi Session terminal entry 写入后无法读取: ${id}`);
@@ -274,7 +274,7 @@ async function findTerminalEntriesFromSession(
   const entries = await lane.findEntriesOnBranch({
     start: leafId,
     type: "custom",
-    customType: "starter.run.v1",
+    customType: "starter.run",
     order: "oldestFirst",
   });
   return entries.filter(

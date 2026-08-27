@@ -23,15 +23,8 @@ export type {
   PreparedAgentExecution,
   ResolvedAgentExecutorConfig,
 } from "./agent-executor.js";
-export {
-  AsyncEventQueue,
-  createEventSequencer,
-  PiEventMapper,
-} from "./pi-event-mapper.js";
-export type {
-  EventSequencer,
-  PiEventMapperOptions,
-} from "./pi-event-mapper.js";
+export { AsyncEventQueue, PiEventMapper } from "./pi-event-mapper.js";
+export type { PiEventMapperOptions } from "./pi-event-mapper.js";
 export { createPiSessionStore } from "./pi-session-store.js";
 export type {
   AgentSessionHandle,
@@ -48,3 +41,9 @@ export type {
   PiToolExecutionAudit,
   PiToolResultDetails,
 } from "./pi-tool-adapter.js";
+export { createRunExecutionContext } from "./run-execution-context.js";
+export type {
+  RunEventAssociations,
+  RunExecutionContext,
+  RunStepKind,
+} from "./run-execution-context.js";

@@ -23,6 +23,8 @@ import type {
   SimpleStreamOptions,
   Usage,
 } from "@earendil-works/pi-ai";
+import { NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
+import { ApiErrorCodes } from "@starter/contracts";
 import type {
   AgentDefinitionConfig,
   AiCost,
@@ -31,19 +33,40 @@ import type {
   AiModelRef,
   AiUsage,
   ApiErrorCode,
-  HarnessEvent,
+  RunEvent,
   Permission,
 } from "@starter/contracts";
-import { ApiErrorCodes } from "@starter/contracts";
+import type { RunEventDraft } from "@api/modules/ai/run/run-event.repository.js";
+import {
+  createStructuredOutputTool,
+  type StructuredOutputRuntime,
+} from "@api/modules/ai/output/structured-output.tool.js";
+import type { ResolvedAiOutputContract } from "@api/modules/ai/output/output-contract-registry.js";
 
+import type { AiRunLifecycleRepository } from "@api/modules/ai/run/run-lifecycle.repository.js";
+import type { AppLogger } from "@api/infra/log/index.js";
 import type {
-  PrincipalContext,
-  ResourceScope,
-} from "@api/modules/ai/principal.js";
+  AiSpan,
+  AiSpanEndAttributes,
+  AiSpanScope,
+  AiTelemetryTarget,
+} from "@api/infra/telemetry/index.js";
+import { openAiSpanScope, startAiSpan } from "@api/infra/telemetry/index.js";
+import {
+  createRunEventDraft,
+  type RunExecutionContext,
+  type RunStepState,
+} from "./run-execution-context.js";
+import {
+  isAiRetryableErrorCode,
+  toAiErrorCategory,
+} from "@api/modules/ai/ai-error.js";
+
 import type { RegisteredAiTool } from "@api/modules/ai/tool/tool-registry.js";
 import { createPiNativeStreamFn } from "@api/infra/ai/pi-native-stream.js";
 import type {
   PiModelCallAudit,
+  PiModelCallFact,
   PiStreamFailure,
 } from "@api/infra/ai/pi-native-stream.js";
 import { generateId } from "@api/shared/id.js";
@@ -53,11 +76,7 @@ import type {
   AgentSessionHandle,
   AgentSessionStore,
 } from "./pi-session-store.js";
-import {
-  AsyncEventQueue,
-  PiEventMapper,
-  type EventSequencer,
-} from "./pi-event-mapper.js";
+import { AsyncEventQueue, PiEventMapper } from "./pi-event-mapper.js";
 import {
   createPiToolAdapter,
   type PiToolExecutionAudit,
@@ -70,26 +89,24 @@ export interface ResolvedAgentExecutorConfig {
   maxTurns: number;
   /** Run 启动时已解析的 Tool 定义；Executor 不再按名称查询 Registry。 */
   tools: readonly RegisteredAiTool[];
+  outputContract?: ResolvedAiOutputContract | null;
+  structuredOutput?: StructuredOutputRuntime;
 }
 
 export interface AgentExecutorInput {
-  runId: string;
-  sessionId: string;
-  lane: string;
-  principal?: PrincipalContext;
-  scope?: ResourceScope;
-  userId: string;
-  requestId: string;
+  /** Run Service 创建的关联上下文；Run、Session、lane、principal 和 scope 都从它读。 */
+  execution: RunExecutionContext;
   input: string;
   signal?: AbortSignal;
-  sequencer: EventSequencer;
+  /** Run span 作用域；Turn、Step、Model Call 和 Tool span 都挂在它下面。 */
+  telemetry?: AiTelemetryTarget;
   config: ResolvedAgentExecutorConfig;
 }
 
 export type ExecutorTerminalStatus = "completed" | "failed" | "aborted";
 
 export type ExecutorCompletionReason = Extract<
-  HarnessEvent,
+  RunEvent,
   { type: "run.completed" }
 >["data"]["reason"];
 
@@ -98,16 +115,16 @@ export interface ExecutorTerminalResult {
   finalEntryId: string | null;
   errorCode: ApiErrorCode | null;
   /**
-   * 只有 completed 终态有意义：`model_finished` 是模型自己给出文字回答，
-   * `max_turns` 是撞上轮次上限后由收尾轮给出的回答。缺省按 `model_finished` 处理。
+   * 只有 completed 终态有意义：`model_finished` 是模型给出普通回答，
+   * `max_turns` 是收尾轮回答，`structured_output` 是终止型 Tool 已发布结果。
    */
   completionReason?: ExecutorCompletionReason;
 }
 
 export interface PreparedAgentExecution {
   readonly controls: AttachableActiveRunControls;
-  readonly events: AsyncIterable<HarnessEvent>;
-  readonly eventStream: AsyncIterable<HarnessEvent>;
+  readonly events: AsyncIterable<RunEventDraft>;
+  readonly eventStream: AsyncIterable<RunEventDraft>;
   readonly result: Promise<ExecutorTerminalResult>;
   readonly terminalResult: Promise<ExecutorTerminalResult>;
   readonly start: () => Promise<void>;
@@ -122,6 +139,9 @@ export interface PiAgentExecutorOptions {
   getProviderRequestEnv?: (providerId: string) => Record<string, string>;
   audit?: PiModelCallAudit;
   toolAudit?: PiToolExecutionAudit;
+  lifecycle?: AiRunLifecycleRepository;
+  /** 安全日志出口；当前只用于记录被拒绝的工具上报数据。 */
+  logger?: AppLogger;
   requestTimeoutMs?: number;
   maxRunMs?: number;
   compaction?: Partial<CompactionSettings>;
@@ -138,7 +158,9 @@ export class PiAgentExecutor {
   constructor(private readonly options: PiAgentExecutorOptions) {}
 
   prepare(input: AgentExecutorInput): PreparedAgentExecution {
-    const events = new AsyncEventQueue<HarnessEvent>();
+    const events = new AsyncEventQueue<RunEventDraft>();
+    const execution = input.execution;
+    const lifecycle = this.options.lifecycle;
     let attached = false;
     let started = false;
     let agent: Agent | undefined;
@@ -150,9 +172,77 @@ export class PiAgentExecutor {
     let abortRequested = false;
     let turns = 0;
     let summaryPlanned = false;
-    let currentModelCallId: string | null = null;
+    let structuredOutputEmitted = false;
+    const runTelemetry: AiTelemetryTarget =
+      input.telemetry ?? NOOP_TELEMETRY_CONTEXT;
+    let turnScope: AiSpanScope<"starter.ai.turn"> | null = null;
+    let stepScope: AiSpanScope<"starter.ai.step"> | null = null;
+    let compactionTelemetry: AiTelemetryTarget | null = null;
+    /** 模型请求和 Tool 执行的 span parent，读取时才解析当前 Step。 */
+    const telemetryParent = (): AiTelemetryTarget =>
+      stepScope?.span ?? turnScope?.span ?? runTelemetry;
     let latestModelFailure: PiStreamFailure | undefined;
     let terminalOverride: ExecutorTerminalResult | undefined;
+    /**
+     * Pi `turn_end` 只知道 assistant 的 stopReason。Run deadline 超时、Tool 终止失败
+     * 和 Session 存储失败发生在事件流之外，用 executor 已记录的信号覆盖。
+     */
+    const resolveLifecycleOutcome = (
+      base: "succeeded" | "failed" | "aborted",
+    ): "succeeded" | "failed" | "aborted" => {
+      if (base !== "succeeded") return base;
+      if (terminalOverride && terminalOverride.status !== "completed") {
+        return terminalOverride.status === "aborted" ? "aborted" : "failed";
+      }
+      if (latestModelFailure) {
+        return latestModelFailure.kind === "aborted" ? "aborted" : "failed";
+      }
+      return "succeeded";
+    };
+    const lifecycleErrorCode = (): ApiErrorCode | null =>
+      terminalOverride?.errorCode ?? latestModelFailure?.errorCode ?? null;
+    const closeTurnScopes = (
+      outcome: "succeeded" | "failed" | "aborted",
+    ): void => {
+      const failed = outcome !== "succeeded";
+      const errorCode = lifecycleErrorCode();
+      const stepAttributes: AiSpanEndAttributes<"starter.ai.step"> =
+        failed && errorCode
+          ? {
+              "starter.ai.step.outcome": outcome,
+              "starter.ai.error.code": errorCode,
+            }
+          : { "starter.ai.step.outcome": outcome };
+      stepScope?.close({
+        attributes: stepAttributes,
+        ...(failed ? { status: { status: "error" as const } } : {}),
+      });
+      stepScope = null;
+      turnScope?.close({
+        attributes: { "starter.ai.turn.outcome": outcome },
+        ...(failed ? { status: { status: "error" as const } } : {}),
+      });
+      turnScope = null;
+    };
+    /** Run 结束前兜底关闭遗留的 running Turn / Step，不留未解释的执行记录。 */
+    const sweepRunningLifecycle = (
+      outcome: "failed" | "aborted",
+      errorCode: string | null,
+    ): void => {
+      if (!lifecycle) return;
+      try {
+        const running = lifecycle.listRunning(execution.runId);
+        const finishedAt = new Date();
+        for (const stepId of running.steps) {
+          lifecycle.completeStep(stepId, outcome, errorCode, finishedAt);
+        }
+        for (const turnId of running.turns) {
+          lifecycle.completeTurn(turnId, outcome, finishedAt);
+        }
+      } catch {
+        // 兜底关闭失败不能改写 Run 终态，留给启动恢复处理。
+      }
+    };
     const pendingSteers: string[] = [];
     const pendingFollowUps: string[] = [];
     const transcript: Entry[] = [];
@@ -206,10 +296,10 @@ export class PiAgentExecutor {
         }
         try {
           session = await this.options.sessionStore.openSession(
-            input.sessionId,
+            execution.sessionId,
           );
           transcript.push(
-            ...(await session.readTranscript({ lane: input.lane })),
+            ...(await session.readTranscript({ lane: execution.lane })),
           );
         } catch {
           if (!abortRequested) {
@@ -248,35 +338,41 @@ export class PiAgentExecutor {
           this.options.compaction,
         );
         let mapper!: PiEventMapper;
-        const toolAdapter = createPiToolAdapter(config.tools, {
-          principal: input.principal ?? {
-            kind: "starter_user",
-            principalId: input.userId,
-            tenantId: "starter",
-            projectId: "starter",
-            externalUserId: input.userId,
-            appId: null,
-          },
-          scope: input.scope ?? {
-            tenantId: "starter",
-            projectId: "starter",
-            subjectType: null,
-            subjectId: null,
-          },
-          requestId: input.requestId,
+        const configuredTools =
+          config.outputContract && config.structuredOutput
+            ? [
+                ...config.tools,
+                createStructuredOutputTool(config.outputContract, {
+                  ...config.structuredOutput,
+                  publish: (event) => {
+                    config.structuredOutput?.publish(event);
+                    structuredOutputEmitted = true;
+                  },
+                }),
+              ]
+            : config.tools;
+        const toolAdapter = createPiToolAdapter(configuredTools, {
+          execution,
           hasPermission: this.options.hasPermission ?? (async () => false),
-          getModelCallId: () => currentModelCallId,
           getRemainingRunMs: () => remainingRunMs(deadlineAt),
+          getTelemetryParent: telemetryParent,
           audit: this.options.toolAudit,
+          ...(this.options.logger ? { logger: this.options.logger } : {}),
+          onSource: (fact) => {
+            // 工具上报的 source 已经过服务端校验，这里只转成产品事件。
+            events.push(mapper.sourceAvailableEvent(fact));
+          },
           onTerminalFailure: (reason) => {
             if (terminalOverride) return;
             terminalOverride = {
               status: reason === "cancelled" ? "aborted" : "failed",
               finalEntryId: mapper.lastAssistantEntryId,
               errorCode:
-                reason === "timed_out"
-                  ? ApiErrorCodes.AI_TOOL_TIMED_OUT
-                  : ApiErrorCodes.AI_REQUEST_ABORTED,
+                reason === "storage_failed"
+                  ? ApiErrorCodes.AI_SESSION_STORAGE_FAILED
+                  : reason === "timed_out"
+                    ? ApiErrorCodes.AI_TOOL_TIMED_OUT
+                    : ApiErrorCodes.AI_REQUEST_ABORTED,
             };
             agent?.abort();
           },
@@ -284,11 +380,9 @@ export class PiAgentExecutor {
 
         mapper = new PiEventMapper({
           session,
-          sessionId: input.sessionId,
-          runId: input.runId,
-          lane: input.lane,
-          sequencer: input.sequencer,
+          execution,
           maxTurns: config.maxTurns,
+          thinkingLevel: config.thinkingLevel ?? "off",
           getAssistantErrorCode: () =>
             terminalOverride?.errorCode ??
             latestModelFailure?.errorCode ??
@@ -296,6 +390,50 @@ export class PiAgentExecutor {
           onEntryAppended: (entry) => transcript.push(entry),
           onToolExecutionStart: (toolInput) =>
             toolAdapter.onToolExecutionStart(toolInput),
+          onTurnStart: (turnIndex) => {
+            const turnId = execution.beginTurn(turnIndex);
+            lifecycle?.beginTurn({
+              id: turnId,
+              runId: execution.runId,
+              turnIndex,
+              startedAt: new Date(),
+            });
+            turnScope = openAiSpanScope(runTelemetry, "starter.ai.turn", {
+              "starter.ai.run.id": execution.runId,
+              "starter.ai.turn.id": turnId,
+              "starter.ai.turn.index": turnIndex,
+            });
+            const stepId = execution.beginStep("assistant", 1);
+            lifecycle?.beginStep({
+              id: stepId,
+              runId: execution.runId,
+              turnId,
+              kind: "assistant",
+              attempt: 1,
+              startedAt: new Date(),
+            });
+            stepScope = openAiSpanScope(turnScope.span, "starter.ai.step", {
+              "starter.ai.run.id": execution.runId,
+              "starter.ai.turn.id": turnId,
+              "starter.ai.step.id": stepId,
+              "starter.ai.step.kind": "assistant",
+              "starter.ai.step.attempt": 1,
+            });
+          },
+          onTurnEnd: (piOutcome) => {
+            const outcome = resolveLifecycleOutcome(piOutcome);
+            const finishedAt = new Date();
+            const step = execution.endStep();
+            const errorCode =
+              outcome === "succeeded" ? null : lifecycleErrorCode();
+            if (step) {
+              lifecycle?.completeStep(step.id, outcome, errorCode, finishedAt);
+            }
+            const turnId = execution.endTurn();
+            if (turnId) lifecycle?.completeTurn(turnId, outcome, finishedAt);
+            closeTurnScopes(outcome);
+            return { outcome, step, errorCode };
+          },
           onToolExecutionEnd: (toolInput) =>
             toolAdapter.onToolExecutionEnd(toolInput),
         });
@@ -303,25 +441,25 @@ export class PiAgentExecutor {
         const streamFn =
           this.options.streamFn ??
           this.createStreamFn(
-            input,
-            modelRef,
-            () => {
-              currentModelCallId = null;
-            },
-            (id) => {
-              currentModelCallId = id;
+            execution,
+            (fact) => {
+              if (fact.kind === "started")
+                execution.setModelCall(fact.modelCallId);
+              events.push(modelCallEvent(execution, fact));
             },
             (failure) => {
               latestModelFailure = failure;
             },
+            telemetryParent,
           );
-        const auditedModels = this.options.models
-          ? createAuditedModels(
+        const instrumentedModels = this.options.models
+          ? createInstrumentedModels(
               this.options.models,
               this.options.audit,
-              input,
+              execution,
               modelRef,
               this.options.requestTimeoutMs ?? 60_000,
+              () => compactionTelemetry ?? runTelemetry,
             )
           : undefined;
         let initialMessages: AgentMessage[];
@@ -348,7 +486,7 @@ export class PiAgentExecutor {
           convertToLlm: (messages) =>
             convertToLlm(sanitizeToolErrors(messages)),
           streamFn,
-          sessionId: input.sessionId,
+          sessionId: execution.sessionId,
           toolExecution: "parallel",
           afterToolCall: toolAdapter.afterToolCall,
           // Pi 的回调顺序是 turn_end -> prepareNextTurn -> shouldStopAfterTurn，
@@ -380,18 +518,35 @@ export class PiAgentExecutor {
               messages,
               transcript,
               session,
-              lane: input.lane,
+              lane: execution.lane,
               model,
-              models: auditedModels,
+              models: instrumentedModels,
               settings: compactionSettings,
               thinkingLevel: config.thinkingLevel ?? "off",
               signal,
+              telemetry: {
+                parent: turnScope?.span ?? runTelemetry,
+                runId: execution.runId,
+                turnId: execution.turnId,
+                onStepSpan: (span) => {
+                  compactionTelemetry = span;
+                },
+              },
+              lifecycle,
               onFailure: (errorCode) => {
                 terminalOverride = {
                   status: "failed",
                   finalEntryId: mapper.lastAssistantEntryId,
                   errorCode,
                 };
+              },
+              onStepStarted: (step) => {
+                events.push(mapper.stepStartedEvent(step));
+              },
+              onStepCompleted: (step, outcome, errorCode) => {
+                events.push(
+                  mapper.stepCompletedEvent({ step, outcome, errorCode }),
+                );
               },
               onCompacted: (info) => {
                 // 发事件失败不能影响 compaction 结果本身。
@@ -453,7 +608,11 @@ export class PiAgentExecutor {
           abortRequested || input.signal?.aborted === true,
           terminalOverride,
           latestModelFailure,
-          summaryPlanned ? "max_turns" : "model_finished",
+          structuredOutputEmitted
+            ? "structured_output"
+            : summaryPlanned
+              ? "max_turns"
+              : "model_finished",
         );
         resolveResult(terminal);
       } catch {
@@ -473,6 +632,10 @@ export class PiAgentExecutor {
           input.signal?.removeEventListener("abort", callerAbortListener);
         }
         unsubscribe?.();
+        // Pi 没有发出 turn_end 时也要结束 span，不能留下未结束的作用域。
+        const sweepOutcome = abortRequested ? "aborted" : "failed";
+        closeTurnScopes(sweepOutcome);
+        sweepRunningLifecycle(sweepOutcome, lifecycleErrorCode());
         events.end();
       }
     };
@@ -488,11 +651,10 @@ export class PiAgentExecutor {
   }
 
   private createStreamFn(
-    input: AgentExecutorInput,
-    modelRef: AiModelRef,
-    onReset: () => void,
-    onStarted: (id: string | null) => void,
+    execution: RunExecutionContext,
+    onModelCallFact: (fact: PiModelCallFact) => void,
     onFailure: (failure: PiStreamFailure) => void,
+    getTelemetryParent: () => AiTelemetryTarget,
   ): StreamFn {
     if (!this.options.models) {
       throw new Error("Pi Agent executor 需要 models 或 streamFn");
@@ -500,22 +662,49 @@ export class PiAgentExecutor {
     return createPiNativeStreamFn({
       models: this.options.models,
       timeoutMs: this.options.requestTimeoutMs ?? 60_000,
-      runId: input.runId,
-      userId: input.userId,
-      scope: input.scope,
-      principalKind: input.principal?.kind,
-      appId: input.principal?.appId,
-      externalUserId: input.principal?.externalUserId,
-      requestId: input.requestId,
-      sessionId: input.sessionId,
+      execution,
+      getTelemetryParent,
       getProviderRequestEnv: this.options.getProviderRequestEnv,
       audit: this.options.audit,
-      onModelCallStarted: (id) => {
-        onReset();
-        onStarted(id);
-      },
+      onModelCallFact,
       onFailure,
     }) as StreamFn;
+  }
+}
+
+/** Model Call 事实转产品事件；只带安全字段，不带 Provider payload 和原始错误。 */
+function modelCallEvent(
+  execution: RunExecutionContext,
+  fact: PiModelCallFact,
+): RunEventDraft {
+  switch (fact.kind) {
+    case "started":
+      return createRunEventDraft(execution, "model_call.started", {
+        providerId: fact.providerId,
+        modelId: fact.modelId,
+        api: fact.api,
+        streaming: true,
+      });
+    case "first_output":
+      return createRunEventDraft(execution, "model_call.first_output", {
+        elapsedMs: fact.elapsedMs,
+      });
+    case "completed":
+      return createRunEventDraft(execution, "model_call.completed", {
+        responseModel: fact.responseModel,
+        responseId: fact.responseId,
+        stopReason: fact.stopReason,
+        usage: fact.usage,
+        cost: fact.cost,
+      });
+    case "failed":
+      return createRunEventDraft(execution, "model_call.failed", {
+        error: {
+          code: fact.errorCode,
+          category: toAiErrorCategory(fact.errorCode),
+          retryable: isAiRetryableErrorCode(fact.errorCode),
+        },
+      });
   }
 }
 
@@ -576,11 +765,26 @@ async function compactIfNeeded(input: {
   settings: CompactionSettings;
   thinkingLevel: AgentDefinitionConfig["thinkingLevel"];
   signal?: AbortSignal;
+  telemetry: {
+    parent: AiTelemetryTarget;
+    runId: string;
+    turnId: string | null;
+    onStepSpan: (span: AiSpan<"starter.ai.step"> | null) => void;
+  };
+  lifecycle?: AiRunLifecycleRepository;
   onFailure: (errorCode: ApiErrorCode) => void;
+  /** compaction Step 开始事实；发事件失败不能影响 compaction 本身。 */
+  onStepStarted?: (step: RunStepState) => void;
+  onStepCompleted?: (
+    step: RunStepState,
+    outcome: "succeeded" | "failed" | "deferred",
+    errorCode: ApiErrorCode | null,
+  ) => void;
   onCompacted: (info: {
     entryId: string;
     tokensBefore: number;
     summary: string;
+    stepId: string;
   }) => void;
 }): Promise<AgentMessage[]> {
   if (
@@ -595,12 +799,131 @@ async function compactIfNeeded(input: {
     return input.messages;
   }
 
+  // compaction 是独立 Step kind：同一个 stepId 同时写 telemetry span、
+  // `ai_run_steps`、Step 事件和 `context.compacted` 事件，不复用当前 assistant Step。
+  const step: RunStepState = {
+    id: generateId(),
+    kind: "compaction",
+    attempt: 1,
+  };
+  const stepId = step.id;
+  const turnId = input.telemetry.turnId;
+  const lifecycle = input.lifecycle;
+  if (turnId && lifecycle) {
+    try {
+      lifecycle.beginStep({
+        id: stepId,
+        runId: input.telemetry.runId,
+        turnId,
+        kind: "compaction",
+        attempt: 1,
+        startedAt: new Date(),
+      });
+    } catch {
+      // Step 记录写失败不能阻止 compaction 本身。
+    }
+  }
+  try {
+    input.onStepStarted?.(step);
+  } catch {
+    // 同上：发事件失败不改写 compaction 结果。
+  }
+  const completeStep = (
+    outcome: "succeeded" | "failed" | "deferred",
+    errorCode: ApiErrorCode | null,
+  ): void => {
+    if (turnId && lifecycle) {
+      try {
+        lifecycle.completeStep(stepId, outcome, errorCode, new Date());
+      } catch {
+        // 同上：审计写失败不改写 compaction 结果。
+      }
+    }
+    try {
+      input.onStepCompleted?.(step, outcome, errorCode);
+    } catch {
+      // 同上。
+    }
+  };
+
+  return startAiSpan(
+    input.telemetry.parent,
+    "starter.ai.step",
+    {
+      "starter.ai.run.id": input.telemetry.runId,
+      "starter.ai.turn.id": turnId ?? undefined,
+      "starter.ai.step.id": stepId,
+      "starter.ai.step.kind": "compaction",
+      "starter.ai.step.attempt": 1,
+    },
+    async (span) => {
+      input.telemetry.onStepSpan(span);
+      const state: {
+        outcome: "succeeded" | "deferred";
+        failureCode: ApiErrorCode | null;
+      } = { outcome: "succeeded", failureCode: null };
+      try {
+        const messages = await runCompaction(
+          {
+            ...input,
+            onFailure: (errorCode) => {
+              state.failureCode = errorCode;
+              input.onFailure(errorCode);
+            },
+            onCompacted: (info) => input.onCompacted({ ...info, stepId }),
+            onDeferred: () => {
+              state.outcome = "deferred";
+            },
+          },
+          span,
+        );
+        span.setAttributes({ "starter.ai.step.outcome": state.outcome });
+        completeStep(state.outcome, null);
+        return messages;
+      } catch (error) {
+        span.setAttributes({ "starter.ai.step.outcome": "failed" });
+        completeStep("failed", state.failureCode);
+        throw error;
+      } finally {
+        input.telemetry.onStepSpan(null);
+      }
+    },
+  );
+}
+
+async function runCompaction(
+  input: {
+    messages: AgentMessage[];
+    transcript: import("@earendil-works/pi-agent-core").Entry[];
+    session: AgentSessionHandle | undefined;
+    lane: string;
+    model: Model<Api>;
+    models: Models | undefined;
+    settings: CompactionSettings;
+    thinkingLevel: AgentDefinitionConfig["thinkingLevel"];
+    signal?: AbortSignal;
+    onFailure: (errorCode: ApiErrorCode) => void;
+    onDeferred: () => void;
+    onCompacted: (info: {
+      entryId: string;
+      tokensBefore: number;
+      summary: string;
+    }) => void;
+  },
+  span: AiSpan<"starter.ai.step">,
+): Promise<AgentMessage[]> {
+  if (!input.models || !input.session) return input.messages;
+
   const preparation = prepareCompaction(input.transcript, input.settings);
   if (!preparation.ok) {
     input.onFailure(ApiErrorCodes.AI_UPSTREAM_ERROR);
     throw new Error("Pi compaction 准备失败");
   }
-  if (!preparation.value) return input.messages;
+  if (!preparation.value) {
+    span.setAttributes({ "starter.ai.step.outcome": "deferred" });
+    input.onDeferred();
+    return input.messages;
+  }
 
   const compacted = await compact(
     preparation.value,
@@ -695,14 +1018,18 @@ function remainingRunMs(deadlineAt: number | undefined): number | undefined {
     : Math.max(0, deadlineAt - Date.now());
 }
 
-function createAuditedModels(
+/**
+ * 给 Pi 的 `completeSimple`（compaction 摘要请求）包上 Model Call span 和审计。
+ * span 包裹与审计注入解耦：没有 audit 也产生 span 和 modelCallId。
+ */
+function createInstrumentedModels(
   models: Models,
   audit: PiModelCallAudit | undefined,
-  input: AgentExecutorInput,
+  execution: RunExecutionContext,
   modelRef: AiModelRef,
   timeoutMs: number,
+  getTelemetryParent: () => AiTelemetryTarget,
 ): Models {
-  if (!audit) return models;
   return new Proxy(models, {
     get(target, property) {
       if (property === "completeSimple") {
@@ -710,112 +1037,168 @@ function createAuditedModels(
           model: Model<Api>,
           context: Context,
           options: SimpleStreamOptions = {},
-        ): Promise<AssistantMessage> => {
-          const startedAt = new Date();
-          const effectiveTimeoutMs = Math.max(
-            1,
-            Math.min(options.timeoutMs ?? timeoutMs, timeoutMs),
+        ): Promise<AssistantMessage> =>
+          startAiSpan(
+            getTelemetryParent(),
+            "starter.ai.model_call",
+            {
+              "starter.ai.run.id": execution.runId,
+              "starter.ai.provider": model.provider,
+              "starter.ai.model": model.id,
+              "starter.ai.api": model.api,
+              "starter.ai.streaming": false,
+            },
+            async (span) => {
+              const startedAt = new Date();
+              const effectiveTimeoutMs = Math.max(
+                1,
+                Math.min(options.timeoutMs ?? timeoutMs, timeoutMs),
+              );
+              // modelCallId 在请求开始前生成，auditId 只在审计成功时有值。
+              const modelCallId = generateId();
+              let auditId: string | null = null;
+              let finalized = false;
+              let responseModel: string | undefined;
+              let responseId: string | undefined;
+              const timeoutSignal = AbortSignal.timeout(effectiveTimeoutMs);
+              const cause: { kind: "aborted" | "timeout" | null } = {
+                kind: options.signal?.aborted ? "aborted" : null,
+              };
+              const onInputAbort = () => {
+                cause.kind ??= "aborted";
+              };
+              const onTimeout = () => {
+                cause.kind ??= "timeout";
+              };
+              options.signal?.addEventListener("abort", onInputAbort, {
+                once: true,
+              });
+              timeoutSignal.addEventListener("abort", onTimeout, {
+                once: true,
+              });
+              const signal = options.signal
+                ? AbortSignal.any([options.signal, timeoutSignal])
+                : timeoutSignal;
+              const finalize = (
+                resultValue: Exclude<AiModelCallResult, "running">,
+                stopReason: AiModelCallStopReason,
+                errorCode: string | null,
+                usage: AiUsage,
+                cost: AiCost | null,
+              ) => {
+                if (finalized) return;
+                finalized = true;
+                span.setAttributes({
+                  "starter.ai.model_call.id": modelCallId,
+                  "starter.ai.model_call.result": resultValue,
+                  "starter.ai.response.model": responseModel,
+                  "starter.ai.response.id": responseId,
+                  "starter.ai.response.stop_reason": stopReason,
+                  "starter.ai.usage.input_tokens":
+                    usage.inputTokens ?? undefined,
+                  "starter.ai.usage.output_tokens":
+                    usage.outputTokens ?? undefined,
+                  "starter.ai.usage.cache_read_tokens":
+                    usage.cacheReadTokens ?? undefined,
+                  "starter.ai.usage.cache_write_tokens":
+                    usage.cacheWriteTokens ?? undefined,
+                  "starter.ai.usage.reasoning_tokens":
+                    usage.reasoningTokens ?? undefined,
+                  "starter.ai.usage.total_tokens":
+                    usage.totalTokens ?? undefined,
+                  "starter.ai.usage.cost": cost?.total ?? undefined,
+                  "starter.ai.duration_ms": Date.now() - startedAt.getTime(),
+                  "starter.ai.error.code": errorCode ?? undefined,
+                });
+                if (resultValue !== "succeeded")
+                  span.setStatus({ status: "error" });
+                if (!auditId) return;
+                try {
+                  audit?.finalizeModelCall({
+                    id: auditId,
+                    requestId: execution.requestId,
+                    startedAt,
+                    finishedAt: new Date(),
+                    result: resultValue,
+                    stopReason,
+                    errorCode,
+                    usage,
+                    cost,
+                    responseModel: responseModel ?? null,
+                    responseId: responseId ?? null,
+                  });
+                } catch {
+                  // 审计是 best-effort，不能改变 compaction 结果。
+                }
+              };
+              try {
+                try {
+                  auditId =
+                    audit?.beginModelCall({
+                      id: modelCallId,
+                      runId: execution.runId,
+                      userId: execution.userId,
+                      requestId: execution.requestId,
+                      model: modelRef,
+                      api: model.api,
+                      turnId: execution.turnId,
+                      timeoutMs: effectiveTimeoutMs,
+                      startedAt,
+                    }) ?? null;
+                } catch {
+                  auditId = null;
+                }
+                const result = await target.completeSimple(model, context, {
+                  ...options,
+                  signal,
+                  timeoutMs: effectiveTimeoutMs,
+                });
+                responseModel = result.responseModel ?? undefined;
+                responseId = result.responseId ?? undefined;
+                const outcome = classifyCompleteSimpleResult(
+                  result,
+                  cause.kind,
+                );
+                finalize(
+                  outcome.result,
+                  outcome.stopReason,
+                  outcome.errorCode,
+                  toAiUsage(result.usage),
+                  toAiCost(result.usage),
+                );
+                return result;
+              } catch (error) {
+                const kind =
+                  cause.kind ??
+                  (timeoutSignal.aborted
+                    ? "timeout"
+                    : options.signal?.aborted
+                      ? "aborted"
+                      : null);
+                finalize(
+                  kind === "timeout"
+                    ? "timed_out"
+                    : kind === "aborted"
+                      ? "cancelled"
+                      : "upstream_failed",
+                  kind === "timeout" || kind === "aborted"
+                    ? "aborted"
+                    : "error",
+                  kind === "timeout"
+                    ? ApiErrorCodes.AI_UPSTREAM_TIMEOUT
+                    : kind === "aborted"
+                      ? ApiErrorCodes.AI_REQUEST_ABORTED
+                      : ApiErrorCodes.AI_UPSTREAM_ERROR,
+                  emptyUsage(),
+                  null,
+                );
+                throw error;
+              } finally {
+                options.signal?.removeEventListener("abort", onInputAbort);
+                timeoutSignal.removeEventListener("abort", onTimeout);
+              }
+            },
           );
-          let modelCallId: string | null = null;
-          let finalized = false;
-          const timeoutSignal = AbortSignal.timeout(effectiveTimeoutMs);
-          const cause: { kind: "aborted" | "timeout" | null } = {
-            kind: options.signal?.aborted ? "aborted" : null,
-          };
-          const onInputAbort = () => {
-            cause.kind ??= "aborted";
-          };
-          const onTimeout = () => {
-            cause.kind ??= "timeout";
-          };
-          options.signal?.addEventListener("abort", onInputAbort, {
-            once: true,
-          });
-          timeoutSignal.addEventListener("abort", onTimeout, { once: true });
-          const signal = options.signal
-            ? AbortSignal.any([options.signal, timeoutSignal])
-            : timeoutSignal;
-          const finalize = (
-            resultValue: Exclude<AiModelCallResult, "running">,
-            stopReason: AiModelCallStopReason,
-            errorCode: string | null,
-            usage: AiUsage,
-            cost: AiCost | null,
-          ) => {
-            if (!modelCallId || finalized) return;
-            finalized = true;
-            try {
-              audit.finalizeModelCall({
-                id: modelCallId,
-                requestId: input.requestId,
-                startedAt,
-                finishedAt: new Date(),
-                result: resultValue,
-                stopReason,
-                errorCode,
-                usage,
-                cost,
-              });
-            } catch {
-              // 审计是 best-effort，不能改变 compaction 结果。
-            }
-          };
-          try {
-            try {
-              modelCallId = audit.beginModelCall({
-                runId: input.runId,
-                userId: input.userId,
-                requestId: input.requestId,
-                model: modelRef,
-                timeoutMs: effectiveTimeoutMs,
-                startedAt,
-              });
-            } catch {
-              modelCallId = null;
-            }
-            const result = await target.completeSimple(model, context, {
-              ...options,
-              signal,
-              timeoutMs: effectiveTimeoutMs,
-            });
-            const outcome = classifyCompleteSimpleResult(result, cause.kind);
-            finalize(
-              outcome.result,
-              outcome.stopReason,
-              outcome.errorCode,
-              toAiUsage(result.usage),
-              toAiCost(result.usage),
-            );
-            return result;
-          } catch (error) {
-            const kind =
-              cause.kind ??
-              (timeoutSignal.aborted
-                ? "timeout"
-                : options.signal?.aborted
-                  ? "aborted"
-                  : null);
-            finalize(
-              kind === "timeout"
-                ? "timed_out"
-                : kind === "aborted"
-                  ? "cancelled"
-                  : "upstream_failed",
-              kind === "timeout" || kind === "aborted" ? "aborted" : "error",
-              kind === "timeout"
-                ? ApiErrorCodes.AI_UPSTREAM_TIMEOUT
-                : kind === "aborted"
-                  ? ApiErrorCodes.AI_REQUEST_ABORTED
-                  : ApiErrorCodes.AI_UPSTREAM_ERROR,
-              emptyUsage(),
-              null,
-            );
-            throw error;
-          } finally {
-            options.signal?.removeEventListener("abort", onInputAbort);
-            timeoutSignal.removeEventListener("abort", onTimeout);
-          }
-        };
       }
       const value = Reflect.get(target, property, target);
       return typeof value === "function" ? value.bind(target) : value;

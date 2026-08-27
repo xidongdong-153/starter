@@ -10,6 +10,7 @@ import {
   resolveToolExecutionTimeout,
 } from "@api/modules/ai/usage-audit/usage-audit.service.js";
 
+import { generateId } from "@api/shared/id.js";
 import { createTestApp } from "./helpers.js";
 
 const usage = {
@@ -45,7 +46,7 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
     });
     repository.beginToolExecution({
       id: toolExecutionId,
-      aiCallId: modelCallId,
+      modelCallId,
       toolName: "lookup",
       toolVersion: "1.0.0",
       startedAt,
@@ -64,7 +65,7 @@ it("启动恢复把未完成的模型调用和工具执行标记为 interrupted"
     });
     repository.beginToolExecution({
       id: freshToolExecutionId,
-      aiCallId: freshModelCallId,
+      modelCallId: freshModelCallId,
       toolName: "lookup",
       toolVersion: "1.0.0",
       startedAt: freshStartedAt,
@@ -365,6 +366,7 @@ describe("agent run audit ports", () => {
       const modelPort = audit.createAgentModelCallAudit();
       const startedAt = new Date();
       const modelCallId = modelPort.beginModelCall({
+        id: generateId(),
         runId: "run-1",
         userId: "user-1",
         requestId: "request-1",
@@ -394,6 +396,7 @@ describe("agent run audit ports", () => {
 
       const toolPort = audit.createAgentToolExecutionAudit();
       const toolHandle = toolPort.beginToolExecution({
+        id: generateId(),
         modelCallId,
         toolName: "lookup",
         toolVersion: "1.0.0",
@@ -402,7 +405,7 @@ describe("agent run audit ports", () => {
       toolPort.finalizeToolExecution(toolHandle, "succeeded", null);
       expect(repository.beginToolExecution).toHaveBeenCalledWith(
         expect.objectContaining({
-          aiCallId: modelCallId,
+          modelCallId,
           toolName: "lookup",
           toolVersion: "1.0.0",
         }),
@@ -413,3 +416,215 @@ describe("agent run audit ports", () => {
     }
   });
 });
+
+describe("audit projection 字段白名单", () => {
+  it("model call 与 tool execution projection 带全部执行关联，不含正文和 secret", () => {
+    const { cleanup, runtime } = createTestApp();
+    try {
+      const repository = createAiUsageAuditRepository(runtime.db);
+      const service = createAiUsageAuditService(repository, runtime.logger);
+      const ids = seedRunLifecycle(runtime);
+      const modelCallId = "019c4200-0020-7000-8000-000000000001";
+      const startedAt = new Date();
+      repository.beginModelCall({
+        id: modelCallId,
+        requestId: "projection-request",
+        userId: "user-1",
+        scenario: "agent_run",
+        runId: ids.runId,
+        turnId: ids.turnId,
+        stepId: ids.stepId,
+        providerId: "openai",
+        modelId: "gpt-test",
+        api: "openai-completions",
+        startedAt,
+        timeoutMs: 5000,
+      });
+      repository.finalizeModelCall({
+        id: modelCallId,
+        startedAt,
+        finishedAt: new Date(startedAt.getTime() + 20),
+        result: "upstream_failed",
+        stopReason: "error",
+        errorCode: "AI.UPSTREAM_ERROR",
+        usage,
+        cost: null,
+        ttftMs: 5,
+        chunkCount: 7,
+        responseModel: "gpt-test-2024",
+        responseId: "resp-9",
+        httpStatus: 500,
+      });
+      const toolHandle = service.beginToolExecution({
+        id: generateId(),
+        modelCallId,
+        requestId: "projection-request",
+        runId: ids.runId,
+        turnId: ids.turnId,
+        stepId: ids.stepId,
+        toolCallId: "call_abc",
+        toolName: "lookup",
+        toolVersion: "1.0.0",
+        timeoutMs: 100,
+      });
+      service.finalizeToolExecution(toolHandle, "failed", "AI.TOOL_FAILED");
+
+      const detail = service.getModelCall(modelCallId);
+      expect(Object.keys(detail ?? {}).sort()).toEqual(
+        [
+          "api",
+          "appId",
+          "chunkCount",
+          "cost",
+          "durationMs",
+          "errorCategory",
+          "errorCode",
+          "externalUserId",
+          "finishedAt",
+          "httpStatus",
+          "id",
+          "modelId",
+          "principalKind",
+          "projectId",
+          "providerId",
+          "requestId",
+          "responseId",
+          "responseModel",
+          "result",
+          "runId",
+          "scenario",
+          "startedAt",
+          "stepId",
+          "stopReason",
+          "tenantId",
+          "timeoutMs",
+          "toolExecutions",
+          "ttftMs",
+          "turnId",
+          "usage",
+          "userId",
+        ].sort(),
+      );
+      expect(detail).toMatchObject({
+        runId: ids.runId,
+        turnId: ids.turnId,
+        stepId: ids.stepId,
+        api: "openai-completions",
+        ttftMs: 5,
+        chunkCount: 7,
+        responseModel: "gpt-test-2024",
+        responseId: "resp-9",
+        httpStatus: 500,
+        errorCategory: "upstream",
+      });
+
+      const tool = detail?.toolExecutions[0];
+      expect(Object.keys(tool ?? {}).sort()).toEqual(
+        [
+          "durationMs",
+          "errorCategory",
+          "errorCode",
+          "finishedAt",
+          "id",
+          "modelCallId",
+          "runId",
+          "startedAt",
+          "status",
+          "stepId",
+          "timeoutMs",
+          "toolCallId",
+          "toolExecutionId",
+          "toolName",
+          "toolVersion",
+          "turnId",
+        ].sort(),
+      );
+      expect(tool).toMatchObject({
+        runId: ids.runId,
+        turnId: ids.turnId,
+        stepId: ids.stepId,
+        modelCallId,
+        toolCallId: "call_abc",
+        toolExecutionId: toolHandle?.id,
+        errorCategory: "tool",
+      });
+
+      const serialized = JSON.stringify(detail);
+      for (const forbidden of [
+        "arguments",
+        "safeSummary",
+        "modelText",
+        "prompt",
+        'response":',
+        "secret",
+      ]) {
+        expect(serialized).not.toContain(forbidden);
+      }
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+function seedRunLifecycle(
+  runtime: ReturnType<typeof createTestApp>["runtime"],
+) {
+  const now = Date.now();
+  const ids = {
+    agentId: "019c4200-0030-7000-8000-000000000001",
+    sessionId: "019c4200-0030-7000-8000-000000000002",
+    runId: "019c4200-0030-7000-8000-000000000003",
+    turnId: "019c4200-0030-7000-8000-000000000004",
+    stepId: "019c4200-0030-7000-8000-000000000005",
+  };
+  const sqlite = runtime.database.sqlite;
+  sqlite
+    .prepare(
+      `INSERT INTO user (id, name, email, email_verified, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run("user-1", "User", "projection@example.com", 0, now, now);
+  sqlite
+    .prepare(
+      `INSERT INTO ai_agent_definitions (id, name, config_json, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(ids.agentId, "Agent", '{"schemaVersion":2}', now, now);
+  sqlite
+    .prepare(
+      `INSERT INTO ai_agent_sessions (id, owner_id, title, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    .run(ids.sessionId, "user-1", "Session", now, now);
+  sqlite
+    .prepare(
+      `INSERT INTO ai_agent_runs
+        (id, session_id, agent_id, lane, status, agent_revision,
+         snapshot_json, request_id, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      ids.runId,
+      ids.sessionId,
+      ids.agentId,
+      "main",
+      "running",
+      1,
+      '{"schemaVersion":2}',
+      "projection-request",
+      now,
+    );
+  sqlite
+    .prepare(
+      `INSERT INTO ai_run_turns (id, run_id, turn_index, started_at)
+       VALUES (?, ?, ?, ?)`,
+    )
+    .run(ids.turnId, ids.runId, 1, now);
+  sqlite
+    .prepare(
+      `INSERT INTO ai_run_steps (id, run_id, turn_id, kind, attempt, started_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    )
+    .run(ids.stepId, ids.runId, ids.turnId, "assistant", 1, now);
+  return ids;
+}

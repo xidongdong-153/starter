@@ -10,10 +10,10 @@ import type {
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import {
-  harnessEventSchema,
+  runEventSchema,
   type AgentRun,
   type AgentTranscript,
-  type HarnessEvent,
+  type RunEvent,
 } from "@starter/contracts";
 import { eq } from "drizzle-orm";
 import { createParser } from "eventsource-parser";
@@ -144,7 +144,7 @@ it("产品后端通过公开 Bearer HTTP/SSE 完成 Run 并按 scope 恢复 Tran
     const events = parseSseByArbitraryChunks(raw);
     expect(events.length).toBeGreaterThan(0);
     expect(
-      events.every((event) => harnessEventSchema.safeParse(event).success),
+      events.every((event) => runEventSchema.safeParse(event).success),
     ).toBe(true);
     expect(events.every((event) => event.runId === events[0]?.runId)).toBe(
       true,
@@ -236,19 +236,25 @@ it("产品后端通过公开 Bearer HTTP/SSE 完成 Run 并按 scope 恢复 Tran
 });
 
 it("sse parser 接受 heartbeat 和任意 chunk 边界", () => {
-  const event = harnessEventSchema.parse({
-    version: 1,
+  const event = runEventSchema.parse({
     eventId: generateId(),
     runId: generateId(),
     sessionId: generateId(),
     lane: "main",
     sequence: 1,
-    createdAt: new Date().toISOString(),
+    occurredAt: new Date().toISOString(),
+    turnIndex: null,
+    stepId: null,
+    modelCallId: null,
+    messageId: null,
+    toolCallId: null,
+    toolExecutionId: null,
     type: "run.started",
     data: {
       agentId: generateId(),
       agentRevision: 1,
       model: { providerId: "openai", modelId: "gpt-test" },
+      outputContract: null,
     },
   });
   const raw = `: heartbeat\n\nid: ${event.eventId}\nevent: ${event.type}\ndata: ${JSON.stringify(event)}\n\n`;
@@ -299,16 +305,11 @@ function createProductClient(
   };
 }
 
-function parseSseByArbitraryChunks(
-  raw: string,
-  consume = true,
-): HarnessEvent[] {
-  const events: HarnessEvent[] = [];
+function parseSseByArbitraryChunks(raw: string, consume = true): RunEvent[] {
+  const events: RunEvent[] = [];
   const parser = createParser({
     onEvent(message) {
-      events.push(
-        harnessEventSchema.parse(JSON.parse(message.data) as unknown),
-      );
+      events.push(runEventSchema.parse(JSON.parse(message.data) as unknown));
     },
   });
   const chunkSizes = [1, 7, 3, 19, 2, 31];

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import type { ApiFailure, ApiSuccess } from "@starter/contracts";
 import type { RuntimeDeps } from "@api/bootstrap/create-runtime.js";
+import type { PiAgentExecutor } from "@api/infra/agent/index.js";
 import { createApp, createRuntime } from "@api/app.js";
 
 const migrationFolder = resolve(
@@ -14,7 +15,11 @@ const migrationFolder = resolve(
 
 export function createTestApp(
   envOverrides: NodeJS.ProcessEnv = {},
-  deps: RuntimeDeps = {},
+  deps: RuntimeDeps & {
+    piAgentExecutorFactory?: (
+      runtime: ReturnType<typeof createRuntime>,
+    ) => PiAgentExecutor;
+  } = {},
 ) {
   const testDir = mkdtempSync(join(tmpdir(), "starter-api-"));
   const runtime = createRuntime(
@@ -39,6 +44,9 @@ export function createTestApp(
     },
     deps,
   );
+  if (deps.piAgentExecutorFactory) {
+    runtime.piAgentExecutor = deps.piAgentExecutorFactory(runtime);
+  }
   migrate(runtime.db, { migrationsFolder: migrationFolder });
 
   let closed = false;

@@ -1,5 +1,5 @@
-import type { HarnessEvent } from '@starter/contracts'
-import { harnessEventSchema } from '@starter/contracts'
+import type { RunEvent } from '@starter/contracts'
+import { runEventSchema } from '@starter/contracts'
 import { ApiRequestError, isApiFailureBody, readJson } from '@web/lib/http'
 import { apiRpc } from '@web/lib/rpc'
 
@@ -16,7 +16,7 @@ export interface StartRunStreamInput {
 }
 
 /**
- * 启动 Agent Run 并按顺序产出 HarnessEvent。
+ * 启动 Agent Run 并按顺序产出 RunEvent。
  *
  * 启动失败（连不上、非 2xx、没有响应体）抛 `ApiRequestError`。
  * 流开始后中途断开不抛错，直接结束迭代：Run 还在服务端跑，调用方要转成轮询
@@ -24,7 +24,7 @@ export interface StartRunStreamInput {
  * 收到过事件就是断流，一个事件都没收到就是启动失败。
  * 单帧 JSON 或 schema 解析失败只丢这一帧，不中断整个流。
  */
-export async function* startRunStream(request: StartRunStreamInput): AsyncGenerator<HarnessEvent> {
+export async function* startRunStream(request: StartRunStreamInput): AsyncGenerator<RunEvent> {
   const response = await openRunStream(request)
   const body = response.body
   if (!body) {
@@ -75,6 +75,7 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
 
   try {
     response = await apiRpc.api.ai.sessions[':sessionId'].runs.$post(
+      // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空。
       { param: { sessionId }, json: { agentId, input } },
       { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
     )
@@ -100,7 +101,7 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
  * 解析一个 SSE 帧。
  * 只取 `data:` 行拼接，忽略 `id:`、`event:` 和以 `:` 开头的心跳注释。
  */
-function parseFrame(frame: string): HarnessEvent | undefined {
+function parseFrame(frame: string): RunEvent | undefined {
   const payload = frame
     .split(LINE_SEPARATOR)
     .filter((line) => line.startsWith('data:'))
@@ -115,6 +116,6 @@ function parseFrame(frame: string): HarnessEvent | undefined {
     return undefined
   }
 
-  const parsed = harnessEventSchema.safeParse(json)
+  const parsed = runEventSchema.safeParse(json)
   return parsed.success ? parsed.data : undefined
 }

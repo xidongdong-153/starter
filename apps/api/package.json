@@ -15,7 +15,7 @@
     }
   },
   "scripts": {
-    "build": "tsup src/index.ts src/app.ts src/rpc.ts --format esm --dts --out-dir dist --clean",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup src/index.ts src/app.ts src/rpc.ts --format esm --dts --out-dir dist --clean",
     "check": "pnpm check-types && pnpm lint && pnpm format:check",
     "check-types": "tsc --noEmit",
     "dev": "dotenv -e .env.development -- tsx watch src/index.ts",
@@ -38,6 +38,7 @@
     "@earendil-works/pi-ai": "catalog:",
     "@earendil-works/pi-agent-core": "catalog:",
     "@earendil-works/pi-session-backend-sqlite-node": "catalog:",
+    "@earendil-works/pi-telemetry": "catalog:",
     "@hono/node-server": "catalog:",
     "@hono/zod-openapi": "catalog:",
     "@hono/zod-validator": "catalog:",

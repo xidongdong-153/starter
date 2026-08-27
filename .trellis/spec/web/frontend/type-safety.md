@@ -4,7 +4,7 @@
 
 跨应用的类型从 `@starter/contracts` 导入。由于 HTTP response 在运行时仍是不可信数据，`lib/api/profile.api.ts` 和 `lib/api/auth-config.api.ts` 先用本地 type guard 校验，再返回 `PublicProfile` 或 `AuthConfig`。
 
-两种写法的分界：字段扁平的 DTO（`PublicProfile`、`AuthConfig`）继续用本地 guard；嵌套判别联合（`HarnessEvent`、`AgentTranscript`、`AgentRunLiveSnapshot`）用 contracts 导出的 zod schema `safeParse`，见 `lib/ai/harness-stream.ts` 和 `lib/api/ai-chat.api.ts`。手写 20 种事件的 guard 等于把协议复制到 Web，协议一改两边就会错开。
+两种写法的分界：字段扁平的 DTO（`PublicProfile`、`AuthConfig`）继续用本地 guard；嵌套判别联合（`RunEvent`、`AgentTranscript`、`AgentRunLiveSnapshot`）用 contracts 导出的 zod schema `safeParse`，见 `lib/ai/run-event-stream.ts` 和 `lib/api/ai-chat.api.ts`。手写事件 guard 等于把协议复制到 Web，协议一改两边就会错开。
 
 ```tsx
 export async function getPublicProfile(userId: string): Promise<PublicProfile> {

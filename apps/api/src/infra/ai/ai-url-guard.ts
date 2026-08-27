@@ -24,6 +24,35 @@ export class AiUrlGuardError extends Error {
 const DEFAULT_MAX_RESPONSE_BYTES = 8 * 1024 * 1024;
 const METADATA_HOSTS = new Set(["169.254.169.254", "metadata.google.internal"]);
 const METADATA_ADDRESSES = new Set(["169.254.169.254", "100.100.100.200"]);
+/** 只做展示的引用链接里也不接受内网名字，避免把内部服务地址带给客户端。 */
+const PRIVATE_HOST_SUFFIXES = [".localhost", ".internal", ".local"];
+
+/**
+ * 引用型 URL 的同步安全检查，用于工具上报的 source 链接。
+ *
+ * 这类 URL 只做展示，服务端不请求它，所以不做 DNS 解析；规则与
+ * `createAiUrlGuard` 的出站检查同级：只允许 http/https，拒绝带 credential 的 URL、
+ * metadata 主机、内网主机名和内网/保留 IP 字面量。查询串和 fragment 是正常引用的
+ * 一部分，这里不拒绝（出站请求才需要）。
+ */
+export function isSafeAiReferenceUrl(value: string): boolean {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return false;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return false;
+  if (url.username || url.password) return false;
+  const hostname = url.hostname.replace(/^\[|\]$/gu, "").toLowerCase();
+  if (hostname.length === 0) return false;
+  if (METADATA_HOSTS.has(hostname)) return false;
+  if (net.isIP(hostname)) {
+    return !isForbiddenAddress(hostname) && isPublicAddress(hostname);
+  }
+  if (hostname === "localhost") return false;
+  return !PRIVATE_HOST_SUFFIXES.some((suffix) => hostname.endsWith(suffix));
+}
 
 export function createAiUrlGuard(options: AiUrlGuardOptions = {}) {
   const appEnv = options.appEnv ?? "development";

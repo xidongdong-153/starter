@@ -3,7 +3,7 @@ import type {
   AgentRunLiveSnapshot,
   AgentRunLiveTimelineItem,
   AiUsage,
-  HarnessEvent,
+  RunEvent,
 } from "@starter/contracts";
 
 /** 时间线元素上限，防止长 Run 的内存无界增长；超限丢最旧的。 */
@@ -28,7 +28,7 @@ interface LiveMessageEntry {
  *
  * 它是流式视图的服务端副本，不是持久事实：Run 进终态后由 Run Service 丢弃，
  * 客户端改从 transcript 读取。产品前端自己折叠事件时按本文件的规则实现，
- * 两侧用 `test-fixtures/harness-timeline-isomorphism.json` 断言结果同构，
+ * 两侧用 `test-fixtures/run-event-timeline-isomorphism.json` 断言结果同构，
  * 保证刷新页面前后看到的内容一致。
  */
 export interface RunLiveSnapshotState {
@@ -51,79 +51,97 @@ export function createRunLiveSnapshot(maxTurns: number): RunLiveSnapshotState {
 }
 
 /**
- * 把一个已发布的 HarnessEvent 折叠进快照。就地更新，不返回新对象。
+ * 把一个已发布的 RunEvent 折叠进快照。就地更新，不返回新对象。
  *
  * sequence 不递增的事件直接忽略，与前端 reducer 的去重规则一致。
  */
 export function applyRunEvent(
   state: RunLiveSnapshotState,
-  event: HarnessEvent,
+  event: RunEvent,
 ): void {
   if (event.sequence <= state.lastSequence) return;
   state.lastSequence = event.sequence;
 
   switch (event.type) {
     case "turn.started":
-      state.turn = event.data.turn;
+      state.turn = event.turnIndex ?? state.turn;
       break;
     case "message.started": {
+      if (!event.messageId) break;
       const item: LiveMessageItem = {
         kind: "message",
-        messageId: event.data.messageId,
+        messageId: event.messageId,
         blocks: [],
         completed: false,
       };
       pushTimelineItem(state, item);
-      state.messages.set(event.data.messageId, {
+      state.messages.set(event.messageId, {
         item,
         thinkingBlocks: new Map(),
       });
       break;
     }
     case "message.delta": {
-      const entry = state.messages.get(event.data.messageId);
+      const entry = event.messageId
+        ? state.messages.get(event.messageId)
+        : undefined;
       if (!entry) break;
       appendText(entry, event.data.delta);
       break;
     }
     case "thinking.started": {
-      const entry = state.messages.get(event.data.messageId);
+      const entry = event.messageId
+        ? state.messages.get(event.messageId)
+        : undefined;
       if (!entry) break;
       thinkingBlock(entry, event.data.blockIndex);
       break;
     }
     case "thinking.delta": {
-      const entry = state.messages.get(event.data.messageId);
+      const entry = event.messageId
+        ? state.messages.get(event.messageId)
+        : undefined;
       if (!entry) break;
       const block = thinkingBlock(entry, event.data.blockIndex);
       if (block) block.text += event.data.delta;
       break;
     }
     case "thinking.completed": {
-      const entry = state.messages.get(event.data.messageId);
+      const entry = event.messageId
+        ? state.messages.get(event.messageId)
+        : undefined;
       if (!entry) break;
       const block = thinkingBlock(entry, event.data.blockIndex);
-      if (block) block.text = event.data.content;
+      // 没有安全摘要时保留 delta 累积出来的正文，不清空已经展示的思考块。
+      if (block && event.data.summary !== null) {
+        block.text = event.data.summary;
+      }
       break;
     }
     case "message.completed": {
-      const entry = state.messages.get(event.data.messageId);
+      const entry = event.messageId
+        ? state.messages.get(event.messageId)
+        : undefined;
       if (!entry) break;
       completeMessage(entry, event.data.content, event.data.usage ?? null);
       break;
     }
     case "tool.started":
-      upsertTool(state, event.data.toolCallId, event.data.name).status =
-        "running";
+      if (event.toolCallId) {
+        upsertTool(state, event.toolCallId, event.data.name).status = "running";
+      }
       break;
     case "tool.progress":
-      upsertTool(state, event.data.toolCallId, event.data.name).safeSummary =
-        event.data.safeSummary;
+      if (event.toolCallId) {
+        upsertTool(state, event.toolCallId, "tool").safeSummary =
+          event.data.summary;
+      }
       break;
     case "tool.completed": {
-      const tool = upsertTool(state, event.data.toolCallId, event.data.name);
+      if (!event.toolCallId) break;
+      const tool = upsertTool(state, event.toolCallId, event.data.name);
       tool.status = event.data.status;
-      tool.safeSummary = event.data.safeSummary;
+      tool.safeSummary = event.data.summary;
       break;
     }
     case "context.compacted":

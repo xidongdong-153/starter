@@ -76,6 +76,10 @@ export interface AiToolExecutionAuditHandle {
   id: string;
   startedAt: Date;
   requestId?: string;
+  runId?: string | null;
+  turnId?: string | null;
+  stepId?: string | null;
+  toolCallId?: string | null;
 }
 
 export function createAiUsageAuditService(
@@ -139,22 +143,37 @@ export function createAiUsageAuditService(
   }
 
   function beginToolExecution(input: {
+    /** 由 Tool adapter 在审计 begin 前生成。 */
+    id: string;
     modelCallId: string | null;
     requestId?: string;
+    runId?: string | null;
+    turnId?: string | null;
+    stepId?: string | null;
+    toolCallId?: string | null;
     toolName: string;
     toolVersion: string | null;
     timeoutMs: number;
   }): AiToolExecutionAuditHandle | null {
     if (!input.modelCallId) return null;
-    const handle = {
-      id: generateId(),
+    const handle: AiToolExecutionAuditHandle = {
+      id: input.id,
       startedAt: new Date(),
       requestId: input.requestId,
+      runId: input.runId,
+      turnId: input.turnId,
+      stepId: input.stepId,
+      toolCallId: input.toolCallId,
     };
     try {
       repository.beginToolExecution({
         id: handle.id,
-        aiCallId: input.modelCallId,
+        runId: input.runId,
+        turnId: input.turnId,
+        stepId: input.stepId,
+        toolCallId: input.toolCallId,
+        modelCallId: input.modelCallId,
+        requestId: input.requestId,
         toolName: input.toolName,
         toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
@@ -175,7 +194,8 @@ export function createAiUsageAuditService(
   function beginAgentModelCall(
     input: Parameters<PiModelCallAudit["beginModelCall"]>[0],
   ): string | null {
-    const id = generateId();
+    // ID 由调用方（原生模型流 / compaction 代理）在请求开始前生成。
+    const id = input.id;
     try {
       repository.beginModelCall({
         id,
@@ -188,8 +208,11 @@ export function createAiUsageAuditService(
         principalKind: input.principalKind ?? "starter_user",
         scenario: "agent_run",
         runId: input.runId,
+        turnId: input.turnId,
+        stepId: input.stepId,
         providerId: input.model.providerId,
         modelId: input.model.modelId,
+        api: input.api ?? null,
         startedAt: input.startedAt,
         timeoutMs: input.timeoutMs,
       });
@@ -213,6 +236,11 @@ export function createAiUsageAuditService(
         errorCode: input.errorCode,
         usage: input.usage,
         cost: input.cost,
+        ttftMs: input.ttftMs ?? null,
+        chunkCount: input.chunkCount ?? null,
+        responseModel: input.responseModel ?? null,
+        responseId: input.responseId ?? null,
+        httpStatus: input.httpStatus ?? null,
       },
       input.requestId,
     );

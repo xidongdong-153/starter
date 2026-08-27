@@ -4,6 +4,8 @@ import type { AppDatabase, DatabaseBundle } from "@api/infra/db/client.js";
 import type { Mailer } from "@api/infra/mail/index.js";
 import type { StorageDriver } from "@api/infra/storage/index.js";
 import type { AgentSessionStore } from "@api/infra/agent/pi-session-store.js";
+import type { TelemetryContext } from "@earendil-works/pi-telemetry";
+import { createAiTelemetryContext } from "@api/infra/telemetry/index.js";
 import type {
   ActiveRunRegistry,
   PiAgentExecutor,
@@ -12,6 +14,8 @@ import { createActiveRunRegistry } from "@api/infra/agent/index.js";
 import type { AiGateway, AiRuntime } from "@api/infra/ai/index.js";
 import type { AiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
 import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
+import type { AiOutputContractRegistry } from "@api/modules/ai/output/output-contract-registry.js";
+import { createAiOutputContractRegistry } from "@api/modules/ai/output/output-contract-registry.js";
 import { createTestAiTools } from "@api/modules/ai/tool/test-tools.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
 import {
@@ -31,6 +35,9 @@ export interface AppRuntime {
   ai: AiRuntime;
   aiGateway: AiGateway;
   aiTools: AiToolRegistry;
+  aiOutputContracts: AiOutputContractRegistry;
+  /** AI Runtime 的 telemetry 根上下文，已包隔离层。 */
+  aiTelemetry: TelemetryContext;
   agentSessionStore: AgentSessionStore;
   activeRunRegistry: ActiveRunRegistry;
   /** Run 模块可注入的 executor；未注入时由 ai.route 层创建。 */
@@ -50,6 +57,9 @@ export interface RuntimeDeps {
   ai?: AiRuntime;
   aiGateway?: AiGateway;
   aiTools?: AiToolRegistry;
+  aiOutputContracts?: AiOutputContractRegistry;
+  /** 测试时注入 InMemory telemetry context，默认 no-op。 */
+  telemetryContext?: TelemetryContext;
   agentSessionStore?: AgentSessionStore;
   /** 测试时替换 active Run registry，隔离 lane 冲突。 */
   activeRunRegistry?: ActiveRunRegistry;
@@ -102,6 +112,15 @@ export function createRuntime(
   const aiTools =
     deps.aiTools ??
     createAiToolRegistry(env.AI_TEST_TOOLS_ENABLED ? createTestAiTools() : []);
+  const aiOutputContracts =
+    deps.aiOutputContracts ?? createAiOutputContractRegistry();
+  const aiTelemetry = createAiTelemetryContext(deps.telemetryContext, {
+    onFailure: (failure) =>
+      createChildLogger(logger, "ai-telemetry").warn(
+        failure,
+        "AI telemetry 记录失败，已忽略",
+      ),
+  });
   const activeRunRegistry = deps.activeRunRegistry ?? createActiveRunRegistry();
   const auth = createAuth(
     database.db,
@@ -133,6 +152,8 @@ export function createRuntime(
     ai,
     aiGateway,
     aiTools,
+    aiOutputContracts,
+    aiTelemetry,
     agentSessionStore,
     activeRunRegistry,
     piAgentExecutor: deps.piAgentExecutor,

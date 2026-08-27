@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-Web 作为产品前端调用 AI Runtime API（Agent Session、Agent Run、HarnessEvent SSE、Transcript）时用本规范。控制面（Provider、模型、Prompt、Skill、Agent、凭据、用量）不在 Web，归 `apps/admin`。
+Web 作为产品前端调用 AI Runtime API（Agent Session、Agent Run、RunEvent SSE、Transcript）时用本规范。控制面（Provider、模型、Prompt、Skill、Agent、凭据、用量）不在 Web，归 `apps/admin`。
 
 参考实现：`app/(site)/chat/`、`app/(site)/_components/chat/`、`hooks/use-chat-run.ts`、`lib/ai/`、`lib/api/ai-chat.api.ts`。
 
@@ -11,22 +11,22 @@ Web 作为产品前端调用 AI Runtime API（Agent Session、Agent Run、Harnes
 ```ts
 // lib/ai/chat-events.ts —— 纯函数，不 import React、不碰 DOM
 export function createChatRunState(maxTurns?: number): ChatRunState;
-export function applyHarnessEvent(
+export function applyRunEvent(
   state: ChatRunState,
-  event: HarnessEvent,
+  event: RunEvent,
 ): ChatRunState; // 返回新对象
 export function toLiveSnapshot(state: ChatRunState): AgentRunLiveSnapshot;
 
-// lib/ai/harness-stream.ts
+// lib/ai/run-event-stream.ts
 export function startRunStream(input: {
   sessionId: string;
   agentId: string;
   input: string;
   signal: AbortSignal;
-}): AsyncGenerator<HarnessEvent>;
+}): AsyncGenerator<RunEvent>;
 ```
 
-接口归属：JSON 请求放 `lib/api/*.api.ts`，SSE 放 `lib/ai/harness-stream.ts`，Run 编排放 `hooks/`，纯协议逻辑放 `lib/ai/`。
+接口归属：JSON 请求放 `lib/api/*.api.ts`，创建 Run 的 SSE 放 `lib/ai/run-event-stream.ts`，Run 编排放 `hooks/`，纯协议逻辑放 `lib/ai/`。已有 Run 的恢复流使用 API 的 `/events/stream` 入口，客户端不得重新 POST 创建 Run。
 
 ## 3. Contracts
 
@@ -41,16 +41,19 @@ export function startRunStream(input: {
 | 归档 Session | `DELETE /api/ai/sessions/{sessionId}`                  | `AgentSession`，只写 `archivedAt`，不物理删除 |
 | 历史         | `GET /api/ai/sessions/{sessionId}/transcript`          | 默认最新一页，items 时间正序 |
 | 启动 Run     | `POST /api/ai/sessions/{sessionId}/runs`               | `text/event-stream`       |
+| 恢复 Run     | `GET /api/ai/sessions/{sessionId}/runs/{runId}/events/stream` | `text/event-stream`，支持 `afterSequence` 或 `Last-Event-ID` |
 | Run 状态     | `GET /api/ai/sessions/{sessionId}/runs/{runId}`         | `AgentRun`，含可选 `live` |
 | 停止生成     | `POST /api/ai/sessions/{sessionId}/runs/{runId}/abort`  | `AgentRun`                |
 
 启动 Run 的响应不是 `{ ok, data, meta }` envelope，不能过 `unwrapApiData`，它会把整个流当 JSON 读掉。因为是 POST，`EventSource` 也用不了：拿 `Response` 后自己读 `response.body`。
 
+已有 Run 的恢复请求使用 `GET /api/ai/sessions/{sessionId}/runs/{runId}/events/stream`，可传 `afterSequence` 或 `Last-Event-ID`。恢复请求不能再次 POST 创建 Run；未知 `Last-Event-ID` 按 400 请求错误处理。
+
 SSE 帧解析规则：
 
 - 按空行切帧，同时兼容 `\n\n` 和 `\r\n\r\n`；`split` 后保留最后一段残帧，等下一个 chunk 拼上。
 - 只取 `data:` 行，跳过 `id:`、`event:` 和以 `:` 开头的注释。API 心跳是 `": heartbeat\n\n"`，见 `apps/api/src/modules/ai/run/run.route.ts`。
-- 每帧 `JSON.parse` 后用 `harnessEventSchema.safeParse`，失败只丢该帧，不中断整个流。
+- 每帧 `JSON.parse` 后用 `runEventSchema.safeParse`，失败只丢该帧，不中断整个流。
 - 流结束前要能区分「收到过事件但断了」和「一个事件都没收到」。
 
 ## 4. Validation & Error Matrix
@@ -75,13 +78,13 @@ SSE 帧解析规则：
 
 ## 5. 事件归并
 
-折叠规则以 `apps/api/src/modules/ai/run/run.live-snapshot.ts` 为准，产出结构与 `agentRunLiveSnapshotSchema` 的 timeline 同构。两侧用 `test-fixtures/harness-timeline-isomorphism.json` 双向校验。
+折叠规则以 `apps/api/src/modules/ai/run/run.live-snapshot.ts` 为准，产出结构与 `agentRunLiveSnapshotSchema` 的 timeline 同构。两侧用 `test-fixtures/run-event-timeline-isomorphism.json` 双向校验。
 
 必须一致的规则：
 
 - `sequence <= lastSequence` 的事件丢弃，用于重连去重。
 - `message.delta` 追加到最后一个 text 块，没有就新建。
-- `thinking.*` 按 `blockIndex` 定位块，`thinking.completed` 用 `content` 覆盖。
+- `thinking.*` 按 `blockIndex` 定位块，`thinking.completed` 只结束该块并保留已累积正文，不用完成事件重排或覆盖前面的增量。
 - `message.completed`：只有一个 text 块就用 `content` 覆盖；没有 text 块且 `content` 非空就追加；有多个 text 块时保留 delta 累积出的顺序，不重排也不合并。
 - `tool.*` 按 `toolCallId` upsert 同一个元素。
 - timeline 上限 128，单条 message 的块上限 64，超限丢最旧。
@@ -103,13 +106,13 @@ SSE 帧解析规则：
 
 归并测试至少覆盖：
 
-- fixture 同构：18 个事件 apply 后与 `liveSnapshot` 深度相等。
+- fixture 同构：`run-event-timeline-isomorphism.json` 的完整 RunEvent 序列 apply 后与 fixture 中的 `liveSnapshot` 深度相等。
 - 重复和更小的 sequence 被丢弃。
 - 终态事件不进 timeline，`run.failed` 的 message 被保留。
 - timeline 128 上限、单条 message 64 块上限。
 - fixture 覆盖不到的规则自己构造事件：`content` 与 delta 累积不一致时以 content 为准、一条 message 内两个 `blockIndex` 的 thinking 块各自累积、无 text 块时追加、`tool.progress` 写进同一个 tool。
 
-> **Warning**: 只写 fixture 那一条主断言是不够的。fixture 里 `message.completed` 的 content 和 delta 恰好相同、每条 message 只有一个 thinking 块、没有 `tool.progress`，所以五类折叠漂移都不会被测出来。
+> **Warning**: fixture 主断言只验证一份完整执行样本。delta 与完成内容不一致、多个 thinking block、重复 sequence 和 Tool progress 等边界仍需由独立用例覆盖。
 >
 > 判断断言强度的方法是逐条改坏 `chat-events.ts` 的规则，确认对应用例会红。
 
@@ -133,7 +136,7 @@ const response = await apiRpc.api.ai.sessions[":sessionId"].runs.$post(
   { init: { headers: { accept: "text/event-stream" }, signal } },
 );
 if (!response.ok) throw await toApiRequestError(response);
-for await (const event of readHarnessEvents(response.body)) {
+for await (const event of startRunStream({ sessionId, agentId, input, signal })) {
   /* 折叠 */
 }
 ```

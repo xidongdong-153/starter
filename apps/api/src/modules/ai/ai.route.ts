@@ -26,6 +26,9 @@ import { createRequireAiRuntimePrincipal } from "./principal.guard.js";
 
 import {
   createAiAgentRunRepository,
+  createAiRunEventRepository,
+  createAiRunTraceRepository,
+  createAiRunLifecycleRepository,
   createAiAgentRunRoute,
   createAiAgentRunService,
 } from "./run/index.js";
@@ -45,6 +48,8 @@ import { createAiSkillRepository } from "./skill/skill.repository.js";
 import { createAiSkillRoute } from "./skill/skill.route.js";
 import { createAiSkillService } from "./skill/skill.service.js";
 import { createBuiltinAiToolRegistry } from "./tool/tool-catalog.js";
+import { createAiStructuredOutputRepository } from "./output/structured-output.repository.js";
+
 import { createAiUsageAuditRepository } from "./usage-audit/usage-audit.repository.js";
 import { createAiUsageAuditRoute } from "./usage-audit/usage-audit.route.js";
 import {
@@ -89,6 +94,7 @@ export function createAiRoute(runtime: AppRuntime) {
     injectedTools: runtime.aiTools.list(),
     skillRepository,
   });
+  const outputContractRegistry = runtime.aiOutputContracts;
   const configurationService = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
@@ -112,6 +118,7 @@ export function createAiRoute(runtime: AppRuntime) {
     promptService,
     skillRepository,
     toolRegistry,
+    outputContractRegistry,
   });
   const sessionRepository = createAiAgentSessionRepository(runtime.db);
   const sessionService = createAiAgentSessionService({
@@ -146,16 +153,22 @@ export function createAiRoute(runtime: AppRuntime) {
       getProviderRequestEnv: runtime.ai.getProviderRequestEnv,
       audit: usageAuditService.createAgentModelCallAudit(),
       toolAudit: usageAuditService.createAgentToolExecutionAudit(),
+      lifecycle: createAiRunLifecycleRepository(runtime.db),
+      logger: runtime.logger.child({ module: "ai-executor" }),
       requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
     });
   const runService = createAiAgentRunService({
     repository: createAiAgentRunRepository(runtime.db, sessionRepository),
+    eventRepository: createAiRunEventRepository(runtime.db),
+    traceRepository: createAiRunTraceRepository(runtime.db),
     sessionRepository,
     sessionStore: runtime.agentSessionStore,
     agentService: agentDefinitionService,
     registry: runtime.activeRunRegistry,
     executor: runExecutor,
     logger: runtime.logger.child({ module: "ai-run" }),
+    telemetry: runtime.aiTelemetry,
+    structuredOutputRepository: createAiStructuredOutputRepository(runtime.db),
   });
   void runService
     .recoverInterrupted()

@@ -117,7 +117,7 @@ sequenceDiagram
   X->>PS: 追加 assistant message
   X->>DB: ai_model_calls
   X-->>S: 终态 + finalEntryId
-  S->>PS: 追加 starter.run.v1
+  S->>PS: 追加 starter.run
   S->>DB: UPDATE ai_agent_runs 终态
   S-->>R: 唯一终态事件
   R-->>C: SSE run.completed / failed / aborted
@@ -179,7 +179,7 @@ flowchart TD
   Live["live 快照<br/>timeline + blocks"]
   Msg["Pi message entry<br/>user / assistant / tool result"]
   Comp["Pi compaction entry"]
-  Term["Pi CustomEntry<br/>starter.run.v1"]
+  Term["Pi CustomEntry<br/>starter.run"]
   MCall["ai_model_calls"]
   TExec["ai_tool_executions"]
   RunRow["ai_agent_runs"]
@@ -234,7 +234,7 @@ SSE 断开不 abort Run。Route 只停止往这个连接写数据，Agent 继续
 
 ### 5.3 两个 SQLite
 
-`agent-sessions.db`（路径来自 `AGENT_SESSION_DATABASE_PATH`，默认 `./data/agent-sessions.db`）存 Session metadata、lane 树和 branch、user / assistant / tool result message、压缩 entry、`starter.run.v1` 终态 entry。它不存 Starter 用户归属、Provider secret、Agent 业务配置和主库 Run 索引。
+`agent-sessions.db`（路径来自 `AGENT_SESSION_DATABASE_PATH`，默认 `./data/agent-sessions.db`）存 Session metadata、lane 树和 branch、user / assistant / tool result message、压缩 entry、`starter.run` 终态 entry。它不存 Starter 用户归属、Provider secret、Agent 业务配置和主库 Run 索引。
 
 `app.db`（`DATABASE_PATH`，默认 `./data/app.db`）存 AI 配置、业务索引和审计。表清单和禁止落库的字段见 [maintenance.md](./maintenance.md)。
 
@@ -262,7 +262,7 @@ stateDiagram-v2
 终态写入顺序固定：
 
 1. 等 Executor 的结果。
-2. 往 Pi 写 `starter.run.v1`。
+2. 往 Pi 写 `starter.run`。
 3. 条件更新 `ai_agent_runs`，只允许从非终态更新。
 4. 主库更新成功才发唯一的终态事件。
 5. 结束事件队列，删掉 live 快照，释放活跃登记和 lane lease。
@@ -293,7 +293,7 @@ flowchart TD
   Active -->|"是"| Skip["跳过，仍在跑"]
   Active -->|"否"| Sess{"Session 存在且在 scope 内 ?"}
   Sess -->|"否"| Int1["标记 interrupted"]
-  Sess -->|"是"| Read["读该 lane 的 starter.run.v1"]
+  Sess -->|"是"| Read["读该 lane 的 starter.run"]
   Read --> Count{"entry 数量"}
   Count -->|"0"| Int2["标记 interrupted"]
   Count -->|"大于 1"| Corrupt["记 corrupted 并标记 interrupted"]

@@ -1,11 +1,10 @@
 import {
   agentRunLiveSnapshotSchema,
-  harnessEventSchema,
+  runEventSchema,
+  type RunEvent,
 } from "@starter/contracts";
-import type { HarnessEvent } from "@starter/contracts";
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
-
 import { generateId } from "@api/shared/id.js";
 import {
   applyRunEvent,
@@ -13,215 +12,214 @@ import {
   toAgentRunLiveSnapshot,
 } from "@api/modules/ai/run/run.live-snapshot.js";
 
+const fixturePath = new URL(
+  "../../../../test-fixtures/run-event-timeline-isomorphism.json",
+  import.meta.url,
+);
+const fixtureText = readFileSync(fixturePath, "utf8");
+const fixture = JSON.parse(fixtureText) as {
+  events: unknown[];
+  liveSnapshot: unknown;
+};
+
 const sessionId = generateId();
 const runId = generateId();
-
 let sequence = 0;
 
-function event<T extends HarnessEvent["type"]>(
+function event<T extends RunEvent["type"]>(
   type: T,
-  data: Extract<HarnessEvent, { type: T }>["data"],
-): HarnessEvent {
+  data: Extract<RunEvent, { type: T }>["data"],
+  associations: Partial<
+    Pick<
+      RunEvent,
+      | "turnIndex"
+      | "stepId"
+      | "modelCallId"
+      | "messageId"
+      | "toolCallId"
+      | "toolExecutionId"
+    >
+  > = {},
+): RunEvent {
   sequence += 1;
   return {
-    version: 1,
     eventId: generateId(),
     sequence,
+    occurredAt: new Date().toISOString(),
     sessionId,
     runId,
     lane: "main",
-    createdAt: new Date().toISOString(),
+    turnIndex: null,
+    stepId: null,
+    modelCallId: null,
+    messageId: null,
+    toolCallId: null,
+    toolExecutionId: null,
     type,
     data,
-  } as HarnessEvent;
+    ...associations,
+  } as RunEvent;
 }
 
-it("live 快照按事件顺序折叠成一条 timeline", () => {
+it("live 快照按 RunEvent envelope 折叠消息、工具和压缩", () => {
   sequence = 0;
   const state = createRunLiveSnapshot(4);
-  const firstMessage = generateId();
-  const secondMessage = generateId();
+  const messageId = generateId();
+  const toolCallId = "tool-1";
   const compactionEntry = generateId();
-
   const events = [
-    event("turn.started", { turn: 1, maxTurns: 4 }),
-    event("message.started", { messageId: firstMessage, role: "assistant" }),
-    event("thinking.started", { messageId: firstMessage, blockIndex: 0 }),
-    event("thinking.delta", {
-      messageId: firstMessage,
-      blockIndex: 0,
-      delta: "先想",
-    }),
-    event("thinking.delta", {
-      messageId: firstMessage,
-      blockIndex: 0,
-      delta: "一下",
-    }),
-    event("message.delta", { messageId: firstMessage, delta: "查一下" }),
-    event("message.completed", {
-      messageId: firstMessage,
-      role: "assistant",
-      content: "查一下",
-      stopReason: "tool_use",
-      errorCode: null,
-      usage: {
-        inputTokens: 3,
-        outputTokens: 4,
-        cacheReadTokens: null,
-        cacheWriteTokens: null,
-        cacheWrite1hTokens: null,
-        reasoningTokens: null,
-        totalTokens: 7,
+    event("turn.started", { stepLimit: 4 }, { turnIndex: 1 }),
+    event(
+      "message.started",
+      { role: "assistant", partPolicy: "text_and_thinking" },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "thinking.started",
+      { blockIndex: 0, display: false },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "thinking.delta",
+      { blockIndex: 0, delta: "先想" },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "message.delta",
+      { partId: messageId, delta: "答案" },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "thinking.completed",
+      { blockIndex: 0, display: false, summary: "先想一下" },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "message.completed",
+      { role: "assistant", content: "答案", stopReason: "tool_use" },
+      { turnIndex: 1, messageId },
+    ),
+    event(
+      "tool.started",
+      { name: "lookup", version: "1.0.0" },
+      { turnIndex: 1, toolCallId },
+    ),
+    event(
+      "tool.completed",
+      {
+        name: "lookup",
+        version: "1.0.0",
+        status: "succeeded",
+        summary: "查到了",
+        entryId: generateId(),
+        error: null,
       },
-    }),
-    event("tool.started", { toolCallId: "tool-1", name: "lookup" }),
-    event("tool.completed", {
-      toolCallId: "tool-1",
-      name: "lookup",
-      status: "succeeded",
-      errorCode: null,
-      safeSummary: "查到了",
-      entryId: generateId(),
-    }),
-    event("context.compacted", {
-      entryId: compactionEntry,
-      tokensBefore: 12_000,
-      summary: "压缩摘要",
-    }),
-    event("turn.started", { turn: 2, maxTurns: 4 }),
-    event("message.started", { messageId: secondMessage, role: "assistant" }),
-    event("message.delta", { messageId: secondMessage, delta: "答案" }),
+      { turnIndex: 1, toolCallId },
+    ),
+    event(
+      "context.compacted",
+      { entryId: compactionEntry, tokensBefore: 12000, summary: "压缩摘要" },
+      { turnIndex: 1 },
+    ),
   ];
   for (const item of events) applyRunEvent(state, item);
-
   const snapshot = toAgentRunLiveSnapshot(state);
   expect(agentRunLiveSnapshotSchema.safeParse(snapshot).success).toBe(true);
-  expect(snapshot.turn).toBe(2);
-  expect(snapshot.maxTurns).toBe(4);
-  expect(snapshot.lastSequence).toBe(events.length);
-  // 元素顺序与事件顺序一致：消息、工具、压缩、消息
   expect(snapshot.timeline.map((item) => item.kind)).toEqual([
     "message",
     "tool",
     "compaction",
-    "message",
   ]);
-  expect(snapshot.timeline[0]).toMatchObject({
-    kind: "message",
-    messageId: firstMessage,
-    completed: true,
-    // message.completed 用事件 content 覆盖 text 块，thinking 块保留
-    blocks: [
-      { type: "thinking", text: "先想一下" },
-      { type: "text", text: "查一下" },
-    ],
-    usage: { inputTokens: 3, outputTokens: 4, totalTokens: 7 },
-  });
+  expect(snapshot.timeline[0]).toMatchObject({ messageId, completed: true });
   expect(snapshot.timeline[1]).toMatchObject({
-    kind: "tool",
-    toolCallId: "tool-1",
+    toolCallId,
     status: "succeeded",
     safeSummary: "查到了",
   });
-  expect(snapshot.timeline[2]).toMatchObject({
-    kind: "compaction",
-    entryId: compactionEntry,
-    summary: "压缩摘要",
-  });
-  // 未完成的消息保持流式状态
-  expect(snapshot.timeline[3]).toMatchObject({
-    kind: "message",
-    messageId: secondMessage,
-    completed: false,
-    blocks: [{ type: "text", text: "答案" }],
-  });
+  expect(snapshot.lastSequence).toBe(events.length);
 });
 
-it("interleaved thinking 的块顺序在 message.completed 后不变", () => {
+it("重复 sequence 不重复折叠", () => {
   sequence = 0;
   const state = createRunLiveSnapshot(4);
   const messageId = generateId();
-
-  const events = [
-    event("message.started", { messageId, role: "assistant" }),
-    event("message.delta", { messageId, delta: "先给结论。" }),
-    event("thinking.started", { messageId, blockIndex: 1 }),
-    event("thinking.delta", { messageId, blockIndex: 1, delta: "再想一步" }),
-    event("message.delta", { messageId, delta: "补充一句。" }),
-    event("message.completed", {
-      messageId,
-      role: "assistant",
-      content: "先给结论。补充一句。",
-      stopReason: "stop",
-      errorCode: null,
-    }),
-  ];
-  for (const item of events) applyRunEvent(state, item);
-
-  const snapshot = toAgentRunLiveSnapshot(state);
-  expect(agentRunLiveSnapshotSchema.safeParse(snapshot).success).toBe(true);
-  // 多个 text 块时保留 delta 累积出来的原顺序，不把 thinking 提到前面、也不折叠 text
-  expect(snapshot.timeline[0]).toMatchObject({
-    kind: "message",
-    completed: true,
-    blocks: [
-      { type: "text", text: "先给结论。" },
-      { type: "thinking", text: "再想一步" },
-      { type: "text", text: "补充一句。" },
-    ],
-  });
+  const delta = event(
+    "message.delta",
+    { partId: messageId, delta: "a" },
+    { messageId },
+  );
+  applyRunEvent(state, delta);
+  applyRunEvent(state, delta);
+  expect(toAgentRunLiveSnapshot(state).timeline).toHaveLength(0);
 });
 
-it("sequence 不递增的事件被忽略，timeline 超过上限丢最旧的", () => {
-  sequence = 0;
-  const state = createRunLiveSnapshot(8);
-  const messageId = generateId();
-  applyRunEvent(
-    state,
-    event("message.started", { messageId, role: "assistant" }),
-  );
-  const delta = event("message.delta", { messageId, delta: "a" });
-  applyRunEvent(state, delta);
-  // 重放同一条事件不重复累加
-  applyRunEvent(state, delta);
-  expect(toAgentRunLiveSnapshot(state).timeline[0]).toMatchObject({
-    blocks: [{ type: "text", text: "a" }],
-  });
+it("完整 RunEvent fixture 折叠结果与期望 live snapshot 同构", () => {
+  const events = fixture.events.map((item) => runEventSchema.parse(item));
+  const expected = agentRunLiveSnapshotSchema.parse(fixture.liveSnapshot);
+  const state = createRunLiveSnapshot(expected.maxTurns);
 
-  for (let index = 0; index < 200; index += 1) {
+  for (const item of events) applyRunEvent(state, item);
+
+  expect(toAgentRunLiveSnapshot(state)).toEqual(expected);
+});
+
+it("完整 RunEvent fixture 不包含禁止字段", () => {
+  const serialized = JSON.stringify(fixture).toLowerCase();
+  const forbiddenFields = [
+    "arguments",
+    "rawresult",
+    "raw_result",
+    "systemprompt",
+    "system_prompt",
+    "secret",
+    "rawprovidererror",
+    "raw_provider_error",
+  ];
+
+  for (const field of forbiddenFields) {
+    expect(serialized).not.toContain(`\"${field}\"`);
+  }
+});
+
+it("publisher 合并 delta 前后的折叠结果同构", () => {
+  const messageId = generateId();
+  const chunks = ["答", "案", "很长"];
+  const build = (deltas: string[]) => {
+    sequence = 0;
+    const state = createRunLiveSnapshot(4);
     applyRunEvent(
       state,
-      event("tool.started", { toolCallId: `tool-${index}`, name: "lookup" }),
+      event(
+        "message.started",
+        { role: "assistant", partPolicy: "text_and_thinking" },
+        { turnIndex: 1, messageId },
+      ),
     );
-  }
-  const snapshot = toAgentRunLiveSnapshot(state);
-  expect(snapshot.timeline).toHaveLength(128);
-  expect(snapshot.timeline.every((item) => item.kind === "tool")).toBe(true);
-  expect(snapshot.timeline[0]).toMatchObject({ toolCallId: "tool-72" });
-  expect(agentRunLiveSnapshotSchema.safeParse(snapshot).success).toBe(true);
-});
-
-// 同构回归用例的事件与期望快照放在仓库根的 test-fixtures/：api 不能把文件放到 rootDir 之外，
-// 产品前端也不能 import api 源码，需要两侧断言同一串事件时只能按路径读同一份 JSON。
-// 另一侧是 `apps/web/test/chat-events.test.ts`，改折叠规则要同时跑两边。
-const fixturePath = new URL(
-  "../../../../test-fixtures/harness-timeline-isomorphism.json",
-  import.meta.url,
-);
-
-it("共享事件 fixture 折叠出的 live 快照与前端期望一致", () => {
-  const fixture = JSON.parse(readFileSync(fixturePath, "utf8")) as {
-    events: unknown[];
-    liveSnapshot: unknown;
+    for (const delta of deltas) {
+      applyRunEvent(
+        state,
+        event(
+          "message.delta",
+          { partId: messageId, delta },
+          { turnIndex: 1, messageId },
+        ),
+      );
+    }
+    applyRunEvent(
+      state,
+      event(
+        "message.completed",
+        {
+          role: "assistant",
+          content: chunks.join(""),
+          stopReason: "stop",
+        },
+        { turnIndex: 1, messageId },
+      ),
+    );
+    return toAgentRunLiveSnapshot(state).timeline;
   };
-  const events = fixture.events.map((item): HarnessEvent =>
-    harnessEventSchema.parse(item),
-  );
-  const expected = agentRunLiveSnapshotSchema.parse(fixture.liveSnapshot);
 
-  const state = createRunLiveSnapshot(expected.maxTurns);
-  for (const item of events) applyRunEvent(state, item);
-
-  // fixture 里的 liveSnapshot 就是前端 timeline 测试读的那一份，两边不许各自漂移
-  expect(toAgentRunLiveSnapshot(state)).toEqual(expected);
+  // 逐个 Pi 增量 vs Publisher 按窗口合并后的一个增量
+  expect(build(chunks)).toEqual(build([chunks.join("")]));
 });

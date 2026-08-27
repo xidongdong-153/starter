@@ -622,12 +622,44 @@ const agentToolRefsSchema = z
 
 const strictAiModelRefSchema = aiModelRefSchema.strict()
 
+export const aiOutputRenderKindSchema = z.enum(['plan', 'table', 'scorecard', 'decision', 'form', 'json'])
+export type AiOutputRenderKind = z.infer<typeof aiOutputRenderKindSchema>
+
+export const aiOutputModeSchema = z.enum(['optional', 'required'])
+export type AiOutputMode = z.infer<typeof aiOutputModeSchema>
+
+export const aiOutputVisibilitySchema = z.enum(['product', 'admin'])
+export type AiOutputVisibility = z.infer<typeof aiOutputVisibilitySchema>
+
+export const aiOutputContractRefSchema = z.strictObject({
+  name: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[a-z][a-z0-9._-]*$/u),
+  version: z.string().regex(/^\d+\.\d+\.\d+$/u),
+  schemaHash: z.string().regex(/^[a-f0-9]{64}$/u),
+  renderKind: aiOutputRenderKindSchema,
+  visibility: aiOutputVisibilitySchema,
+  mode: aiOutputModeSchema,
+})
+export type AiOutputContractRef = z.infer<typeof aiOutputContractRefSchema>
+
+export const agentRunOutputContractSchema = aiOutputContractRefSchema.nullable()
+
+/** Structured Output 的服务端校验后取值；`ai_structured_outputs.value_json` 读写用同一个 schema。 */
+export const aiStructuredOutputValueSchema = z.record(z.string(), z.unknown())
+export type AiStructuredOutputValue = z.infer<typeof aiStructuredOutputValueSchema>
+
 export const agentDefinitionConfigSchema = z.strictObject({
   schemaVersion: z.literal(2),
   model: strictAiModelRefSchema.nullable(),
   systemPromptId: uuidSchema.nullable(),
   skillIds: agentSkillIdsSchema,
   toolRefs: agentToolRefsSchema,
+  outputContract: aiOutputContractRefSchema.nullable().default(null),
+  outputMode: aiOutputModeSchema.default('optional'),
   thinkingLevel: agentThinkingLevelSchema,
   maxTurns: z.number().int().min(1).max(32),
 })
@@ -640,6 +672,8 @@ export const defaultAgentDefinitionConfig = agentDefinitionConfigSchema.parse({
   systemPromptId: null,
   skillIds: [],
   toolRefs: [],
+  outputContract: null,
+  outputMode: 'optional',
   thinkingLevel: 'off',
   maxTurns: 8,
 })
@@ -906,6 +940,8 @@ export const agentRunSnapshotSchema = z.strictObject({
   systemPromptId: uuidSchema.nullable(),
   skillIds: agentSkillIdsSchema,
   toolRefs: agentToolRefsSchema,
+  outputContract: aiOutputContractRefSchema.nullable().default(null),
+  outputMode: aiOutputModeSchema.default('optional'),
   thinkingLevel: agentThinkingLevelSchema,
   maxTurns: z.number().int().min(1).max(32),
 })
@@ -1025,195 +1061,285 @@ export type SteerAgentRunInput = z.infer<typeof steerAgentRunSchema>
 export const followUpAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
 export type FollowUpAgentRunInput = z.infer<typeof followUpAgentRunSchema>
 
-const harnessEventEnvelopeShape = {
-  version: z.literal(1),
+export const runEventLaneSchema = agentLaneSchema
+const runEventAssociationShape = {
+  turnIndex: z.number().int().min(1).nullable(),
+  stepId: uuidSchema.nullable(),
+  modelCallId: uuidSchema.nullable(),
+  messageId: uuidSchema.nullable(),
+  toolCallId: z.string().min(1).max(240).nullable(),
+  toolExecutionId: uuidSchema.nullable(),
+}
+
+const runEventEnvelopeShape = {
   eventId: uuidSchema,
   sequence: z.number().int().min(1),
-  sessionId: uuidSchema,
+  occurredAt: isoDateTimeSchema,
   runId: uuidSchema,
-  lane: agentLaneSchema,
-  createdAt: isoDateTimeSchema,
+  sessionId: uuidSchema,
+  lane: runEventLaneSchema,
+  ...runEventAssociationShape,
 }
 
-export const harnessRunStartedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('run.started'),
-  data: z.strictObject({
-    agentId: uuidSchema,
-    agentRevision: z.number().int().min(1),
-    model: strictAiModelRefSchema,
-  }),
+const runEventUsageShape = aiUsageSchema.optional()
+export const aiErrorCategorySchema = z.enum([
+  'auth',
+  'upstream',
+  'timeout',
+  'cancelled',
+  'storage',
+  'tool',
+  'validation',
+  'unknown',
+])
+export type AiErrorCategory = z.infer<typeof aiErrorCategorySchema>
+
+const runEventErrorSchema = z.strictObject({
+  code: apiErrorCodeSchema,
+  category: aiErrorCategorySchema,
+  retryable: z.boolean(),
 })
+const runEventToolStatusSchema = z.enum([
+  'succeeded',
+  'not_found',
+  'invalid_arguments',
+  'forbidden',
+  'failed',
+  'timed_out',
+  'cancelled',
+  'interrupted',
+])
+const runEventOutcomeSchema = z.enum(['succeeded', 'failed', 'aborted', 'retry', 'deferred', 'overflow'])
+const runEventSafeTextSchema = z.string().max(1000)
 
-export const harnessMessageStartedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('message.started'),
-  data: z.strictObject({ messageId: uuidSchema, role: z.literal('assistant') }),
+/**
+ * 工具上报的引用来源。产品事件 `source.available` 的 data 就是它。
+ *
+ * `uri` 只放可安全展示的 http/https 链接，服务端会按出站守卫的同级规则校验；
+ * `excerpt` 是脱敏摘要，不放原始工具结果。
+ */
+export const aiSourceSchema = z.strictObject({
+  sourceId: z.string().min(1).max(240),
+  kind: z.string().min(1).max(80),
+  title: z.string().min(1).max(500),
+  uri: z.string().url().nullable(),
+  excerpt: runEventSafeTextSchema.nullable(),
 })
+export type AiSource = z.infer<typeof aiSourceSchema>
 
-export const harnessMessageDeltaEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('message.delta'),
-  data: z.strictObject({ messageId: uuidSchema, delta: z.string() }),
-})
-
-export const harnessMessageCompletedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('message.completed'),
-  data: z.strictObject({
-    messageId: uuidSchema,
-    role: z.literal('assistant'),
-    content: z.string(),
-    stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
-    errorCode: apiErrorCodeSchema.nullable(),
-    /** 该次 assistant message 的 token 用量；读不到时省略，不编造 0 值。 */
-    usage: aiUsageSchema.nullish(),
-  }),
-})
-
-const harnessThinkingBlockShape = {
-  messageId: uuidSchema,
-  /** 同一条 message 内的内容块下标，直接用模型流的 contentIndex。 */
-  blockIndex: z.number().int().min(0),
-}
-
-export const harnessThinkingStartedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('thinking.started'),
-  data: z.strictObject({ ...harnessThinkingBlockShape }),
-})
-
-export const harnessThinkingDeltaEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('thinking.delta'),
-  data: z.strictObject({ ...harnessThinkingBlockShape, delta: z.string() }),
-})
-
-export const harnessThinkingCompletedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('thinking.completed'),
-  data: z.strictObject({ ...harnessThinkingBlockShape, content: z.string() }),
-})
-
-export const harnessToolStartedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('tool.started'),
-  data: z.strictObject({
-    toolCallId: z.string().min(1).max(240),
-    name: z.string().min(1).max(240),
-  }),
-})
-
-export const harnessToolProgressEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('tool.progress'),
-  data: z.strictObject({
-    toolCallId: z.string().min(1).max(240),
-    name: z.string().min(1).max(240),
-    safeSummary: z.string().max(1000).nullable(),
-  }),
-})
-
-export const harnessToolCompletedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('tool.completed'),
-  data: z.strictObject({
-    toolCallId: z.string().min(1).max(240),
-    name: z.string().min(1).max(240),
-    status: agentToolStatusSchema,
-    errorCode: apiErrorCodeSchema.nullable(),
-    safeSummary: z.string().max(1000).nullable(),
-    entryId: uuidSchema,
-  }),
-})
-
-export const harnessTurnStartedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('turn.started'),
-  data: z.strictObject({
-    turn: z.number().int().min(1),
-    maxTurns: z.number().int().min(1).max(32),
-  }),
-})
-
-export const harnessTurnCompletedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('turn.completed'),
-  data: z.strictObject({
-    turn: z.number().int().min(1),
-    maxTurns: z.number().int().min(1).max(32),
-    toolCallCount: z.number().int().min(0),
-  }),
-})
-
-export const harnessContextCompactedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('context.compacted'),
-  data: z.strictObject({
-    entryId: uuidSchema,
-    tokensBefore: z.number().int().min(0),
-    summary: z.string(),
-  }),
-})
-
-export const harnessRunCompletedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('run.completed'),
-  data: z.strictObject({
-    status: z.literal('completed'),
-    finalEntryId: uuidSchema,
-    /**
-     * `model_finished`：模型自己给出了文字回答。
-     * `max_turns`：撞上轮次上限，最后一段文字来自收尾轮。
-     */
-    reason: z.enum(['model_finished', 'max_turns']),
-  }),
-})
-
-export const harnessRunFailedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('run.failed'),
-  data: z.strictObject({
-    status: z.literal('failed'),
-    finalEntryId: uuidSchema.nullable(),
-    error: z.strictObject({
-      code: apiErrorCodeSchema,
-      message: z.string().min(1),
-      retryable: z.boolean(),
+const runEventSchemas = [
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('run.started'),
+    data: z.strictObject({
+      agentId: uuidSchema,
+      agentRevision: z.number().int().min(1),
+      model: strictAiModelRefSchema,
+      outputContract: aiOutputContractRefSchema.nullable(),
     }),
   }),
-})
-
-export const harnessRunAbortedEventSchema = z.strictObject({
-  ...harnessEventEnvelopeShape,
-  type: z.literal('run.aborted'),
-  data: z.strictObject({
-    status: z.literal('aborted'),
-    finalEntryId: uuidSchema.nullable(),
-    errorCode: z.literal('AI.REQUEST_ABORTED'),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('run.completed'),
+    data: z.strictObject({
+      finalEntryId: uuidSchema.nullable(),
+      reason: z.enum(['model_finished', 'max_turns', 'structured_output']),
+    }),
   }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('run.failed'),
+    data: z.strictObject({ error: runEventErrorSchema, finalEntryId: uuidSchema.nullable() }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('run.aborted'),
+    data: z.strictObject({ code: z.literal('AI.REQUEST_ABORTED') }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('turn.started'),
+    data: z.strictObject({ stepLimit: z.number().int().min(1).max(32) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('turn.completed'),
+    data: z.strictObject({
+      stepCount: z.number().int().min(0),
+      toolCount: z.number().int().min(0),
+      outcome: runEventOutcomeSchema,
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('step.started'),
+    data: z.strictObject({
+      kind: z.enum(['assistant', 'compaction', 'branch_summary']),
+      attempt: z.number().int().min(1),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('step.completed'),
+    data: z.strictObject({
+      kind: z.enum(['assistant', 'compaction', 'branch_summary']),
+      attempt: z.number().int().min(1),
+      outcome: runEventOutcomeSchema,
+      error: runEventErrorSchema.nullable(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('model_call.started'),
+    data: z.strictObject({
+      providerId: aiProviderIdSchema,
+      modelId: aiModelIdSchema,
+      api: z.string().min(1).max(80),
+      streaming: z.boolean(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('model_call.first_output'),
+    data: z.strictObject({ elapsedMs: z.number().int().min(0) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('model_call.completed'),
+    data: z.strictObject({
+      responseModel: aiModelIdSchema.nullable(),
+      responseId: z.string().max(240).nullable(),
+      stopReason: z.enum(['stop', 'length', 'tool_use', 'aborted', 'error', 'deferred']),
+      usage: aiUsageSchema.nullable(),
+      cost: aiCostSchema.nullable(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('model_call.failed'),
+    data: z.strictObject({ error: runEventErrorSchema }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('message.started'),
+    data: z.strictObject({ role: z.enum(['user', 'assistant']), partPolicy: z.enum(['text', 'text_and_thinking']) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('message.delta'),
+    data: z.strictObject({ partId: z.string().min(1).max(240), delta: z.string().max(8192) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('message.completed'),
+    data: z.strictObject({
+      role: z.enum(['user', 'assistant']),
+      content: z.string(),
+      stopReason: z.enum(['stop', 'length', 'tool_use']).nullable(),
+      usage: runEventUsageShape,
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('thinking.started'),
+    data: z.strictObject({ blockIndex: z.number().int().min(0), display: z.boolean() }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('thinking.delta'),
+    data: z.strictObject({ blockIndex: z.number().int().min(0), delta: z.string().max(8192) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('thinking.completed'),
+    data: z.strictObject({
+      blockIndex: z.number().int().min(0),
+      display: z.boolean(),
+      summary: runEventSafeTextSchema.nullable(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('tool.started'),
+    data: z.strictObject({ name: aiToolNameSchema, version: aiToolVersionSchema }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('tool.progress'),
+    data: z.strictObject({ summary: runEventSafeTextSchema, state: z.enum(['running', 'waiting', 'retrying']) }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('tool.completed'),
+    data: z.strictObject({
+      name: aiToolNameSchema,
+      version: aiToolVersionSchema,
+      status: runEventToolStatusSchema,
+      summary: runEventSafeTextSchema.nullable(),
+      entryId: uuidSchema.nullable(),
+      error: runEventErrorSchema.nullable(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('context.compacted'),
+    data: z.strictObject({
+      entryId: uuidSchema,
+      tokensBefore: z.number().int().min(0),
+      summary: runEventSafeTextSchema,
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('structured_output.available'),
+    data: z.strictObject({
+      contract: aiOutputContractRefSchema,
+      value: aiStructuredOutputValueSchema.nullable(),
+      referenceId: uuidSchema.nullable(),
+    }),
+  }),
+  z.strictObject({
+    ...runEventEnvelopeShape,
+    type: z.literal('source.available'),
+    data: aiSourceSchema,
+  }),
+] as const
+
+export const runEventSchema = z.discriminatedUnion('type', runEventSchemas)
+export type RunEvent = z.infer<typeof runEventSchema>
+
+export const runTimelineQuerySchema = z.strictObject({
+  afterSequence: z.coerce.number().int().min(0).default(0),
+  pageSize: z.coerce.number().int().min(1).max(200).default(100),
 })
+export type RunTimelineQuery = z.infer<typeof runTimelineQuerySchema>
 
-export const harnessEventSchema = z.discriminatedUnion('type', [
-  harnessRunStartedEventSchema,
-  harnessMessageStartedEventSchema,
-  harnessMessageDeltaEventSchema,
-  harnessMessageCompletedEventSchema,
-  harnessThinkingStartedEventSchema,
-  harnessThinkingDeltaEventSchema,
-  harnessThinkingCompletedEventSchema,
-  harnessToolStartedEventSchema,
-  harnessToolProgressEventSchema,
-  harnessToolCompletedEventSchema,
-  harnessTurnStartedEventSchema,
-  harnessTurnCompletedEventSchema,
-  harnessContextCompactedEventSchema,
-  harnessRunCompletedEventSchema,
-  harnessRunFailedEventSchema,
-  harnessRunAbortedEventSchema,
-])
+export const runTimelineSchema = z.strictObject({
+  items: z.array(runEventSchema),
+  afterSequence: z.number().int().min(0),
+  nextSequence: z.number().int().min(0).nullable(),
+  hasMore: z.boolean(),
+})
+export type RunTimeline = z.infer<typeof runTimelineSchema>
 
-export type HarnessEvent = z.infer<typeof harnessEventSchema>
+export const runTraceNodeSchema = z.strictObject({
+  id: uuidSchema,
+  parentId: uuidSchema.nullable(),
+  kind: z.enum(['run', 'turn', 'step', 'model_call', 'tool_execution']),
+  status: z.enum(['running', 'succeeded', 'failed', 'aborted', 'retry', 'deferred', 'overflow']),
+  startedAt: isoDateTimeSchema,
+  finishedAt: isoDateTimeSchema.nullable(),
+  durationMs: z.number().int().min(0).nullable(),
+  error: runEventErrorSchema.nullable(),
+  attributes: z.record(z.string(), z.string().max(240)),
+})
+export type RunTraceNode = z.infer<typeof runTraceNodeSchema>
+
+export const runTraceSchema = z.strictObject({
+  runId: uuidSchema,
+  nodes: z.array(runTraceNodeSchema).max(2000),
+})
+export type RunTrace = z.infer<typeof runTraceSchema>
 
 export const starterRunDataSchema = z
   .strictObject({
@@ -1248,7 +1374,7 @@ export type StarterRunData = z.infer<typeof starterRunDataSchema>
 export const starterRunEntrySchema = z.strictObject({
   type: z.literal('custom'),
   id: uuidSchema,
-  customType: z.literal('starter.run.v1'),
+  customType: z.literal('starter.run'),
   data: starterRunDataSchema,
 })
 
@@ -1283,6 +1409,13 @@ export type AiToolExecutionAuditStatus = z.infer<typeof aiToolExecutionAuditStat
 
 export const aiToolExecutionAuditSummarySchema = z.object({
   id: uuidSchema,
+  /** Run 关联只在 Agent Run 的 Tool 执行上有值；模型测试没有 Run。 */
+  runId: uuidSchema.nullable(),
+  turnId: uuidSchema.nullable(),
+  stepId: uuidSchema.nullable(),
+  modelCallId: uuidSchema.nullable(),
+  toolCallId: z.string().min(1).max(240).nullable(),
+  toolExecutionId: uuidSchema.nullable(),
   toolName: z.string().min(1).max(240),
   /** 已注册 Tool 的新记录必须写入精确版本；历史记录与未注册 Tool 的 not_found 记录允许 null。 */
   toolVersion: aiToolVersionSchema.nullable(),
@@ -1292,6 +1425,8 @@ export const aiToolExecutionAuditSummarySchema = z.object({
   durationMs: z.number().int().min(0).nullable(),
   timeoutMs: z.number().int().min(1),
   errorCode: z.string().max(120).nullable(),
+  /** 从 errorCode 推导的稳定失败类别；成功记录为 null。 */
+  errorCategory: aiErrorCategorySchema.nullable(),
 })
 export type AiToolExecutionAuditSummary = z.infer<typeof aiToolExecutionAuditSummarySchema>
 
@@ -1307,15 +1442,26 @@ export const aiModelCallAuditSchema = z
     externalUserId: z.string().nullable(),
     scenario: z.enum(['model_test', 'agent_run', 'legacy']),
     runId: uuidSchema.nullable(),
+    turnId: uuidSchema.nullable(),
+    stepId: uuidSchema.nullable(),
     providerId: aiProviderIdSchema,
     modelId: aiModelIdSchema,
+    api: z.string().min(1).max(80).nullable(),
     startedAt: isoDateTimeSchema,
     timeoutMs: z.number().int().min(1),
     finishedAt: isoDateTimeSchema.nullable(),
     durationMs: z.number().int().min(0).nullable(),
+    /** 首个模型输出的时延（ms）；没有输出时为 null。 */
+    ttftMs: z.number().int().min(0).nullable(),
+    chunkCount: z.number().int().min(0).nullable(),
+    responseModel: z.string().max(240).nullable(),
+    responseId: z.string().max(240).nullable(),
+    httpStatus: z.number().int().min(100).max(599).nullable(),
     result: aiModelCallResultSchema,
     stopReason: aiModelCallStopReasonSchema.nullable(),
     errorCode: z.string().max(120).nullable(),
+    /** 从 errorCode 推导的稳定失败类别；成功记录为 null。 */
+    errorCategory: aiErrorCategorySchema.nullable(),
     usage: aiUsageSchema,
     cost: aiCostSchema.nullable(),
   })

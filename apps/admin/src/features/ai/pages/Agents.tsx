@@ -76,7 +76,8 @@ function parseToolRefKey(key: string): AiToolRef {
   return { name, version }
 }
 
-function toConfig(values: AgentFormValues): AgentDefinitionConfig {
+// 结构化输出契约当前只由服务端注册、没有管理界面，编辑时原样带回，避免保存表单把已配置的契约清空。
+function toConfig(values: AgentFormValues, current: AgentDefinitionConfig | null): AgentDefinitionConfig {
   const [providerId, modelId] = values.modelKey?.split('\u0000') ?? []
   return {
     schemaVersion: 2,
@@ -84,6 +85,8 @@ function toConfig(values: AgentFormValues): AgentDefinitionConfig {
     systemPromptId: values.systemPromptId ?? null,
     skillIds: values.skillIds,
     toolRefs: values.toolRefs.map(parseToolRefKey),
+    outputContract: current?.outputContract ?? null,
+    outputMode: current?.outputMode ?? 'optional',
     thinkingLevel: values.thinkingLevel,
     maxTurns: values.maxTurns,
   }
@@ -353,7 +356,7 @@ export function Agents() {
       message.error(t('ai.agents.toolsVersionConflict'))
       return
     }
-    const config = toConfig(values)
+    const config = toConfig(values, editing?.config ?? null)
     try {
       if (editing) {
         const input: UpdateAgentDefinitionInput = {

@@ -48,7 +48,7 @@ it("创建、打开、追加并重放 Session transcript", async () => {
   }
 });
 
-it("隔离 lane，并保留 starter.run.v1 的原始 data", async () => {
+it("隔离 lane，并保留 starter.run 的原始 data", async () => {
   const fixture = await createFixture();
   try {
     const session = await fixture.store.createSession({ id: "session-1" });

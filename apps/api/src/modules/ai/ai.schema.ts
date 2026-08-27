@@ -7,6 +7,7 @@ import {
   real,
   sqliteTable,
   text,
+  uniqueIndex,
 } from "drizzle-orm/sqlite-core";
 
 import { user } from "@api/modules/auth/auth.schema.js";
@@ -478,6 +479,111 @@ export const aiAgentRuns = sqliteTable(
   ],
 );
 
+export const aiRunTurns = sqliteTable(
+  "ai_run_turns",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: "cascade" }),
+    turnIndex: integer("turn_index").notNull(),
+    outcome: text("outcome").notNull().default("running"),
+    startedAt: timestamp("started_at").notNull(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (table) => [
+    index("ai_run_turns_run_started_idx").on(
+      table.runId,
+      table.startedAt,
+      table.id,
+    ),
+    uniqueIndex("ai_run_turns_run_turn_uidx").on(table.runId, table.turnIndex),
+  ],
+);
+
+export const aiRunSteps = sqliteTable(
+  "ai_run_steps",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: "cascade" }),
+    turnId: text("turn_id")
+      .notNull()
+      .references(() => aiRunTurns.id, { onDelete: "cascade" }),
+    kind: text("kind").notNull(),
+    attempt: integer("attempt").notNull(),
+    outcome: text("outcome").notNull().default("running"),
+    errorCode: text("error_code"),
+    startedAt: timestamp("started_at").notNull(),
+    finishedAt: timestamp("finished_at"),
+  },
+  (table) => [
+    index("ai_run_steps_run_started_idx").on(
+      table.runId,
+      table.startedAt,
+      table.id,
+    ),
+    index("ai_run_steps_turn_started_idx").on(
+      table.turnId,
+      table.startedAt,
+      table.id,
+    ),
+  ],
+);
+
+export const aiRunEvents = sqliteTable(
+  "ai_run_events",
+  {
+    eventId: text("event_id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: "cascade" }),
+    sequence: integer("sequence").notNull(),
+    type: text("type").notNull(),
+    payloadJson: text("payload_json").notNull(),
+    occurredAt: timestamp("occurred_at").notNull(),
+  },
+  (table) => [
+    uniqueIndex("ai_run_events_run_sequence_uidx").on(
+      table.runId,
+      table.sequence,
+    ),
+    index("ai_run_events_run_type_sequence_idx").on(
+      table.runId,
+      table.type,
+      table.sequence,
+    ),
+  ],
+);
+
+export const aiStructuredOutputs = sqliteTable(
+  "ai_structured_outputs",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: "cascade" }),
+    stepId: text("step_id")
+      .notNull()
+      .references(() => aiRunSteps.id, { onDelete: "cascade" }),
+    contractName: text("contract_name").notNull(),
+    contractVersion: text("contract_version").notNull(),
+    schemaHash: text("schema_hash").notNull(),
+    renderKind: text("render_kind").notNull(),
+    valueJson: text("value_json").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("ai_structured_outputs_run_created_idx").on(
+      table.runId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_structured_outputs_step_idx").on(table.stepId),
+  ],
+);
+
 export const aiModelCalls = sqliteTable(
   "ai_model_calls",
   {
@@ -493,12 +599,24 @@ export const aiModelCalls = sqliteTable(
     runId: text("run_id").references(() => aiAgentRuns.id, {
       onDelete: "set null",
     }),
+    turnId: text("turn_id").references(() => aiRunTurns.id, {
+      onDelete: "set null",
+    }),
+    stepId: text("step_id").references(() => aiRunSteps.id, {
+      onDelete: "set null",
+    }),
     providerId: text("provider_id").notNull(),
     modelId: text("model_id").notNull(),
+    api: text("api"),
     startedAt: timestamp("started_at").notNull(),
     timeoutMs: integer("timeout_ms").notNull().default(120_000),
     finishedAt: timestamp("finished_at"),
     durationMs: integer("duration_ms"),
+    ttftMs: integer("ttft_ms"),
+    chunkCount: integer("chunk_count"),
+    responseModel: text("response_model"),
+    responseId: text("response_id"),
+    httpStatus: integer("http_status"),
     result: text("result").notNull(),
     stopReason: text("stop_reason"),
     errorCode: text("error_code"),
@@ -517,6 +635,12 @@ export const aiModelCalls = sqliteTable(
     costCurrency: text("cost_currency"),
   },
   (table) => [
+    index("ai_model_calls_run_turn_step_idx").on(
+      table.runId,
+      table.turnId,
+      table.stepId,
+      table.startedAt,
+    ),
     index("ai_model_calls_scope_started_idx").on(
       table.tenantId,
       table.projectId,
@@ -558,9 +682,20 @@ export const aiToolExecutions = sqliteTable(
   "ai_tool_executions",
   {
     id: text("id").primaryKey(),
-    aiCallId: text("ai_call_id")
+    runId: text("run_id").references(() => aiAgentRuns.id, {
+      onDelete: "set null",
+    }),
+    modelCallId: text("model_call_id")
       .notNull()
       .references(() => aiModelCalls.id, { onDelete: "cascade" }),
+    turnId: text("turn_id").references(() => aiRunTurns.id, {
+      onDelete: "set null",
+    }),
+    stepId: text("step_id").references(() => aiRunSteps.id, {
+      onDelete: "set null",
+    }),
+    toolCallId: text("tool_call_id"),
+    toolExecutionId: text("tool_execution_id").unique(),
     toolName: text("tool_name").notNull(),
     /** 历史记录与未注册 Tool 的 not_found 记录允许 null；新执行必须由应用层写精确版本。 */
     toolVersion: text("tool_version"),
@@ -572,8 +707,13 @@ export const aiToolExecutions = sqliteTable(
     errorCode: text("error_code"),
   },
   (table) => [
+    index("ai_tool_executions_run_step_idx").on(
+      table.runId,
+      table.stepId,
+      table.startedAt,
+    ),
     index("ai_tool_executions_call_started_idx").on(
-      table.aiCallId,
+      table.modelCallId,
       table.startedAt,
       table.id,
     ),
@@ -627,7 +767,53 @@ export const aiAgentRunsRelations = relations(aiAgentRuns, ({ one, many }) => ({
     references: [aiAgentDefinitions.id],
   }),
   modelCalls: many(aiModelCalls),
+  turns: many(aiRunTurns),
+  steps: many(aiRunSteps),
+  events: many(aiRunEvents),
+  structuredOutputs: many(aiStructuredOutputs),
 }));
+
+export const aiRunTurnsRelations = relations(aiRunTurns, ({ one, many }) => ({
+  run: one(aiAgentRuns, {
+    fields: [aiRunTurns.runId],
+    references: [aiAgentRuns.id],
+  }),
+  steps: many(aiRunSteps),
+}));
+
+export const aiRunStepsRelations = relations(aiRunSteps, ({ one, many }) => ({
+  run: one(aiAgentRuns, {
+    fields: [aiRunSteps.runId],
+    references: [aiAgentRuns.id],
+  }),
+  turn: one(aiRunTurns, {
+    fields: [aiRunSteps.turnId],
+    references: [aiRunTurns.id],
+  }),
+  modelCalls: many(aiModelCalls),
+  structuredOutputs: many(aiStructuredOutputs),
+}));
+
+export const aiRunEventsRelations = relations(aiRunEvents, ({ one }) => ({
+  run: one(aiAgentRuns, {
+    fields: [aiRunEvents.runId],
+    references: [aiAgentRuns.id],
+  }),
+}));
+
+export const aiStructuredOutputsRelations = relations(
+  aiStructuredOutputs,
+  ({ one }) => ({
+    run: one(aiAgentRuns, {
+      fields: [aiStructuredOutputs.runId],
+      references: [aiAgentRuns.id],
+    }),
+    step: one(aiRunSteps, {
+      fields: [aiStructuredOutputs.stepId],
+      references: [aiRunSteps.id],
+    }),
+  }),
+);
 
 export const aiModelCallsRelations = relations(
   aiModelCalls,
@@ -635,6 +821,14 @@ export const aiModelCallsRelations = relations(
     run: one(aiAgentRuns, {
       fields: [aiModelCalls.runId],
       references: [aiAgentRuns.id],
+    }),
+    turn: one(aiRunTurns, {
+      fields: [aiModelCalls.turnId],
+      references: [aiRunTurns.id],
+    }),
+    step: one(aiRunSteps, {
+      fields: [aiModelCalls.stepId],
+      references: [aiRunSteps.id],
     }),
     toolExecutions: many(aiToolExecutions),
   }),
@@ -644,7 +838,7 @@ export const aiToolExecutionsRelations = relations(
   aiToolExecutions,
   ({ one }) => ({
     modelCall: one(aiModelCalls, {
-      fields: [aiToolExecutions.aiCallId],
+      fields: [aiToolExecutions.modelCallId],
       references: [aiModelCalls.id],
     }),
   }),

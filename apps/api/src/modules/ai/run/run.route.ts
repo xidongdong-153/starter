@@ -10,6 +10,10 @@ import {
   abortAgentRunRoute,
   followUpAgentRunRoute,
   getAgentRunRoute,
+  getAgentRunEventsRoute,
+  getAgentRunEventsStreamRoute,
+  getAgentRunTimelineRoute,
+  getAgentRunTraceRoute,
   startAgentRunRoute,
   steerAgentRunRoute,
 } from "./run.openapi.js";
@@ -28,15 +32,27 @@ export function createAiAgentRunRoute(deps: {
 
   return new OpenAPIHono<HonoEnv>()
     .openapi({ ...startAgentRunRoute, middleware: requireAuth }, async (c) => {
+      const params = c.req.valid("param");
+      const accessContext = access(c);
       const result = await service.startRun({
-        access: access(c),
-        sessionId: c.req.valid("param").sessionId,
+        access: accessContext,
+        sessionId: params.sessionId,
         input: c.req.valid("json"),
         requestId: c.var.requestId,
       });
+      const runId = result.runId;
+      const events = service.subscribe(
+        accessContext,
+        params.sessionId,
+        runId,
+        0,
+      );
       c.header("Cache-Control", "no-cache");
       c.header("X-Accel-Buffering", "no");
       return streamSSE(c, async (stream) => {
+        const iterator = events[Symbol.asyncIterator]();
+        const seenSequences = new Set<number>();
+        let terminal = false;
         const heartbeat = setInterval(() => {
           void stream.write(": heartbeat\n\n").catch(() => undefined);
         }, 15_000);
@@ -49,30 +65,102 @@ export function createAiAgentRunRoute(deps: {
           resolveAbort();
         });
         try {
-          const iterator = result.events[Symbol.asyncIterator]();
-          while (true) {
+          while (!terminal) {
             const next = await Promise.race([
               iterator.next(),
               aborted.then(() => ({ done: true, value: undefined })),
             ]);
             if (next.done) break;
-            const value =
-              next.value as typeof result.events extends AsyncIterable<infer T>
-                ? T
-                : never;
+            const value = next.value;
+            if (!value) continue;
+            if (seenSequences.has(value.sequence)) continue;
+            seenSequences.add(value.sequence);
             await stream.writeSSE({
               id: value.eventId,
               event: value.type,
               data: JSON.stringify(value),
             });
+            terminal =
+              value.type === "run.completed" ||
+              value.type === "run.failed" ||
+              value.type === "run.aborted";
           }
         } catch {
           // transport 断开只结束当前订阅，不中止 Run。
         } finally {
           clearInterval(heartbeat);
+          await iterator.return?.();
         }
       });
     })
+    .openapi(
+      { ...getAgentRunEventsStreamRoute, middleware: requireAuth },
+      async (c) => {
+        const params = c.req.valid("param");
+        const query = c.req.valid("query");
+        const accessContext = access(c);
+        let afterSequence = query.afterSequence;
+        const lastEventId = c.req.header("Last-Event-ID");
+        if (lastEventId && afterSequence === 0) {
+          afterSequence = service.sequenceForEvent(
+            accessContext,
+            params.sessionId,
+            params.runId,
+            lastEventId,
+          );
+        }
+        const events = service.subscribe(
+          accessContext,
+          params.sessionId,
+          params.runId,
+          afterSequence,
+        );
+        c.header("Cache-Control", "no-cache");
+        c.header("X-Accel-Buffering", "no");
+        return streamSSE(c, async (stream) => {
+          const iterator = events[Symbol.asyncIterator]();
+          const seenSequences = new Set<number>();
+          let terminal = false;
+          const heartbeat = setInterval(() => {
+            void stream.write(": heartbeat\\n\\n").catch(() => undefined);
+          }, 15_000);
+          let resolveAbort!: () => void;
+          const aborted = new Promise<void>((resolve) => {
+            resolveAbort = resolve;
+          });
+          stream.onAbort(() => {
+            clearInterval(heartbeat);
+            resolveAbort();
+          });
+          try {
+            while (!terminal) {
+              const next = await Promise.race([
+                iterator.next(),
+                aborted.then(() => ({ done: true, value: undefined })),
+              ]);
+              if (next.done) break;
+              const value = next.value;
+              if (!value || seenSequences.has(value.sequence)) continue;
+              seenSequences.add(value.sequence);
+              await stream.writeSSE({
+                id: value.eventId,
+                event: value.type,
+                data: JSON.stringify(value),
+              });
+              terminal =
+                value.type === "run.completed" ||
+                value.type === "run.failed" ||
+                value.type === "run.aborted";
+            }
+          } catch {
+            // transport 断开只结束当前订阅，不中止 Run。
+          } finally {
+            clearInterval(heartbeat);
+            await iterator.return?.();
+          }
+        });
+      },
+    )
     .openapi({ ...getAgentRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
@@ -86,6 +174,50 @@ export function createAiAgentRunRoute(deps: {
         200,
       ),
     )
+    .openapi({ ...getAgentRunTimelineRoute, middleware: requireAuth }, (c) => {
+      const params = c.req.valid("param");
+      const query = c.req.valid("query");
+      return c.json(
+        createSuccessResponse(
+          service.timeline(
+            access(c),
+            params.sessionId,
+            params.runId,
+            query.afterSequence,
+            query.pageSize,
+          ),
+          c.var.requestId,
+        ),
+        200,
+      );
+    })
+    .openapi({ ...getAgentRunEventsRoute, middleware: requireAuth }, (c) => {
+      const params = c.req.valid("param");
+      const query = c.req.valid("query");
+      return c.json(
+        createSuccessResponse(
+          service.timeline(
+            access(c),
+            params.sessionId,
+            params.runId,
+            query.afterSequence,
+            query.pageSize,
+          ),
+          c.var.requestId,
+        ),
+        200,
+      );
+    })
+    .openapi({ ...getAgentRunTraceRoute, middleware: requireAuth }, (c) => {
+      const params = c.req.valid("param");
+      return c.json(
+        createSuccessResponse(
+          service.trace(access(c), params.sessionId, params.runId),
+          c.var.requestId,
+        ),
+        200,
+      );
+    })
     .openapi({ ...abortAgentRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(

@@ -44,7 +44,7 @@ GET    /api/ai/sessions/{sessionId}/transcript
 - 默认列表排除已归档。title 未传时用「新会话」。`defaultAgentId` 非空必须指向已启用的 Agent。
 - transcript 查询参数：lane 默认 `main`，cursor 可选非负整数，limit 默认 50、最大 200，direction 默认 `backward`，由 `agentTranscriptQuerySchema` 校验。
 - transcript 响应 `{ items, nextCursor }`，items 始终是时间正序。读取时向 Pi Session store 请求 `limit + 1` 条，只有确实读到额外 entry 才返回 nextCursor，否则为 null。hasMore 按 raw entry 数量判，不是投影后的 item 数量。
-- transcript entry 过滤分两级：`starter.run.v1`（custom）是 Run 自己写入的终态记录，`projectEntry` 直接返回 null，不回调 `onSkipped`、不产生 WARN；其它认不出的 entry 类型和 message role 仍回调 `onSkipped`，由 `session.service.ts` 逐条记 WARN。以后再加内部 customType，同步加进这个静默过滤分支，否则每次读带历史 Run 的 transcript 都会刷一批告警。
+- transcript entry 过滤分两级：`starter.run`（custom）是 Run 自己写入的终态记录，`projectEntry` 直接返回 null，不回调 `onSkipped`、不产生 WARN；其它认不出的 entry 类型和 message role 仍回调 `onSkipped`，由 `session.service.ts` 逐条记 WARN。以后再加内部 customType，同步加进这个静默过滤分支，否则每次读带历史 Run 的 transcript 都会刷一批告警。
 - 两个方向的语义：`backward` 用 Pi 的 `newestFirst` 读（该方向下 `cursor.afterSeq` 取的是 `entry.seq < afterSeq`，也就是更早的），服务端反转成正序后返回，`nextCursor` 是本页最早一条 raw entry 的 seq，用于继续往更早翻；`forward` 用 `oldestFirst`，`nextCursor` 指向更新的一页。首屏不传 cursor 时 `backward` 返回最新一页。
 
 ### 3.1 runId 读取规则
@@ -97,8 +97,8 @@ S5 投影读取顺序固定：
 - owner 隔离：他人 GET / PATCH / transcript 返回 404，不能靠 id 探测。
 - `defaultAgentId`：不存在 400、非 enabled 409、enabled 成功。
 - 主库失败补偿删除 Pi Session；补偿失败日志带 sessionId 与 cause（用 fake repository + fake session store 直接测 service）。
-- transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、只有多读到一条 raw entry 时才返回 nextCursor、原始 entry 数量刚好等于 limit 时 nextCursor 为 null、四种 item、`starter.run.v1`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
-- 过滤分级：直接调 `projectTranscript`，传一条 `starter.run.v1` 和一条未知 `customType` 的 custom entry，断言返回 items 为空、`onSkipped` 只被调一次，且参数是未知 entry 的 `entryId` 与 `reason: "unknown_entry_type"`。
+- transcript：升序、limit 分页、cursor=上一页最后一条 raw entry seq、只有多读到一条 raw entry 时才返回 nextCursor、原始 entry 数量刚好等于 limit 时 nextCursor 为 null、四种 item、`starter.run`/未知 entry 过滤、内部字段不泄露、非法 lane 400。
+- 过滤分级：直接调 `projectTranscript`，传一条 `starter.run` 和一条未知 `customType` 的 custom entry，断言返回 items 为空、`onSkipped` 只被调一次，且参数是未知 entry 的 `entryId` 与 `reason: "unknown_entry_type"`。
 - 分页方向：`direction=backward` 首屏返回最新一页且是时间正序、带 cursor 时返回更早一页、没有更早内容时 nextCursor 为 null；`direction=forward` 行为与改动前一致。
 - assistant item 的 `usage` 和 `toolCalls`、system item 的 `tokensBefore` 都能读到；toolCall block 带 `arguments` 时投影结果不得包含入参，`toolCallId` 与对应 `tool_activity` item 一致。
 - assistant item 的 `blocks` 按 `message.content` 原顺序输出（含 text 与 thinking 交错的情况），`content` 仍然只有正文。

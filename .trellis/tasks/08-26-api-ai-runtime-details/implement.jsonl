@@ -1,0 +1,16 @@
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"确认 Agent Run、Pi Session、Starter SQLite、事件归属和恢复边界"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"确认 Run Service、SSE、lane、终态事务和权限查询约束"}
+{"file":".trellis/spec/api/backend/pi-agent-execution-guidelines.md","reason":"确认 Pi Agent loop、Tool terminate、事件映射、compaction 和原生 stream 约束"}
+{"file":".trellis/spec/api/backend/database-guidelines.md","reason":"确认 Drizzle schema、SQLite migration、外键、索引和测试数据库规则"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"确认共享 Zod contract 是唯一跨层协议入口"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"确认事件、时间线和关联字段的跨层数据流检查方式"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/agent/docs/telemetry-schema.md","reason":"参考 Pi harness 与 AI request span 名称、父子关系和属性集合"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/telemetry/README.md","reason":"确认 Pi telemetry context、span callback 和 exporter 边界"}
+{"file":"/Users/wuwanzhu/Code/pi/packages/session-backends/sqlite-node/README.md","reason":"参考 Pi Session SQLite 的持久化和查询边界"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/135-消息协议.md","reason":"参考 UI message 与 model message 的职责边界"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/137-UIMessageStream.md","reason":"参考细粒度流事件、step、text、reasoning、Tool 和 source 的产品投影"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/138-结构化输出.md","reason":"参考 Zod schema、结构化输出校验和失败分类"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/139-Tool-Calling.md","reason":"参考 Tool schema、参数校验、进度、错误和终止行为"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/140-多步推理.md","reason":"参考 step 生命周期、工具循环、停止条件和多步观察"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/147-可观测性：Telemetry.md","reason":"参考 AI 应用的 token、TTFT、Provider、Tool、错误和成本指标"}
+{"file":"/Users/wuwanzhu/Code/learning/Learn-AI-Companion/01-ai-companion/articles/09-VercelAI-SDK/151-重构端到端-AI-Chat.md","reason":"参考 Hono、共享 Zod schema、流式 API、Tool 和 Telemetry 的端到端边界"}

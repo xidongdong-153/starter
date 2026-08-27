@@ -13,7 +13,7 @@ import {
   createAgentSessionSchema,
   defaultAgentDefinitionConfig,
   followUpAgentRunSchema,
-  harnessEventSchema,
+  runEventSchema,
   startAgentRunSchema,
   starterRunDataSchema,
   steerAgentRunSchema,
@@ -29,6 +29,8 @@ const IDS = {
   entry: "01958c80-8df7-7ce2-8f90-123456789005",
   prompt: "01958c80-8df7-7ce2-8f90-123456789006",
   skill: "01958c80-8df7-7ce2-8f90-123456789007",
+  turn: "01958c80-8df7-7ce2-8f90-123456789008",
+  step: "01958c80-8df7-7ce2-8f90-123456789009",
 } as const;
 
 const NOW = "2025-01-01T00:00:00.000Z";
@@ -56,6 +58,8 @@ describe("agent harness contracts", () => {
       systemPromptId: null,
       skillIds: [],
       toolRefs: [],
+      outputContract: null,
+      outputMode: "optional",
       thinkingLevel: "off",
       maxTurns: 8,
     });
@@ -499,144 +503,68 @@ describe("agent harness contracts", () => {
     ).toBe(false);
   });
 
-  it("解析所有 HarnessEvent 分支并拒绝不匹配的 data", () => {
+  it("解析 RunEvent envelope、终态和安全字段", () => {
     const envelope = {
-      version: 1,
       eventId: IDS.event,
       sequence: 1,
       sessionId: IDS.session,
       runId: IDS.run,
       lane: "main",
-      createdAt: NOW,
+      occurredAt: NOW,
+      turnIndex: null,
+      stepId: null,
+      modelCallId: null,
+      messageId: null,
+      toolCallId: null,
+      toolExecutionId: null,
     } as const;
     const events = [
       {
         ...envelope,
         type: "run.started",
-        data: { agentId: IDS.agent, agentRevision: 2, model: MODEL },
-      },
-      {
-        ...envelope,
-        type: "message.started",
-        data: { messageId: IDS.entry, role: "assistant" },
+        data: {
+          agentId: IDS.agent,
+          agentRevision: 2,
+          model: MODEL,
+          outputContract: null,
+        },
       },
       {
         ...envelope,
         type: "message.delta",
-        data: { messageId: IDS.entry, delta: "a" },
-      },
-      {
-        ...envelope,
-        type: "message.completed",
-        data: {
-          messageId: IDS.entry,
-          role: "assistant",
-          content: "answer",
-          stopReason: "stop",
-          errorCode: null,
-        },
-      },
-      {
-        ...envelope,
-        type: "thinking.started",
-        data: { messageId: IDS.entry, blockIndex: 0 },
-      },
-      {
-        ...envelope,
-        type: "thinking.delta",
-        data: { messageId: IDS.entry, blockIndex: 0, delta: "想" },
-      },
-      {
-        ...envelope,
-        type: "thinking.completed",
-        data: { messageId: IDS.entry, blockIndex: 0, content: "想完了" },
-      },
-      {
-        ...envelope,
-        type: "tool.started",
-        data: { toolCallId: "tool-1", name: "lookup" },
-      },
-      {
-        ...envelope,
-        type: "tool.progress",
-        data: {
-          toolCallId: "tool-1",
-          name: "lookup",
-          safeSummary: null,
-        },
+        data: { partId: "part-1", delta: "a" },
       },
       {
         ...envelope,
         type: "tool.completed",
         data: {
-          toolCallId: "tool-1",
           name: "lookup",
+          version: "1.0.0",
           status: "succeeded",
-          errorCode: null,
-          safeSummary: "done",
+          summary: "done",
           entryId: IDS.entry,
+          error: null,
         },
-      },
-      {
-        ...envelope,
-        type: "turn.started",
-        data: { turn: 1, maxTurns: 8 },
-      },
-      {
-        ...envelope,
-        type: "turn.completed",
-        data: { turn: 1, maxTurns: 8, toolCallCount: 2 },
-      },
-      {
-        ...envelope,
-        type: "context.compacted",
-        data: { entryId: IDS.entry, tokensBefore: 12_000, summary: "摘要" },
       },
       {
         ...envelope,
         type: "run.completed",
-        data: {
-          status: "completed",
-          finalEntryId: IDS.entry,
-          reason: "model_finished",
-        },
-      },
-      {
-        ...envelope,
-        type: "run.failed",
-        data: {
-          status: "failed",
-          finalEntryId: null,
-          error: {
-            code: "AI.TOOL_FAILED",
-            message: "工具执行失败",
-            retryable: false,
-          },
-        },
-      },
-      {
-        ...envelope,
-        type: "run.aborted",
-        data: {
-          status: "aborted",
-          finalEntryId: null,
-          errorCode: "AI.REQUEST_ABORTED",
-        },
+        data: { finalEntryId: IDS.entry, reason: "model_finished" },
       },
     ];
 
     for (const event of events) {
-      expect(harnessEventSchema.safeParse(event).success).toBe(true);
+      expect(runEventSchema.safeParse(event).success).toBe(true);
     }
     expect(
-      harnessEventSchema.safeParse({
+      runEventSchema.safeParse({
         ...events[0],
         data: { status: "completed", finalEntryId: IDS.entry },
       }).success,
     ).toBe(false);
   });
 
-  it("校验 starter.run.v1 终态和用量审计关联互斥", () => {
+  it("校验 starter.run 终态和用量审计关联互斥", () => {
     expect(
       starterRunDataSchema.safeParse({
         schemaVersion: 1,
@@ -677,15 +605,24 @@ describe("agent harness contracts", () => {
       externalUserId: null,
       scenario: "agent_run",
       runId: IDS.run,
+      turnId: IDS.turn,
+      stepId: IDS.step,
       providerId: "openai",
       modelId: "gpt-4o",
+      api: "openai-completions",
       startedAt: NOW,
       timeoutMs: 1000,
       finishedAt: NOW,
       durationMs: 1,
+      ttftMs: 1,
+      chunkCount: 3,
+      responseModel: "gpt-4o-2024-08-06",
+      responseId: "resp-1",
+      httpStatus: 200,
       result: "succeeded",
       stopReason: "stop",
       errorCode: null,
+      errorCategory: null,
       usage: {
         inputTokens: 1,
         outputTokens: 1,

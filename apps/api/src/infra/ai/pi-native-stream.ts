@@ -22,14 +22,20 @@ import type {
   ApiErrorCode,
 } from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
+import { NOOP_TELEMETRY_CONTEXT } from "@earendil-works/pi-telemetry";
+import type { AiSpan, AiTelemetryTarget } from "@api/infra/telemetry/index.js";
+import { startAiSpan } from "@api/infra/telemetry/index.js";
+import type { RunExecutionContext } from "@api/infra/agent/run-execution-context.js";
 import type {
   PrincipalContext,
   ResourceScope,
 } from "@api/modules/ai/principal.js";
+import { generateId } from "@api/shared/id.js";
 
 export interface PiModelCallAudit {
   beginModelCall: (input: {
-    id?: string;
+    /** 由调用方在 Provider 请求前生成，审计直接用这个 ID。 */
+    id: string;
     runId: string;
     userId: string;
     scope?: ResourceScope;
@@ -38,8 +44,11 @@ export interface PiModelCallAudit {
     externalUserId?: string | null;
     requestId: string;
     model: AiModelRef;
+    api?: string | null;
     timeoutMs: number;
     startedAt: Date;
+    turnId?: string | null;
+    stepId?: string | null;
   }) => string | null;
   finalizeModelCall: (input: {
     id: string;
@@ -51,23 +60,25 @@ export interface PiModelCallAudit {
     errorCode: string | null;
     usage: AiUsage;
     cost: AiCost | null;
+    ttftMs?: number | null;
+    chunkCount?: number | null;
+    responseModel?: string | null;
+    responseId?: string | null;
+    httpStatus?: number | null;
   }) => void;
 }
 
 export interface PiNativeStreamOptions {
   models: Models;
   timeoutMs: number;
+  /** Run Service 创建的关联上下文；Run、Turn、Step 和 principal 全部从它读。 */
+  execution: RunExecutionContext;
   getProviderRequestEnv?: (providerId: string) => Record<string, string>;
   audit?: PiModelCallAudit;
-  runId: string;
-  userId: string;
-  scope?: ResourceScope;
-  principalKind?: PrincipalContext["kind"];
-  appId?: string | null;
-  externalUserId?: string | null;
-  requestId: string;
-  sessionId?: string;
-  onModelCallStarted?: (id: string | null) => void;
+  /** 当前 Step 的 telemetry 父作用域，每次 Provider 请求读取一次。 */
+  getTelemetryParent?: () => AiTelemetryTarget | undefined;
+  /** Model Call 生命周期事实；由 executor 转成产品事件，本文件不组装事件。 */
+  onModelCallFact?: (fact: PiModelCallFact) => void;
   onFailure?: (failure: PiStreamFailure) => void;
 }
 
@@ -75,6 +86,27 @@ export interface PiStreamFailure {
   kind: "auth" | "timeout" | "aborted" | "upstream" | "model_not_found";
   errorCode: ApiErrorCode;
 }
+
+/** 一次 Provider 请求的安全事实，不包含 prompt、消息正文和 Provider 原始错误。 */
+export type PiModelCallFact =
+  | {
+      kind: "started";
+      modelCallId: string;
+      providerId: string;
+      modelId: string;
+      api: string;
+    }
+  | { kind: "first_output"; modelCallId: string; elapsedMs: number }
+  | {
+      kind: "completed";
+      modelCallId: string;
+      responseModel: string | null;
+      responseId: string | null;
+      stopReason: AiModelCallStopReason;
+      usage: AiUsage;
+      cost: AiCost | null;
+    }
+  | { kind: "failed"; modelCallId: string; errorCode: ApiErrorCode };
 
 export function createPiNativeStreamFn(
   options: PiNativeStreamOptions,
@@ -85,7 +117,23 @@ export function createPiNativeStreamFn(
 ) => AssistantMessageEventStream {
   return (model, context, streamOptions = {}) => {
     const result = createAssistantMessageEventStream();
-    void pumpStream(result, model, context, streamOptions, options);
+    const execution = options.execution;
+    // Model span 包住整个 Provider 请求；parent 只来自调用方显式传入的 Step 作用域。
+    void startAiSpan(
+      options.getTelemetryParent?.() ?? NOOP_TELEMETRY_CONTEXT,
+      "starter.ai.model_call",
+      {
+        "starter.ai.run.id": execution.runId,
+        "starter.ai.turn.id": execution.turnId ?? undefined,
+        "starter.ai.step.id": execution.step?.id ?? undefined,
+        "starter.ai.provider": model.provider,
+        "starter.ai.model": model.id,
+        "starter.ai.api": model.api,
+        "starter.ai.streaming": true,
+      },
+      (span) =>
+        pumpStream(result, model, context, streamOptions, options, span),
+    );
     return result;
   };
 }
@@ -98,6 +146,7 @@ async function pumpStream(
   context: Context,
   streamOptions: SimpleStreamOptions,
   options: PiNativeStreamOptions,
+  span: AiSpan<"starter.ai.model_call">,
 ): Promise<void> {
   const modelLookup = options.models.getModel;
   const listedModel =
@@ -111,6 +160,11 @@ async function pumpStream(
       reason: "error",
       error: errorMessage(model, "model_not_found"),
     });
+    span.setAttributes({
+      "starter.ai.error.code": failure.errorCode,
+      "starter.ai.error.type": "model_not_found",
+    });
+    span.setStatus({ status: "error" });
     try {
       options.onFailure?.(failure);
     } catch {
@@ -143,9 +197,30 @@ async function pumpStream(
       : [timeoutController.signal],
   );
   const startedAt = new Date();
-  let modelCallId: string | null = null;
+  const execution = options.execution;
+  // modelCallId 在 Provider 请求开始前生成，不依赖 audit 是否注入。
+  const modelCallId = generateId();
+  let auditId: string | null = null;
   let iterator: AsyncIterator<AssistantMessageEvent> | undefined;
   let finalized = false;
+  let chunkCount = 0;
+  let firstOutputAt: number | undefined;
+  let httpStatusCode: number | undefined;
+  let responseModel: string | undefined;
+  let responseId: string | undefined;
+
+  const publishFact = (fact: PiModelCallFact): void => {
+    try {
+      options.onModelCallFact?.(fact);
+    } catch {
+      // 事实回调不能改变 StreamFn 的行为。
+    }
+  };
+
+  const recordResponse = (message: AssistantMessage): void => {
+    responseModel = message.responseModel ?? undefined;
+    responseId = message.responseId ?? undefined;
+  };
 
   const finalize = (
     resultValue: Exclude<AiModelCallResult, "running">,
@@ -156,11 +231,53 @@ async function pumpStream(
   ) => {
     if (finalized) return;
     finalized = true;
-    if (modelCallId) {
+    span.setAttributes({
+      "starter.ai.model_call.id": modelCallId,
+      "starter.ai.model_call.result": resultValue,
+      "starter.ai.response.model": responseModel,
+      "starter.ai.response.id": responseId,
+      "starter.ai.response.stop_reason": stopReason ?? undefined,
+      "starter.ai.http.status_code": httpStatusCode,
+      "starter.ai.usage.input_tokens": usage.inputTokens ?? undefined,
+      "starter.ai.usage.output_tokens": usage.outputTokens ?? undefined,
+      "starter.ai.usage.cache_read_tokens": usage.cacheReadTokens ?? undefined,
+      "starter.ai.usage.cache_write_tokens":
+        usage.cacheWriteTokens ?? undefined,
+      "starter.ai.usage.reasoning_tokens": usage.reasoningTokens ?? undefined,
+      "starter.ai.usage.total_tokens": usage.totalTokens ?? undefined,
+      "starter.ai.usage.cost": cost?.total ?? undefined,
+      "starter.ai.stream.chunk_count": chunkCount,
+      "starter.ai.stream.time_to_first_output_ms":
+        firstOutputAt === undefined
+          ? undefined
+          : firstOutputAt - startedAt.getTime(),
+      "starter.ai.duration_ms": Date.now() - startedAt.getTime(),
+      "starter.ai.error.code": errorCode ?? undefined,
+      "starter.ai.error.type": telemetryErrorType(errorCode),
+    });
+    if (resultValue !== "succeeded") span.setStatus({ status: "error" });
+    publishFact(
+      resultValue === "succeeded" && stopReason !== null
+        ? {
+            kind: "completed",
+            modelCallId,
+            responseModel: responseModel ?? null,
+            responseId: responseId ?? null,
+            stopReason,
+            usage,
+            cost,
+          }
+        : {
+            kind: "failed",
+            modelCallId,
+            errorCode: toApiErrorCode(errorCode),
+          },
+    );
+    if (auditId) {
       try {
         options.audit?.finalizeModelCall({
-          id: modelCallId,
-          requestId: options.requestId,
+          id: auditId,
+          requestId: execution.requestId,
           startedAt,
           finishedAt: new Date(),
           result: resultValue,
@@ -168,6 +285,14 @@ async function pumpStream(
           errorCode,
           usage,
           cost,
+          ttftMs:
+            firstOutputAt === undefined
+              ? null
+              : firstOutputAt - startedAt.getTime(),
+          chunkCount,
+          responseModel: responseModel ?? null,
+          responseId: responseId ?? null,
+          httpStatus: httpStatusCode ?? null,
         });
       } catch {
         // 审计是 best-effort，不能阻断模型事件流。
@@ -177,27 +302,33 @@ async function pumpStream(
 
   try {
     try {
-      modelCallId =
+      auditId =
         options.audit?.beginModelCall({
-          runId: options.runId,
-          userId: options.userId,
-          scope: options.scope,
-          principalKind: options.principalKind,
-          appId: options.appId,
-          externalUserId: options.externalUserId,
-          requestId: options.requestId,
+          id: modelCallId,
+          runId: execution.runId,
+          userId: execution.userId,
+          scope: execution.scope,
+          principalKind: execution.principal.kind,
+          appId: execution.principal.appId,
+          externalUserId: execution.principal.externalUserId,
+          requestId: execution.requestId,
           model: { providerId: model.provider, modelId: model.id },
+          api: model.api,
+          turnId: execution.turnId,
+          stepId: execution.step?.id ?? null,
           timeoutMs,
           startedAt,
         }) ?? null;
     } catch {
-      modelCallId = null;
+      auditId = null;
     }
-    try {
-      options.onModelCallStarted?.(modelCallId);
-    } catch {
-      // 观察回调不能改变 StreamFn 的行为。
-    }
+    publishFact({
+      kind: "started",
+      modelCallId,
+      providerId: model.provider,
+      modelId: model.id,
+      api: model.api,
+    });
 
     const env = options.getProviderRequestEnv?.(model.provider) ?? {};
     const auth = await options.models.getAuth(model, {
@@ -224,7 +355,12 @@ async function pumpStream(
       timeoutMs,
       maxRetries: 0,
       maxTokens: model.maxTokens,
-      ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+      sessionId: execution.sessionId,
+      onResponse: (response, responseModelRef) => {
+        // 只取 HTTP 状态码当 telemetry 属性，不读 header 和 body。
+        httpStatusCode = response.status;
+        return streamOptions.onResponse?.(response, responseModelRef);
+      },
     });
     let terminal = false;
     iterator = upstream[Symbol.asyncIterator]();
@@ -233,6 +369,7 @@ async function pumpStream(
       if (next.done) break;
       const event = next.value;
       if (event.type === "done") {
+        recordResponse(event.message);
         if (cause.kind === "aborted" || cause.kind === "timeout") {
           const failure = streamFailure(cause.kind);
           result.push({
@@ -278,6 +415,7 @@ async function pumpStream(
         return;
       }
       if (event.type === "error") {
+        recordResponse(event.error);
         const failure = streamFailure(
           cause.kind ?? (event.reason === "aborted" ? "aborted" : "upstream"),
         );
@@ -307,6 +445,16 @@ async function pumpStream(
         return;
       }
       result.push(sanitizeEvent(event));
+      chunkCount += 1;
+      // TTFT 只记首个内容 update，start 是协议事件不算首输出。
+      if (event.type !== "start" && firstOutputAt === undefined) {
+        firstOutputAt = Date.now();
+        publishFact({
+          kind: "first_output",
+          modelCallId,
+          elapsedMs: firstOutputAt - startedAt.getTime(),
+        });
+      }
     }
 
     if (!terminal) {
@@ -462,6 +610,17 @@ function errorMessage(
   };
 }
 
+/** 事实里的错误码只能是稳定的 ApiErrorCode；读不到时归为上游失败。 */
+function toApiErrorCode(errorCode: string | null): ApiErrorCode {
+  if (
+    errorCode !== null &&
+    Object.values(ApiErrorCodes).includes(errorCode as ApiErrorCode)
+  ) {
+    return errorCode as ApiErrorCode;
+  }
+  return ApiErrorCodes.AI_UPSTREAM_ERROR;
+}
+
 function streamFailure(kind: PiStreamFailure["kind"]): PiStreamFailure {
   return {
     kind,
@@ -476,6 +635,18 @@ function streamFailure(kind: PiStreamFailure["kind"]): PiStreamFailure {
               ? ApiErrorCodes.AI_MODEL_NOT_FOUND
               : ApiErrorCodes.AI_UPSTREAM_ERROR,
   };
+}
+
+/** telemetry 的 error.type 只记稳定失败分类，不记 Provider 原始错误。 */
+function telemetryErrorType(
+  errorCode: string | null,
+): PiStreamFailure["kind"] | undefined {
+  if (errorCode === ApiErrorCodes.AI_PROVIDER_AUTH_FAILED) return "auth";
+  if (errorCode === ApiErrorCodes.AI_UPSTREAM_TIMEOUT) return "timeout";
+  if (errorCode === ApiErrorCodes.AI_REQUEST_ABORTED) return "aborted";
+  if (errorCode === ApiErrorCodes.AI_MODEL_NOT_FOUND) return "model_not_found";
+  if (errorCode === ApiErrorCodes.AI_UPSTREAM_ERROR) return "upstream";
+  return undefined;
 }
 
 function classifyFailure(

@@ -50,7 +50,7 @@ flowchart LR
 
 1. `packages/contracts` 只定义跨端协议，不读取数据库、不导入 Pi 类型。
 2. `apps/api/src/infra/agent/` 才能直接接触 Pi 类型、Pi SQLite backend 和原生模型流。
-3. 前端只调用 API 和消费 HarnessEvent，不直接读取 Pi SQLite、Starter SQLite 或进程内 active Run。`apps/admin` 只做管理控制面（Provider、模型、Prompt、Skill、Agent、Tool、应用凭据、用量），不提供 Agent 聊天或 Run 消费页面。
+3. 前端只调用 API 和消费 RunEvent，不直接读取 Pi SQLite、Starter SQLite 或进程内 active Run。`apps/admin` 只做管理控制面（Provider、模型、Prompt、Skill、Agent、Tool、应用凭据、用量），不提供 Agent 聊天或 Run 消费页面。
 
 ## 3. 模块职责
 
@@ -91,8 +91,8 @@ Session 归档只更新主库 `archived_at`，不删除 Pi 历史。默认列表
 
 - `ai_agent_runs` 主库行。
 - `ActiveRunRegistry` 的 reserve、attach、release。
-- `EventSequencer` 和对外 HarnessEvent。
-- Pi `starter.run.v1` terminal entry。
+- `RunEventPublisher` 和对外 RunEvent。
+- Pi `starter.run` terminal entry。
 - Run 的终态更新。
 
 同一 `sessionId + lane` 同时只能有一个 active Run。这个限制是进程内 registry 的运行时保护；主库 Run 行负责持久索引和启动恢复，不等同于 active registry。
@@ -105,7 +105,7 @@ Executor 负责：
 
 - 打开 Pi Session，读取当前 lane branch。
 - 创建 Pi `Agent`，交给 Pi 处理 prompt、Tool loop、steer、follow-up 和 abort。
-- 把 Pi AgentEvent 转成 HarnessEvent。
+- 把 Pi AgentEvent 转成内部 RunEventDraft。
 - 把 assistant、user、tool result 和 compaction 写入 Pi Session。
 - 调用 Provider 模型流和 Tool adapter。
 - 创建模型调用与 Tool execution 审计。
@@ -149,7 +149,7 @@ sequenceDiagram
   X->>P: stream(model, context, tools, signal)
   P-->>X: message / delta / done 或 tool call
   X-->>R: message.started / delta
-  R-->>U: SSE HarnessEvent
+  R-->>U: SSE RunEvent
 
   alt 模型请求工具
     X->>T: execute(toolName, args, principal, scope, signal)
@@ -162,9 +162,9 @@ sequenceDiagram
 
   X->>PS: append assistant message(runId)
   X-->>S: completed / failed / aborted + finalEntryId
-  S->>PS: append custom starter.run.v1
+  S->>PS: append custom starter.run
   S->>DB: UPDATE ai_agent_runs terminal
-  S-->>R: 发布唯一 terminal HarnessEvent
+  S-->>R: 发布唯一 terminal RunEvent
   R-->>U: SSE run.completed / run.failed / run.aborted
   S->>S: release run handle + 原始 lane lease
 ```
@@ -204,8 +204,8 @@ Executor 通过原生 `pi-ai` stream 调 Provider：
 - Provider、模型、认证和 AbortSignal 由 infra 负责。
 - SDK partial message、Provider payload 和原始错误不会进入公开协议。
 - 模型的思考内容是例外：`thinking_start` / `thinking_delta` / `thinking_end` 映射成 `thinking.*` 事件对外发布，正文也进入 transcript 的 assistant `blocks`。它是排查模型行为的主要依据，`thinkingLevel` 为 `off` 时不产生这类事件。
-- `PiEventMapper` 是 Pi AgentEvent 到 HarnessEvent 的唯一转换位置。
-- `EventSequencer` 给每个公开事件分配递增 sequence。
+- `PiEventMapper` 是 Pi AgentEvent 到内部 RunEventDraft 的唯一转换位置。
+- `RunEventPublisher` 在事件持久化成功后分配递增 sequence。
 
 assistant message 的写入和 `message.completed` 事件使用同一个 message entry id。user、assistant 和 tool result message 会附加 `runId`，Session transcript projector 依靠它把 message 归属到 Run。
 
@@ -235,7 +235,7 @@ Tool 失败会生成安全的 tool result，让 Pi Agent 决定下一轮，包�
 
 | 结果 | 用途 | 保存位置 | 是否作为公开 API 输出 |
 | --- | --- | --- | --- |
-| `HarnessEvent` | 实时展示运行过程 | 进程内有界事件队列 | 是，通过 SSE |
+| `RunEvent` | 实时展示和持久恢复 | `ai_run_events` 与进程内有界队列 | 是，通过 SSE、Timeline 和 Events API |
 | Run 活跃快照 | 断线重连后恢复进行中的视图 | 进程内，按 runId 存放 | 是，通过 `GET /runs/{runId}` 的 `live` 字段 |
 | Pi transcript entry | 保存完整 Session 历史和 Run 终态事实 | 独立 Pi Session SQLite | 通过 transcript 投影间接读取 |
 | Starter 主库记录 | 查询、权限、状态和审计 | Starter SQLite | 通过 Run/usage API 返回白名单字段 |
@@ -244,10 +244,10 @@ Tool 失败会生成安全的 tool result，让 Pi Agent 决定下一轮，包�
 %%{init: {"theme": "dark"}}%%
 flowchart TD
   Input["用户输入"] --> AgentLoop["Pi Agent loop"]
-  AgentLoop --> Events["HarnessEvent<br/>started / delta / tool / terminal"]
+  AgentLoop --> Events["RunEvent<br/>started / delta / tool / terminal"]
   AgentLoop --> Messages["Pi message entries<br/>user / assistant / tool result"]
   AgentLoop --> Compaction["Pi compaction entry"]
-  AgentLoop --> Terminal["Pi CustomEntry<br/>starter.run.v1"]
+  AgentLoop --> Terminal["Pi CustomEntry<br/>starter.run"]
   AgentLoop --> ModelAudit["ai_model_calls<br/>每次模型请求"]
   AgentLoop --> ToolAudit["ai_tool_executions<br/>每次 Tool 执行"]
 
@@ -270,18 +270,14 @@ flowchart TD
   class ModelAudit,ToolAudit,MainDB,Recovery main
 ```
 
-### 5.1 HarnessEvent
+### 5.1 RunEvent
 
 事件 envelope 固定包含：
 
-- `version`。
-- `eventId`。
-- `sequence`。
-- `sessionId`。
-- `runId`。
-- `lane`。
-- `createdAt`。
-- `type` 和对应 `data`。
+- `eventId`、`sequence`、`occurredAt`。
+- `runId`、`sessionId`、`lane`。
+- `turnIndex`、`stepId`、`modelCallId`、`messageId`、`toolCallId`、`toolExecutionId`。
+- `type` 和对应的安全 `data`。
 
 主要事件类型：
 
@@ -306,13 +302,13 @@ run.aborted
 
 `thinking.*` 的 data 带 `messageId` 和 `blockIndex`（`blockIndex` 直接用 pi-ai 的 `contentIndex`），一条 assistant message 内可能有多个思考块。`message.completed.content` 仍然只拼 text block，思考正文只走这三个事件和 transcript `blocks`。
 
-`run.completed.data.reason` 是必填字段：`model_finished` 表示模型自己结束，`max_turns` 表示撞上轮次上限、由收尾轮给出的回答。它只在事件和活跃快照里，不落主库、不进 transcript，所以刷新页面后看不到这个标记。
+`run.completed.data.reason` 是必填字段：`model_finished` 表示模型自己结束，`max_turns` 表示撞上轮次上限后的收尾回答，`structured_output` 表示终止型结构化输出 Tool 完成。它只在事件和活跃快照里，不落主库、不进 transcript，所以刷新页面后看不到这个标记。
 
-`turn.started` / `turn.completed` 标记 Agent loop 的轮次边界，携带 `turn` 和 `maxTurns`，由 `PiEventMapper` 映射 Pi 的 `turn_start` / `turn_end`。
+`turn.started` / `turn.completed` 标记 Agent loop 的轮次边界，envelope 携带 `turnIndex`，事件 data 分别携带 `stepLimit` 和 Step/Tool 计数及 outcome，由 `PiEventMapper` 映射 Pi 的 `turn_start` / `turn_end`。
 
-`context.compacted` 在 compaction entry 写入成功后发布，携带 `entryId`、`tokensBefore` 和 `summary`。compaction 发生在 `transformContext` 回调里、不在 Pi AgentEvent 流上，所以由 `PiEventMapper.contextCompactedEvent()` 提供显式出口，复用同一个 `EventSequencer` 保证 sequence 单调。发事件失败不影响已写入的 compaction 结果。
+`context.compacted` 在 compaction entry 写入成功后发布，携带 `entryId`、`tokensBefore` 和 `summary`。compaction 发生在 `transformContext` 回调里、不在 Pi AgentEvent 流上，所以由 `PiEventMapper.contextCompactedEvent()` 提供显式出口，复用同一个 RunEventPublisher 保证 sequence 单调。发事件失败不影响已写入的 compaction 结果。
 
-`tool.progress` 的生产者是工具自身：`AiToolExecutionContext.reportProgress(safeSummary)` 经 `pi-tool-adapter.ts` 接到 Pi 的 `onUpdate`，再由 `PiEventMapper` 把 `tool_execution_update` 映射成事件。上报内容只能是已脱敏摘要（最多 1000 字符），`modelText` 留空，不把中间结果喂给模型，也不产生额外审计记录。
+`tool.progress` 的生产者是工具自身：`AiToolExecutionContext.reportProgress(safeSummary)` 经 `pi-tool-adapter.ts` 接到 Pi 的 `onUpdate`，再由 `PiEventMapper` 把 `tool_execution_update` 映射成事件。上报内容只能是已脱敏摘要（最多 1000 字符），不把中间结果喂给模型，也不产生额外审计记录。
 
 `message.completed` 的 `data.usage` 是可选字段，来自 Pi `AssistantMessage.usage`；读不到时省略，不编造 0 值。
 
@@ -326,9 +322,9 @@ run.aborted
 - 内容是一条 `timeline`，元素按 `kind` 分 message、tool 和 compaction；message 元素内含有序 `blocks`（text 与 thinking）。timeline 上限 128 条、单条 message 的 blocks 上限 64，超限丢最旧的，避免长 Run 的内存无界增长。
 - `message.completed` 到达时的折叠规则：消息里只有一个 text 块就用事件的 `content` 覆盖它，一个 text 块都没有且 `content` 非空就追加一个，有多个 text 块则保留 delta 累积出来的原始顺序。不能把 thinking 块重排到前面或把多个 text 块折叠成一个，否则 interleaved thinking 的消息在 Run 进终态时顺序会跳变。
 
-它解决的是「刷新页面后正在生成的内容消失」：assistant message 要等 `message_end` 才写入 Pi DB，在此之前既不在事件队列历史里、也不在 transcript 里。快照不持久化，也不改变 HarnessEvent 仍然只存在于进程内有界队列这一约束。
+它解决的是「刷新页面后正在生成的内容消失」：assistant message 要等 `message_end` 才写入 Pi DB，在此之前持久时间线里可能只有合并后的 delta，transcript 里也没有完整消息。快照不持久化，也不改变 RunEvent 的持久化约束。
 
-SSE 的 `id` 是 `eventId`，`event` 是 HarnessEvent.type，`data` 是完整事件 JSON。heartbeat 是 SSE comment，不创建 HarnessEvent。
+SSE 的 `id` 是 `eventId`，`event` 是 RunEvent.type，`data` 是完整事件 JSON。heartbeat 是 SSE comment，不创建 RunEvent。
 
 SSE 断开不会 abort Run。Route 只停止向当前连接写数据；Agent 继续运行、写 Pi transcript、写主库终态。
 
@@ -344,7 +340,7 @@ Pi DB 的事实记录包括：
 - assistant message。
 - tool result message。
 - compaction entry。
-- `starter.run.v1` custom entry。
+- `starter.run` custom entry。
 
 Pi DB 不保存：
 
@@ -394,9 +390,9 @@ stateDiagram-v2
 终态写入顺序固定：
 
 1. 等待 Executor result。
-2. 写入 Pi `starter.run.v1`。
+2. 写入 Pi `starter.run`。
 3. 条件更新 `ai_agent_runs`，只允许从非终态更新。
-4. 主库更新成功后发布唯一 terminal HarnessEvent。
+4. 主库更新成功后发布唯一 terminal RunEvent。
 5. 结束事件队列并释放 run handle 和原始 lane lease。
 
 如果 Pi terminal entry 写入失败，Run 进入 `failed` 和 `AI.SESSION_STORAGE_FAILED`。如果 Pi entry 已写入但主库终态更新失败，不发布 terminal event；下一次启动恢复扫描负责处理。
@@ -411,7 +407,7 @@ flowchart TD
   Boot["API 创建 AI route"] --> Scan["扫描非终态 Run"]
   Scan --> Active{"已有 active handle?"}
   Active -->|是| Skip["跳过当前进程仍在运行的 Run"]
-  Active -->|否| Read["读取 Pi lane 的 starter.run.v1"]
+  Active -->|否| Read["读取 Pi lane 的 starter.run"]
   Read --> Count{"entry 数量"}
   Count -->|0| Interrupted1["标记 interrupted"]
   Count -->|大于 1| Corrupt["标记 corrupted/interrupted"]
@@ -481,7 +477,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - AgentDefinition config。
 - Run snapshot。
 - Session metadata 或 transcript DTO。
-- HarnessEvent 和 SSE。
+- RunEvent 和 SSE。
 - 主库审计记录。
 - 日志和错误响应。
 
@@ -511,7 +507,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - 不在 Route 里遍历 Executor 事件或直接访问 Pi Session。
 - 不在产品前端的 reducer 里把流式状态当作最终业务状态。
 - 不在 Starter 主库复制完整 transcript。
-- 不把 HarnessEvent 当作可靠历史日志；持久事实以 Pi transcript、terminal entry 和主库索引为准。
+- 不把 RunEvent 当作唯一的历史来源；持久时间线以 `ai_run_events` 为恢复事实，Pi transcript、terminal entry 和主库索引仍分别保存各自事实。
 - 不把 `ai_model_calls` 当作 Run 状态来源；Run 状态以 `ai_agent_runs` 为准，模型调用只是审计记录。
 - 不使用 fallback、localStorage 或前端缓存恢复业务状态。
 - 不提前加入分布式队列、跨节点 active registry 或 Web 聊天产品层。当前 active registry 是单进程的，`tenantId` / `projectId` 只是 scope 查询维度，不要在此之上再造一层租户模型。
@@ -521,20 +517,20 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`：
 
 - `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit 和模型连通性测试。
-- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript 和 HarnessEvent SSE。
+- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript 和 RunEvent SSE。
 - `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
 
 运行面 SSE 使用 `text/event-stream`：
 
 ```text
-id: <HarnessEvent.eventId>
-event: <HarnessEvent.type>
-data: <完整 HarnessEvent JSON>
+id: <RunEvent.eventId>
+event: <RunEvent.type>
+data: <完整 RunEvent JSON>
 ```
 
-`sequence` 在单个 Run 内递增；SSE 连接断开不触发 abort。客户端重连时查询 Run 的 live snapshot，Run 进入终态后读取 Transcript。live 只表示当前进程内的 starting/running 视图，主库 Run 状态、Pi terminal entry 和 Transcript 才是持久事实。
+`sequence` 在单个 Run 内递增；SSE 连接断开不触发 abort。POST `/api/ai/sessions/{sessionId}/runs` 只创建 Run 并打开实时流；已有 Run 的断线恢复使用 GET `/api/ai/sessions/{sessionId}/runs/{runId}/events/stream`，支持 `afterSequence` 或 `Last-Event-ID`，不会创建第二个 Run。客户端在进程内流结束时可查询 Run 的 live snapshot，Run 进入终态后读取 Timeline 和 Transcript。live 只表示当前进程内的 starting/running 视图，`ai_run_events`、主库 Run 状态、Pi terminal entry 和 Transcript 分别保存持久事实。
 
-`packages/contracts/src/ai.ts` 是 Runtime DTO、Transcript、Run snapshot 和 HarnessEvent 的唯一公共 schema 来源。Admin/Web 不得本地复制事件联合或把 Provider secret、`ownerId`、Pi 类型和 UI reducer 字段加入运行协议。
+`packages/contracts/src/ai.ts` 是 Runtime DTO、Transcript、Run snapshot 和 RunEvent 的唯一公共 schema 来源。Admin/Web 不得本地复制事件联合或把 Provider secret、`ownerId`、Pi 类型和 UI reducer 字段加入运行协议。
 
 ## 12. 改代码时的顺序
 
@@ -610,9 +606,9 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 重点验收点：
 
 - 输入只能经过当前 AgentDefinition、模型状态和权限检查后进入 Pi Agent。
-- 每个公开事件符合 `harnessEventSchema`，sequence 单调递增，terminal event 只发布一次。
-- 流式视图和 transcript 视图同构：`run.live-snapshot.ts` 折叠出的 kind 序列、顺序和 blocks 序列必须与 `test-fixtures/harness-timeline-isomorphism.json` 里的期望快照一致；产品前端自己折叠时用同一份 fixture 校验。
-- Pi DB 有完整 message、Tool result、compaction 和 `starter.run.v1`；Starter 主库只有业务索引和审计元数据。
+- 每个公开事件符合 `runEventSchema`，sequence 单调递增，terminal event 只发布一次。
+- 流式视图和 transcript 视图同构：`run.live-snapshot.ts` 折叠出的 kind 序列、顺序和 blocks 序列必须与 `test-fixtures/run-event-timeline-isomorphism.json` 里的期望快照一致；产品前端自己折叠事件时用同一份 fixture 校验。
+- Pi DB 有完整 message、Tool result、compaction 和 `starter.run`；Starter 主库只有业务索引和审计元数据。
 - `ai_model_calls` 与 `ai_tool_executions` 不含 prompt、response、arguments、result 和 secret。
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。
 - 主库 Run 终态、Pi terminal entry 和恢复逻辑的字段一致。

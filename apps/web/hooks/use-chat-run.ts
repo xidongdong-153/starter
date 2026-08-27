@@ -12,10 +12,10 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { pickNextSessionId, removeSession, upsertSession } from '@web/lib/ai/chat-session-view'
 import type { ChatRunState } from '@web/lib/ai/chat-events'
-import { applyHarnessEvent, createChatRunState } from '@web/lib/ai/chat-events'
+import { applyRunEvent, createChatRunState } from '@web/lib/ai/chat-events'
 import type { ChatNotice } from '@web/lib/ai/chat-run-view'
 import { applyLiveSnapshot, describeError, terminalNotice } from '@web/lib/ai/chat-run-view'
-import { startRunStream } from '@web/lib/ai/harness-stream'
+import { startRunStream } from '@web/lib/ai/run-event-stream'
 import {
   abortAgentRun,
   archiveAgentSession,
@@ -248,7 +248,7 @@ export function useChatRun(userId: string | null) {
           runIdRef.current = event.runId
           setRunId(event.runId)
         }
-        state = applyHarnessEvent(state, event)
+        state = applyRunEvent(state, event)
         if (!mountedRef.current) return
         setRunState(state)
         if (event.type === 'run.completed' || event.type === 'run.failed' || event.type === 'run.aborted') {

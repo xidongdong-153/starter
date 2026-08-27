@@ -256,13 +256,13 @@ it("session CRUD、owner 隔离、分页和幂等归档", async () => {
   }
 });
 
-it("已知 starter.run.v1 entry 静默过滤，未知 entry 仍回调跳过原因", () => {
+it("已知 starter.run entry 静默过滤，未知 entry 仍回调跳过原因", () => {
   const onSkipped = vi.fn();
   const entries = [
     {
       type: "custom",
       id: "terminal-entry",
-      customType: "starter.run.v1",
+      customType: "starter.run",
       data: {},
     },
     {
@@ -293,7 +293,7 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
     const runId = generateId();
     const store = runtime.agentSessionStore;
 
-    // 写入：user, user, assistant, toolResult, compaction, starter.run.v1, 未知 custom
+    // 写入：user, user, assistant, toolResult, compaction, starter.run, 未知 custom
     await store.appendMessage({
       sessionId,
       lane: "main",
@@ -363,7 +363,7 @@ it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
       nextCursor: number | null;
     }>(response);
 
-    // 只包含四个可投影 item（过滤 starter.run.v1、未知 custom）
+    // 只包含四个可投影 item（过滤 starter.run、未知 custom）
     const types = body.data.items.map((item) => item.type);
     expect(types).toEqual([
       "user_message",

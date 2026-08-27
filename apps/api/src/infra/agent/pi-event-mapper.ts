@@ -3,35 +3,64 @@ import type {
   AgentMessage,
   Entry,
 } from "@earendil-works/pi-agent-core";
-import type { AiUsage, ApiErrorCode, HarnessEvent } from "@starter/contracts";
+import type {
+  AgentThinkingLevel,
+  AiSource,
+  AiUsage,
+  ApiErrorCode,
+  RunEvent,
+} from "@starter/contracts";
 import { ApiErrorCodes } from "@starter/contracts";
+import type { RunEventDraft } from "@api/modules/ai/run/run-event.repository.js";
+import {
+  isAiRetryableErrorCode,
+  toAiErrorCategory,
+} from "@api/modules/ai/ai-error.js";
 
 import type { AgentSessionHandle } from "./pi-session-store.js";
 import { generateId } from "@api/shared/id.js";
 import type { PiToolResultDetails } from "./pi-tool-adapter.js";
+import {
+  createRunEventDraft,
+  type RunExecutionContext,
+  type RunStepState,
+} from "./run-execution-context.js";
 
-export interface EventSequencer {
-  next: () => number;
-}
+/** Step 终态取值与 `ai_run_steps.outcome` 一致。 */
+export type RunStepOutcome = Extract<
+  RunEvent,
+  { type: "step.completed" }
+>["data"]["outcome"];
 
-export function createEventSequencer(start = 0): EventSequencer {
-  let sequence = start;
-  return {
-    next() {
-      sequence += 1;
-      return sequence;
-    },
-  };
+/**
+ * Turn 结束时由 executor 回填的终态事实。
+ *
+ * executor 掌握不在 Pi 事件流上的失败信号（Run deadline、Tool 终止失败、存储失败），
+ * 并且负责关闭 Step，所以由它把最终 outcome、已关闭的 Step 和稳定错误码交回 mapper，
+ * 保证 `step.completed`、`turn.completed`、`ai_run_steps` 和 span 用同一组值。
+ */
+export interface PiTurnEndResult {
+  outcome: "succeeded" | "failed" | "aborted";
+  step: RunStepState | null;
+  errorCode: ApiErrorCode | null;
 }
 
 export interface PiEventMapperOptions {
   session: AgentSessionHandle;
-  sessionId: string;
-  runId: string;
-  lane: string;
-  sequencer: EventSequencer;
+  /** Run Service 创建的关联上下文；envelope 的关联槽位只来自它。 */
+  execution: RunExecutionContext;
   maxTurns: number;
+  /**
+   * 已解析的 Agent thinking 级别，决定 thinking 事件的 display policy：
+   * `off` 不产生 thinking 事件；其它级别视为调用方显式要求思考可见。
+   */
+  thinkingLevel: AgentThinkingLevel;
   getAssistantErrorCode?: () => ApiErrorCode | null;
+  onTurnStart?: (turnIndex: number) => void;
+  /** 返回 Turn 终态事实；返回空时按 Pi 的 assistant stopReason 判定。 */
+  onTurnEnd?: (
+    outcome: "succeeded" | "failed" | "aborted",
+  ) => PiTurnEndResult | void;
   onEntryAppended?: (entry: Entry) => void;
   onToolExecutionStart?: (input: {
     toolCallId: string;
@@ -60,7 +89,6 @@ export class PiEventMapper {
   private activeAssistant: { id: string } | undefined;
   private _lastAssistantEntryId: string | null = null;
   private _lastAssistantMessage: AgentMessage | undefined;
-  private turn = 0;
 
   constructor(private readonly options: PiEventMapperOptions) {}
 
@@ -75,7 +103,7 @@ export class PiEventMapper {
   async map(
     event: AgentEvent,
     signal?: AbortSignal,
-  ): Promise<readonly HarnessEvent[]> {
+  ): Promise<readonly RunEventDraft[]> {
     switch (event.type) {
       case "message_start":
         return this.mapMessageStart(event.message);
@@ -121,29 +149,52 @@ export class PiEventMapper {
           isError: event.isError,
         });
         return [];
-      case "turn_start":
-        this.turn += 1;
-        return [
+      case "turn_start": {
+        const turnIndex = (this.options.execution.turnIndex ?? 0) + 1;
+        this.options.onTurnStart?.(turnIndex);
+        const drafts: RunEventDraft[] = [
           this.event("turn.started", {
-            turn: this.turn,
             maxTurns: this.options.maxTurns,
           }),
         ];
-      case "turn_end":
-        return [
+        // onTurnStart 已经开好本轮的 assistant Step，Step 事件用它的真实 ID。
+        const step = this.options.execution.step;
+        if (step) drafts.push(this.stepStartedEvent(step));
+        return drafts;
+      }
+      case "turn_end": {
+        // Pi 的 turn_end 只带本轮 assistant message，失败判据就是它的 stopReason：
+        // `error` -> failed，`aborted` -> aborted，其它（含 `toolUse`）-> succeeded。
+        // Tool 失败不会改写 assistant stopReason，所以 Tool 失败不把 Turn 记成 failed。
+        const piOutcome = turnOutcome(event.message);
+        const result = this.options.onTurnEnd?.(piOutcome);
+        const outcome = result?.outcome ?? piOutcome;
+        const drafts: RunEventDraft[] = [];
+        if (result?.step) {
+          drafts.push(
+            this.stepCompletedEvent({
+              step: result.step,
+              outcome,
+              errorCode: result.errorCode,
+            }),
+          );
+        }
+        drafts.push(
           this.event("turn.completed", {
-            turn: this.turn,
             maxTurns: this.options.maxTurns,
             toolCallCount: event.toolResults.length,
+            outcome,
           }),
-        ];
+        );
+        return drafts;
+      }
       case "agent_start":
       case "agent_end":
         return [];
     }
   }
 
-  private mapMessageStart(message: AgentMessage): readonly HarnessEvent[] {
+  private mapMessageStart(message: AgentMessage): readonly RunEventDraft[] {
     if (message.role === "assistant") {
       const messageId = generateEntryId();
       this.activeAssistant = { id: messageId };
@@ -165,7 +216,7 @@ export class PiEventMapper {
       AgentEvent,
       { type: "message_update" }
     >["assistantMessageEvent"],
-  ): readonly HarnessEvent[] {
+  ): readonly RunEventDraft[] {
     if (message.role !== "assistant") return [];
     const messageId = this.activeAssistant?.id;
     if (!messageId) return [];
@@ -179,13 +230,16 @@ export class PiEventMapper {
           }),
         ];
       case "thinking_start":
+        if (!this.thinkingVisible) return [];
         return [
           this.event("thinking.started", {
             messageId,
             blockIndex: assistantMessageEvent.contentIndex,
+            display: true,
           }),
         ];
       case "thinking_delta":
+        if (!this.thinkingVisible) return [];
         return [
           this.event("thinking.delta", {
             messageId,
@@ -194,11 +248,12 @@ export class PiEventMapper {
           }),
         ];
       case "thinking_end":
+        if (!this.thinkingVisible) return [];
         return [
           this.event("thinking.completed", {
             messageId,
             blockIndex: assistantMessageEvent.contentIndex,
-            content: assistantMessageEvent.content,
+            display: true,
           }),
         ];
       default:
@@ -206,14 +261,25 @@ export class PiEventMapper {
     }
   }
 
+  /**
+   * thinking display policy：`thinkingLevel` 为 `off` 时不产生 thinking 事件，
+   * 其它级别视为调用方已显式要求思考可见，事件保留边界和正文。
+   *
+   * 正文只允许出现在产品事件和 `ai_run_events` 里；telemetry span 属性和
+   * SQLite 审计表仍然不写 reasoning 正文。
+   */
+  private get thinkingVisible(): boolean {
+    return this.options.thinkingLevel !== "off";
+  }
+
   private async mapMessageEnd(
     message: AgentMessage,
-  ): Promise<readonly HarnessEvent[]> {
+  ): Promise<readonly RunEventDraft[]> {
     if (message.role === "assistant") {
       const messageId = this.activeAssistant?.id ?? generateEntryId();
       const entry = await this.options.session.appendMessage(
-        this.options.lane,
-        withRunId(message, this.options.runId),
+        this.options.execution.lane,
+        withRunId(message, this.options.execution.runId),
         messageId,
       );
       this.options.onEntryAppended?.(entry);
@@ -243,8 +309,8 @@ export class PiEventMapper {
     const entryId = this.pendingMessageIds.get(message) ?? generateEntryId();
     this.pendingMessageIds.delete(message);
     const entry = await this.options.session.appendMessage(
-      this.options.lane,
-      withRunId(persistedMessage, this.options.runId),
+      this.options.execution.lane,
+      withRunId(persistedMessage, this.options.execution.runId),
       entryId,
     );
     this.options.onEntryAppended?.(entry);
@@ -279,18 +345,81 @@ export class PiEventMapper {
   /**
    * compaction 写入成功后由 executor 调用。
    * compaction 发生在 `transformContext` 回调里，不在 Pi AgentEvent 流上，
-   * 所以需要一个显式出口复用同一个 sequencer，保证 sequence 单调递增。
+   * 所以需要一个显式出口，事实仍然走同一套 envelope 组装。
+   * `stepId` 由 executor 传入 compaction Step 的 ID，不复用当前 assistant Step。
    */
   contextCompactedEvent(info: {
     entryId: string;
     tokensBefore: number;
     summary: string;
-  }): Extract<HarnessEvent, { type: "context.compacted" }> {
-    return this.event("context.compacted", {
-      entryId: info.entryId,
-      tokensBefore: info.tokensBefore,
-      summary: info.summary,
-    });
+    stepId: string;
+  }): RunEventDraft {
+    return createRunEventDraft(
+      this.options.execution,
+      "context.compacted",
+      {
+        entryId: info.entryId,
+        tokensBefore: info.tokensBefore,
+        summary: info.summary.slice(0, 1000),
+      },
+      { stepId: info.stepId },
+    );
+  }
+
+  /**
+   * Step 开始事实。assistant Step 由 Pi `turn_start` 触发，
+   * compaction Step 由 executor 在 `transformContext` 里显式调用。
+   * `stepId` 一定是 `ai_run_steps` 行和 Step span 用的同一个 ID。
+   */
+  stepStartedEvent(step: RunStepState): RunEventDraft {
+    return createRunEventDraft(
+      this.options.execution,
+      "step.started",
+      { kind: step.kind, attempt: step.attempt },
+      { stepId: step.id },
+    );
+  }
+
+  /** Step 终态事实；错误类别和 retryable 只从稳定错误码推导。 */
+  stepCompletedEvent(input: {
+    step: RunStepState;
+    outcome: RunStepOutcome;
+    errorCode: ApiErrorCode | null;
+  }): RunEventDraft {
+    return createRunEventDraft(
+      this.options.execution,
+      "step.completed",
+      {
+        kind: input.step.kind,
+        attempt: input.step.attempt,
+        outcome: input.outcome,
+        error:
+          input.errorCode === null
+            ? null
+            : {
+                code: input.errorCode,
+                category: toAiErrorCategory(input.errorCode),
+                retryable: isAiRetryableErrorCode(input.errorCode),
+              },
+      },
+      { stepId: input.step.id },
+    );
+  }
+
+  /**
+   * 工具上报的引用来源。参数已由 Tool adapter 按 contracts schema 和
+   * 引用型 URL 规则校验，这里只负责 envelope 组装。
+   */
+  sourceAvailableEvent(fact: {
+    toolCallId: string;
+    source: AiSource;
+  }): RunEventDraft {
+    return createRunEventDraft(
+      this.options.execution,
+      "source.available",
+      fact.source,
+      { toolCallId: fact.toolCallId },
+    );
   }
 
   private assistantErrorCode(message: AgentMessage): ApiErrorCode | null {
@@ -306,24 +435,94 @@ export class PiEventMapper {
     );
   }
 
-  private event<T extends HarnessEvent["type"]>(
+  private event<T extends RunEvent["type"]>(
     type: T,
-    data: Extract<HarnessEvent, { type: T }>["data"],
-  ): Extract<HarnessEvent, { type: T }> {
-    return {
-      version: 1,
-      eventId: generateEntryId(),
-      sequence: this.options.sequencer.next(),
-      sessionId: this.options.sessionId,
-      runId: this.options.runId,
-      lane: this.options.lane,
-      createdAt: new Date().toISOString(),
+    data: unknown,
+  ): RunEventDraft {
+    return createRunEventDraft<RunEvent["type"]>(
+      this.options.execution,
       type,
-      data,
-    } as Extract<HarnessEvent, { type: T }>;
+      normalizeEventData(type, data) as RunEvent["data"],
+      {
+        messageId: readAssociationId(data, "messageId"),
+        toolCallId: readAssociationId(data, "toolCallId"),
+      },
+    );
   }
 }
 
+/**
+ * Turn 终态只从 Pi `turn_end` 带的 assistant message 推导。
+ * `stopReason` 是 Pi agent loop 自己判断是否终止的依据（agent-loop.ts 在
+ * `error` / `aborted` 时直接发 turn_end + agent_end），Tool 失败不会改写它。
+ */
+function turnOutcome(
+  message: AgentMessage,
+): "succeeded" | "failed" | "aborted" {
+  if (message.role !== "assistant") return "succeeded";
+  if (message.stopReason === "aborted") return "aborted";
+  if (message.stopReason === "error") return "failed";
+  return "succeeded";
+}
+
+function readAssociationId(value: unknown, key: string): string | null {
+  if (!value || typeof value !== "object") return null;
+  const candidate = (value as Record<string, unknown>)[key];
+  return typeof candidate === "string" && candidate.length > 0
+    ? candidate
+    : null;
+}
+
+function normalizeEventData(type: RunEvent["type"], value: unknown): unknown {
+  const data = (value ?? {}) as Record<string, unknown>;
+  switch (type) {
+    case "message.started":
+      return { role: data.role, partPolicy: "text_and_thinking" };
+    case "message.delta":
+      return { partId: data.messageId, delta: data.delta };
+    case "thinking.started":
+      return { blockIndex: data.blockIndex, display: data.display === true };
+    case "thinking.delta":
+      return { blockIndex: data.blockIndex, delta: data.delta };
+    // 思考正文已经通过 thinking.delta 送达，完成事件不再重复一份截断副本。
+    case "thinking.completed":
+      return {
+        blockIndex: data.blockIndex,
+        display: data.display === true,
+        summary: null,
+      };
+    case "tool.started":
+      return { name: data.name, version: "1.0.0" };
+    case "tool.progress":
+      return { summary: data.safeSummary ?? "", state: "running" };
+    case "tool.completed":
+      return {
+        name: data.name,
+        version: "1.0.0",
+        status: data.status,
+        summary: data.safeSummary ?? null,
+        entryId: data.entryId ?? null,
+        error: data.error ?? null,
+      };
+    case "turn.started":
+      return { stepLimit: data.maxTurns };
+    case "turn.completed":
+      return {
+        stepCount: data.toolCallCount ?? 0,
+        toolCount: data.toolCallCount ?? 0,
+        outcome: data.outcome ?? "succeeded",
+      };
+    case "message.completed": {
+      const normalized = { ...data };
+      delete normalized.messageId;
+      delete normalized.errorCode;
+      if (normalized.usage === null) delete normalized.usage;
+      return normalized;
+    }
+    default:
+      return data;
+  }
+}
 export class AsyncEventQueue<T> implements AsyncIterable<T> {
   private readonly values: T[] = [];
   private readonly waiters: ((result: IteratorResult<T>) => void)[] = [];

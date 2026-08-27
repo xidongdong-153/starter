@@ -7,7 +7,10 @@ import type {
   Models,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
+import { InMemoryTelemetryContext } from "@earendil-works/pi-telemetry";
 import { createPiNativeStreamFn } from "@api/infra/ai/pi-native-stream.js";
+import { testRunExecution } from "@api/test/run-execution.js";
+import { createAiTelemetryContext } from "@api/infra/telemetry/index.js";
 import { ApiErrorCodes } from "@starter/contracts";
 import { describe, expect, it, vi } from "vitest";
 
@@ -65,9 +68,15 @@ async function collect<T>(values: AsyncIterable<T>): Promise<T[]> {
   return result;
 }
 
+/** 审计 mock 按真实实现回传调用方给的 modelCallId。 */
 function audit() {
+  const ids: string[] = [];
   return {
-    beginModelCall: vi.fn(() => "model-call-1"),
+    ids,
+    beginModelCall: vi.fn((input: { id: string }) => {
+      ids.push(input.id);
+      return input.id;
+    }),
     finalizeModelCall: vi.fn(),
   };
 }
@@ -81,9 +90,7 @@ describe("pi native StreamFn", () => {
     const streamFn = createPiNativeStreamFn({
       models: modelsWith(vi.fn(() => upstream)),
       timeoutMs: 1000,
-      runId: "run-1",
-      userId: "user-1",
-      requestId: "request-1",
+      execution: testRunExecution({ runId: "run-1" }),
       audit: modelAudit,
     });
 
@@ -102,7 +109,7 @@ describe("pi native StreamFn", () => {
     );
     expect(modelAudit.finalizeModelCall).toHaveBeenCalledWith(
       expect.objectContaining({
-        id: "model-call-1",
+        id: modelAudit.ids[0],
         result: "succeeded",
         stopReason: "stop",
       }),
@@ -121,9 +128,7 @@ describe("pi native StreamFn", () => {
     const streamFn = createPiNativeStreamFn({
       models: modelsWith(vi.fn(() => upstream)),
       timeoutMs: 1000,
-      runId: "run-audit-failure",
-      userId: "user-audit-failure",
-      requestId: "request-audit-failure",
+      execution: testRunExecution({ runId: "run-audit-failure" }),
       audit: modelAudit,
     });
 
@@ -143,9 +148,7 @@ describe("pi native StreamFn", () => {
         }),
       ),
       timeoutMs: 1000,
-      runId: "run-2",
-      userId: "user-2",
-      requestId: "request-2",
+      execution: testRunExecution({ runId: "run-2" }),
       audit: modelAudit,
     });
     const errorEvents = await collect(streamFn(model, { messages: [] }));
@@ -170,9 +173,7 @@ describe("pi native StreamFn", () => {
     const timeoutFn = createPiNativeStreamFn({
       models: modelsWith(vi.fn(() => never)),
       timeoutMs: 10,
-      runId: "run-3",
-      userId: "user-3",
-      requestId: "request-3",
+      execution: testRunExecution({ runId: "run-3" }),
       audit: timeoutAudit,
     });
     const timeoutEvents = await collect(timeoutFn(model, { messages: [] }));
@@ -211,9 +212,7 @@ describe("pi native StreamFn", () => {
         ),
       ),
       timeoutMs: 1000,
-      runId: "run-4",
-      userId: "user-4",
-      requestId: "request-4",
+      execution: testRunExecution({ runId: "run-4" }),
       audit: abortAudit,
     });
     const abortEventsPromise = collect(
@@ -241,9 +240,7 @@ describe("pi native StreamFn", () => {
     const streamFn = createPiNativeStreamFn({
       models: modelsWith(vi.fn(() => upstream)),
       timeoutMs: 1000,
-      runId: "run-partial",
-      userId: "user-partial",
-      requestId: "request-partial",
+      execution: testRunExecution({ runId: "run-partial" }),
       audit: modelAudit,
     });
 
@@ -262,6 +259,135 @@ describe("pi native StreamFn", () => {
     ]);
   });
 
+  it("model_call span 记录 provider、usage、chunk count、TTFT 和 HTTP 状态码", async () => {
+    const recorder = new InMemoryTelemetryContext();
+    const telemetry = createAiTelemetryContext(recorder);
+    const telemetryExecution = testRunExecution({ runId: "run-telemetry" });
+    telemetryExecution.beginTurn(1);
+    telemetryExecution.beginStep("assistant", 1);
+    const upstream = createAssistantMessageEventStream();
+    const pending = assistant("pending");
+    const done: AssistantMessage = {
+      ...assistant("stop"),
+      responseModel: "native-model-2025",
+      responseId: "provider-response-9",
+    };
+    upstream.push({ type: "start", partial: pending });
+    setTimeout(
+      () =>
+        upstream.push({
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "safe ",
+          partial: pending,
+        }),
+      30,
+    );
+    setTimeout(
+      () =>
+        upstream.push({
+          type: "text_delta",
+          contentIndex: 0,
+          delta: "answer",
+          partial: pending,
+        }),
+      60,
+    );
+    setTimeout(
+      () => upstream.push({ type: "done", reason: "stop", message: done }),
+      90,
+    );
+    const streamFn = createPiNativeStreamFn({
+      models: modelsWith(
+        vi.fn(
+          (
+            requestModel: Model<Api>,
+            _context: Context,
+            options?: SimpleStreamOptions,
+          ) => {
+            void options?.onResponse?.(
+              { status: 200, headers: {} },
+              requestModel,
+            );
+            return upstream;
+          },
+        ),
+      ),
+      timeoutMs: 5000,
+      execution: telemetryExecution,
+      audit: audit(),
+      getTelemetryParent: () => telemetry,
+    });
+
+    const events = await collect(streamFn(model, { messages: [] }));
+    expect(events.map((event) => event.type)).toEqual([
+      "start",
+      "text_delta",
+      "text_delta",
+      "done",
+    ]);
+
+    const spans = recorder.getSpans();
+    expect(spans.map((span) => span.name)).toEqual(["starter.ai.model_call"]);
+    const span = spans[0];
+    if (!span) throw new Error("缺少 model_call span");
+    expect(span.attributes).toMatchObject({
+      "starter.ai.run.id": "run-telemetry",
+      "starter.ai.turn.id": telemetryExecution.turnId,
+      "starter.ai.step.id": telemetryExecution.step?.id,
+      "starter.ai.provider": model.provider,
+      "starter.ai.model": model.id,
+      "starter.ai.api": model.api,
+      "starter.ai.streaming": true,
+      "starter.ai.model_call.id": expect.any(String),
+      "starter.ai.model_call.result": "succeeded",
+      "starter.ai.response.model": "native-model-2025",
+      "starter.ai.response.id": "provider-response-9",
+      "starter.ai.response.stop_reason": "stop",
+      "starter.ai.http.status_code": 200,
+      "starter.ai.usage.input_tokens": 2,
+      "starter.ai.usage.output_tokens": 3,
+      "starter.ai.usage.total_tokens": 5,
+      "starter.ai.usage.cost": 3,
+      // start 是协议事件，也计入转发的 update 数量
+      "starter.ai.stream.chunk_count": 3,
+    });
+    const ttft = span.attributes["starter.ai.stream.time_to_first_output_ms"];
+    const duration = span.attributes["starter.ai.duration_ms"];
+    expect(typeof ttft).toBe("number");
+    expect(typeof duration).toBe("number");
+    // TTFT 只记首个内容 update，不是 start 事件，也不是整段耗时
+    expect(ttft as number).toBeGreaterThanOrEqual(20);
+    expect(ttft as number).toBeLessThan(duration as number);
+    expect(span.status).toMatchObject({ status: "ok" });
+    expect(JSON.stringify(spans)).not.toContain("safe answer");
+  });
+
+  it("timeout 的 model_call span 记录 timed_out 与 error.type=timeout", async () => {
+    const recorder = new InMemoryTelemetryContext();
+    const telemetry = createAiTelemetryContext(recorder);
+    const streamFn = createPiNativeStreamFn({
+      models: modelsWith(() => createAssistantMessageEventStream()),
+      timeoutMs: 10,
+      execution: testRunExecution({ runId: "run-telemetry-timeout" }),
+      audit: audit(),
+      getTelemetryParent: () => telemetry,
+    });
+
+    await expect(
+      collect(streamFn(model, { messages: [] })),
+    ).resolves.toMatchObject([{ type: "error", reason: "aborted" }]);
+
+    const span = recorder.getSpans()[0];
+    if (!span) throw new Error("缺少 model_call span");
+    expect(span.attributes).toMatchObject({
+      "starter.ai.model_call.result": "timed_out",
+      "starter.ai.error.code": ApiErrorCodes.AI_UPSTREAM_TIMEOUT,
+      "starter.ai.error.type": "timeout",
+    });
+    expect(span.status).toMatchObject({ status: "error" });
+  });
+
   it("timeout 先于后续 caller abort 时保留 timeout 终态", async () => {
     const modelAudit = audit();
     const controller = new AbortController();
@@ -269,9 +395,7 @@ describe("pi native StreamFn", () => {
     const streamFn = createPiNativeStreamFn({
       models: modelsWith(() => createAssistantMessageEventStream()),
       timeoutMs: 10,
-      runId: "run-timeout-first",
-      userId: "user-timeout-first",
-      requestId: "request-timeout-first",
+      execution: testRunExecution({ runId: "run-timeout-first" }),
       audit: modelAudit,
     });
 
