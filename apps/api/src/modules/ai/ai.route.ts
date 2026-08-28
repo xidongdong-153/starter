@@ -202,6 +202,7 @@ export function createAiRoute(runtime: AppRuntime) {
       createAiAgentDefinitionRoute({
         service: agentDefinitionService,
         requireAuth,
+        requireRuntime: requireRuntimePrincipal,
         requireRead,
         requireManage,
       }),

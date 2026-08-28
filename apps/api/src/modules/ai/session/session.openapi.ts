@@ -20,7 +20,10 @@ import {
 } from "@api/openapi/responses.js";
 
 const tags = ["AI Runtime"];
-const security = [{ cookieAuth: [] }];
+const security: Array<Record<string, string[]>> = [
+  { cookieAuth: [] },
+  { bearerAuth: [] },
+];
 const sessionParams = z.strictObject({ sessionId: uuidSchema });
 
 export const createAgentSessionRoute = createRoute({

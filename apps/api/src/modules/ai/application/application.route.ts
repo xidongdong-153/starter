@@ -5,6 +5,7 @@ import { createSuccessResponse } from "@api/shared/response.js";
 import {
   createAiApplicationRoute,
   listAiApplicationsRoute,
+  registerAiApplicationOpenApiComponents,
   revokeAiApplicationRoute,
   rotateAiApplicationRoute,
 } from "./application.openapi.js";
@@ -20,7 +21,7 @@ export function createAiApplicationRouteGroup(deps: {
   const { service, requireAuth, requireManage } = deps;
   const middleware = [requireAuth, requireManage];
 
-  return new OpenAPIHono<HonoEnv>()
+  const app = new OpenAPIHono<HonoEnv>()
     .openapi({ ...listAiApplicationsRoute, middleware }, (c) =>
       c.json(createSuccessResponse(service.list(), c.var.requestId), 200),
     )
@@ -63,4 +64,8 @@ export function createAiApplicationRouteGroup(deps: {
         200,
       ),
     );
+
+  registerAiApplicationOpenApiComponents(app);
+
+  return app;
 }

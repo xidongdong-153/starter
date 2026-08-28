@@ -13,6 +13,19 @@ import {
   notFoundResponse,
   unauthorizedResponse,
 } from "@api/openapi/responses.js";
+import type { HonoEnv } from "@api/shared/hono-env.js";
+import type { OpenAPIHono } from "@hono/zod-openapi";
+
+export function registerAiApplicationOpenApiComponents(
+  app: OpenAPIHono<HonoEnv>,
+) {
+  app.openAPIRegistry.registerComponent("securitySchemes", "bearerAuth", {
+    type: "http",
+    scheme: "bearer",
+    description:
+      "product_app 凭据（secret），配合 X-AI-External-User-Id 等头使用",
+  });
+}
 
 const tags = ["AI Control"];
 const security = [{ cookieAuth: [] }];

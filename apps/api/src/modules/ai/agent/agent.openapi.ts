@@ -26,7 +26,11 @@ import {
 
 const controlTags = ["AI Control"];
 const runtimeTags = ["AI Runtime"];
-const security = [{ cookieAuth: [] }];
+const runtimeSecurity: Array<Record<string, string[]>> = [
+  { cookieAuth: [] },
+  { bearerAuth: [] },
+];
+const controlSecurity = [{ cookieAuth: [] }];
 const agentParams = z.strictObject({ agentId: uuidSchema });
 const agentQuery = agentDefinitionListQuerySchema;
 
@@ -34,7 +38,7 @@ export const listPublicAgentDefinitionsRoute = createRoute({
   method: "get",
   path: "/api/ai/agents",
   tags: runtimeTags,
-  security,
+  security: runtimeSecurity,
   request: { query: agentQuery },
   responses: {
     200: apiSuccessResponse(
@@ -50,7 +54,7 @@ export const getPublicAgentDefinitionRoute = createRoute({
   method: "get",
   path: "/api/ai/agents/{agentId}",
   tags: runtimeTags,
-  security,
+  security: runtimeSecurity,
   request: { params: agentParams },
   responses: {
     200: apiSuccessResponse(
@@ -67,7 +71,7 @@ export const listAdminAgentDefinitionsRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/agents",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   request: { query: agentQuery },
   responses: {
     200: apiSuccessResponse(
@@ -85,7 +89,7 @@ export const listAdminAiToolsRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/tools",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   responses: {
     200: apiSuccessResponse(
       z.array(aiToolSummarySchema),
@@ -101,7 +105,7 @@ export const getAdminAgentDefinitionRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/agents/{agentId}",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   request: { params: agentParams },
   responses: {
     200: apiSuccessResponse(
@@ -120,7 +124,7 @@ export const createAdminAgentDefinitionRoute = createRoute({
   method: "post",
   path: "/api/ai/admin/agents",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   request: {
     body: {
       content: { "application/json": { schema: createAgentDefinitionSchema } },
@@ -145,7 +149,7 @@ export const updateAdminAgentDefinitionRoute = createRoute({
   method: "patch",
   path: "/api/ai/admin/agents/{agentId}",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   request: {
     params: agentParams,
     body: {
@@ -172,7 +176,7 @@ export const updateAdminAgentDefinitionStatusRoute = createRoute({
   method: "patch",
   path: "/api/ai/admin/agents/{agentId}/status",
   tags: controlTags,
-  security,
+  security: controlSecurity,
   request: {
     params: agentParams,
     body: {

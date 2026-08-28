@@ -21,14 +21,16 @@ type AiRouteMiddleware = MiddlewareHandler<HonoEnv>;
 export function createAiAgentDefinitionRoute(deps: {
   service: ReturnType<typeof createAiAgentDefinitionService>;
   requireAuth: AiRouteMiddleware;
+  requireRuntime: AiRouteMiddleware;
   requireRead: AiRouteMiddleware;
   requireManage: AiRouteMiddleware;
 }) {
-  const { service, requireAuth, requireRead, requireManage } = deps;
+  const { service, requireAuth, requireRuntime, requireRead, requireManage } =
+    deps;
 
   return new OpenAPIHono<HonoEnv>()
     .openapi(
-      { ...listPublicAgentDefinitionsRoute, middleware: requireAuth },
+      { ...listPublicAgentDefinitionsRoute, middleware: requireRuntime },
       (c) =>
         c.json(
           createSuccessResponse(
@@ -39,7 +41,7 @@ export function createAiAgentDefinitionRoute(deps: {
         ),
     )
     .openapi(
-      { ...getPublicAgentDefinitionRoute, middleware: requireAuth },
+      { ...getPublicAgentDefinitionRoute, middleware: requireRuntime },
       (c) =>
         c.json(
           createSuccessResponse(

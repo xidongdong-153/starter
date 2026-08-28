@@ -21,7 +21,10 @@ import {
 } from "@api/openapi/responses.js";
 
 const tags = ["AI Runtime"];
-const security = [{ cookieAuth: [] }];
+const security: Array<Record<string, string[]>> = [
+  { cookieAuth: [] },
+  { bearerAuth: [] },
+];
 
 const runParams = z.strictObject({
   sessionId: uuidSchema,
