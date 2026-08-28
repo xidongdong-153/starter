@@ -68,6 +68,17 @@ S5 投影读取顺序固定：
 
 `content` 字段语义不变，仍然只拼 text block。顺序信息走另一个可选字段 `blocks`：按 `message.content` 原顺序把 `TextContent` 和 `ThinkingContent` 投成 `{ type, text }` 块数组（上限 64），toolCall 块不进 `blocks`，继续只走 `toolCalls`。只带 toolCall 的 assistant message 投出来是 `content: ''` + `blocks: []`，客户端不能把这种空消息当成「还在生成中」渲染。
 
+### 3.3 tool_activity 的 structuredOutput 回放
+
+`emit_structured_output` 工具调用的输出会在 transcript 里回放，规则：
+
+- 识别方式：toolResult entry 的 `details.structuredOutputId`（UUID 校验，`readToolDetails` 读出），与 pi-tool-adapter 写入侧同名同路径。
+- 注入形状：`item.structuredOutput = { contract: AiOutputContractRef, value: Record | null, referenceId }`，与事件 `structured_output.available` 的 data 形状对齐（contract + value + referenceId）。
+- 可见性打码与 run 模块 structured-outputs 路由一致：registry 解析出的 contract `visibility === 'product'` 才带 value，admin 置 null。
+- contract ref 组装用 `toStructuredOutputContractRef`（`output/output-contract-registry.ts`，与 run.service 共用）：schemaHash / renderKind 取表内记录，visibility / mode 取 registry 当前定义。
+- contract 已从代码注册表移除的输出：不注入该字段（tool_activity 本身保留），记 WARN。
+- 实现分两层：presenter 的 `collectStructuredOutputIds(entries)` 负责从 raw entry 收集 id（与 `readToolDetails` 同解析路径），session service 的 `readStructuredOutputsForTranscript` 负责批量 `findByIds` + registry resolve + 打码，再把 Map 传给 `projectTranscript` 第 4 参数。改 details 解析规则时两处必须同步。
+
 ## 4. Validation & Error Matrix
 
 | 条件 | HTTP | Error code |
@@ -102,6 +113,7 @@ S5 投影读取顺序固定：
 - 分页方向：`direction=backward` 首屏返回最新一页且是时间正序、带 cursor 时返回更早一页、没有更早内容时 nextCursor 为 null；`direction=forward` 行为与改动前一致。
 - assistant item 的 `usage` 和 `toolCalls`、system item 的 `tokensBefore` 都能读到；toolCall block 带 `arguments` 时投影结果不得包含入参，`toolCallId` 与对应 `tool_activity` item 一致。
 - assistant item 的 `blocks` 按 `message.content` 原顺序输出（含 text 与 thinking 交错的情况），`content` 仍然只有正文。
+- structuredOutput 回放（`ai-third-party-access.test.ts`）：product 可见性 tool_activity 带 value、admin 可见性 value 为 null、非 tool_activity item 不带该字段、referenceId 与 structured-outputs 路由返回一致。
 - 一致性检查两方向 orphan 且不修改数据。
 
 ## 7. Wrong vs Correct

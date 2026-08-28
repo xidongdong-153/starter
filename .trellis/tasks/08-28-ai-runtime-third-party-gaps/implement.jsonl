@@ -1,0 +1,6 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 子域规范：路由清单、错误矩阵、SSE 契约，新增端点必须对齐"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "Session 子域规范：transcript 投影规则，结构化输出注入要扩展这里"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "模块分层约定 route/service/repository/presenter"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "AppError 与统一响应约定，新路由错误码遵循"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "新 endpoint 的测试与质量检查要求"}

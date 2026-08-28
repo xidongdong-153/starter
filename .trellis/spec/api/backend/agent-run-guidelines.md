@@ -23,6 +23,8 @@ interface AiAgentRunService {
   timeline(access: RuntimeAccessContext, sessionId: string, runId: string, afterSequence: number, pageSize: number): RunTimeline
   sequenceForEvent(access: RuntimeAccessContext, sessionId: string, runId: string, eventId: string): number
   subscribe(access: RuntimeAccessContext, sessionId: string, runId: string, afterSequence: number): AsyncIterable<RunEvent>
+  structuredOutputs(access: RuntimeAccessContext, sessionId: string, runId: string): StructuredOutputList
+  adminStructuredOutputs(runId: string): StructuredOutputList
   trace(access: RuntimeAccessContext, sessionId: string, runId: string): RunTrace
   abort(access: RuntimeAccessContext, sessionId: string, runId: string): AgentRun
   steer(access: RuntimeAccessContext, sessionId: string, runId: string, text: string): AgentRun
@@ -36,17 +38,21 @@ Repository 方法见 `apps/api/src/modules/ai/run/run.repository.ts`：`create`�
 Route 10 个 endpoint：
 
 ```text
-POST   /api/ai/sessions/{sessionId}/runs                              # 创建 Run + SSE
+POST   /api/ai/sessions/{sessionId}/runs                              # 创建 Run，按 Accept 分流返回 SSE 或 JSON
 GET    /api/ai/sessions/{sessionId}/active-run                        # 该 lane 仍在跑的 Run，没有时 data 为 null
 GET    /api/ai/sessions/{sessionId}/runs/{runId}
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/timeline              # 持久时间线
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/events                # 完整 RunEvent
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/events/stream         # 已有 Run 的 SSE 恢复
+GET    /api/ai/sessions/{sessionId}/runs/{runId}/structured-outputs    # 结构化输出读取（运行面主体）
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/trace                 # 管理 Trace
 POST   /api/ai/sessions/{sessionId}/runs/{runId}/abort
 POST   /api/ai/sessions/{sessionId}/runs/{runId}/steer
 POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
+GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构化输出读取（admin，AI_CONFIG_READ）
 ```
+
+所有运行面路由挂 `requireRuntimePrincipal`：cookie 用户与 Bearer product_app 都能访问；`/api/ai/admin/runs/{runId}/structured-outputs` 挂 `requireAuth` + `AI_CONFIG_READ`。
 
 ## 3. Contracts
 
@@ -62,7 +68,9 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - `run.completed` 带必填 `reason`，值来自 executor 的 `completionReason`（只在 completed 时有值，缺失时当 `model_finished`）。failed / aborted 的事件形状不变。
 - 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
 - `activeRun` 的判据只有主库 Run 行的 `starting` / `running`，不查 `ActiveRunRegistry`：registry 是进程内索引，进程重启后 `recoverInterrupted` 已经把非终态 Run 落成 `interrupted`，此时应该返回 null，让客户端保持静态历史。查询参数 `lane` 默认 `main`，响应 data 与 `GET /runs/{runId}` 同源（`toAgentRun(record, readLiveSnapshot(record))`），没有在跑的 Run 时 data 是 null 而不是 404。
-- SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。
+- SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。两处 SSE handler（创建流与恢复流）的心跳写入必须都是真实换行 `": heartbeat\n\n"`——写字面量 `\\n` 会产出永不封帧的垃圾字节并粘连下一帧。
+- `POST /runs` 按 Accept 分流：请求 Accept 含 `application/json` 且不含 `text/event-stream` 时返回 JSON `{ ok, data: { runId }, meta }`，不订阅事件流（Run 照常执行，客户端用 `GET /runs/{runId}` + timeline 轮询）；缺省、`*/*` 或仅 `text/event-stream` 时维持 SSE，向后兼容既有客户端。
+- 结构化输出读取（运行面与 admin 两路）的可见性规则：contract `visibility=product` 时运行面返回 value、`visibility=admin` 时返回 `value: null`；admin 路由恒返回 value。contract ref 组装用 `toStructuredOutputContractRef`（`output/output-contract-registry.ts`）：`schemaHash` / `renderKind` 取表内记录（emit 时刻的事实），`visibility` / `mode` 取 registry 当前定义；该函数与 transcript 回放（session 模块）共用，改一处必须同步另一处。contract 已从代码注册表移除（`registry.find` 不到）的记录不返回，记 WARN——registry 是渲染元数据的唯一来源。
 
 ## 4. Validation & Error Matrix
 
@@ -78,6 +86,9 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 | registry 同 session+lane 冲突（Run row 创建前） | 409 | `AI.SESSION_BUSY`，不创建 Run |
 | lane 创建失败 | 500 | `AI.SESSION_STORAGE_FAILED` |
 | 控制接口（abort/steer/follow-up）无 active handle | 409 | `AI.RUN_NOT_ACTIVE` |
+| structured-outputs 运行面路由：session/run 不属于该 principal | 404 | `COMMON.NOT_FOUND` |
+| structured-outputs admin 路由：runId 不存在 | 404 | `COMMON.NOT_FOUND` |
+| structured-outputs admin 路由：无 AI_CONFIG_READ 权限 | 403 | 既有权限错误码 |
 | `starter.run` 写入失败 | 持久化 failed | 主库 `AI.SESSION_STORAGE_FAILED`，发布 run.failed |
 | `starter.run` 写入后主库终态更新失败 | 不发布 terminal event | 记录日志、关闭 transport、release，等恢复修复 |
 
@@ -108,6 +119,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读取 `test-fixtures/run-event-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；产品前端自己折叠事件时使用同一份 fixture 校验。任一边漂移都会红。
 - `run-event-recovery.test.ts` 覆盖回放窗口竞态、delta/progress 游标、进程重启后的持久 Timeline 和 GET `/events/stream` 的 `Last-Event-ID`；测试通过 `createTestApp` 注入测试 Provider，不依赖真实模型。
 - 刷新恢复链路（`run-event-recovery.test.ts`，用挂住的 streamFn 把 Run 停在 running）：`GET /active-run` 返回该 Run 且 `status` 为 `running`；同一时刻 transcript 已含本轮 `user_message`、不含 `assistant_message`；断掉原来那条 SSE 后 Run 继续跑；用查到的 runId 连 `events/stream?afterSequence=0` 能收到从 sequence 1 开始的连续事件并以终态事件收尾；Run 进终态后 `GET /active-run` 的 data 为 null；他人查同一 session 的 `active-run` 返回 404。
+- 第三方接入链路（`apps/api/src/test/ai-third-party-access.test.ts`，Bearer product_app 视角）：CORS 预检覆盖 7 个运行面头；agent 公共列表只含 enabled、伪造 Bearer 401；`Accept: application/json` 启动返回 runId 后轮询到 completed 且 timeline 完整，显式 `text/event-stream` 仍走 SSE；structured-outputs 路由的 product/admin 可见性打码、admin 路由不打码、跨 scope 404；transcript 中 `emit_structured_output` 的 tool_activity 携带 structuredOutput。心跳修复无集成测试（15s 定时器不可观测），由两处写法一致性与既有 sse parser 测试覆盖。
 
 ## 7. Wrong vs Correct
 
