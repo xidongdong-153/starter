@@ -1,5 +1,7 @@
 import type { Metadata } from 'next'
 import { redirect } from 'next/navigation'
+import { Button } from '@web/components/ui/button'
+import { Input } from '@web/components/ui/input'
 
 export const metadata: Metadata = {
   title: '公开资料',
@@ -23,19 +25,10 @@ export default async function ProfilesIndexPage({ searchParams }: { searchParams
           <label className="sr-only" htmlFor="profile-user-id">
             用户 ID
           </label>
-          <input
-            className="min-h-12 min-w-0 flex-1 rounded-sm border border-border bg-surface px-4 outline-none transition-colors placeholder:text-subtle-foreground focus:border-primary focus:ring-2 focus:ring-ring"
-            id="profile-user-id"
-            name="userId"
-            placeholder="输入用户 ID"
-            required
-          />
-          <button
-            className="inline-flex min-h-12 items-center justify-center rounded-sm bg-primary px-5 font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-            type="submit"
-          >
+          <Input className="h-12 flex-1" id="profile-user-id" name="userId" placeholder="输入用户 ID" required />
+          <Button className="h-12 font-semibold transition-transform hover:-translate-y-0.5" type="submit">
             打开资料
-          </button>
+          </Button>
         </form>
       </div>
     </main>

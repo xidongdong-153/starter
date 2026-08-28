@@ -6,6 +6,8 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 import { getAuthConfig } from '@web/lib/api/auth-config.api'
 import { authClient } from '@web/lib/auth-client'
+import { Button } from '@web/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader } from '@web/components/ui/card'
 
 export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const [error, setError] = useState('')
@@ -46,60 +48,53 @@ export function AuthForm({ mode }: { mode: 'login' | 'register' }) {
   const hasProvider = providers?.github || providers?.google
 
   return (
-    <section className="w-full max-w-md rounded-md border border-border bg-surface p-6 shadow-sm sm:p-8">
-      <p className="text-xs font-semibold text-primary">Starter Account</p>
-      <h1 className="mt-3 text-3xl font-semibold">{title}</h1>
-      <p className="mt-3 text-sm leading-6 text-muted-foreground">{description}</p>
+    <Card className="w-full max-w-md">
+      <CardHeader>
+        <p className="text-xs font-semibold text-primary">Starter Account</p>
+        <h1 className="mt-2 text-3xl font-semibold">{title}</h1>
+        <CardDescription className="leading-6">{description}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className="grid gap-3">
+          {providers === null ? (
+            <p className="text-sm text-muted-foreground">正在加载可用的登录方式。</p>
+          ) : hasProvider ? (
+            <>
+              {providers.github ? (
+                <Button disabled={pending} onClick={() => void social('github')} type="button" variant="outline">
+                  <GitBranch aria-hidden="true" size={17} />
+                  使用 GitHub{mode === 'login' ? ' 登录' : ' 注册'}
+                </Button>
+              ) : null}
+              {providers.google ? (
+                <Button disabled={pending} onClick={() => void social('google')} type="button" variant="outline">
+                  <Globe2 aria-hidden="true" size={17} />
+                  使用 Google{mode === 'login' ? ' 登录' : ' 注册'}
+                </Button>
+              ) : null}
+            </>
+          ) : (
+            <p className="text-sm text-muted-foreground">当前没有已配置的第三方登录方式。</p>
+          )}
+        </div>
 
-      <div className="mt-8 grid gap-3">
-        {providers === null ? (
-          <p className="text-sm text-muted-foreground">正在加载可用的登录方式。</p>
-        ) : hasProvider ? (
-          <>
-            {providers.github ? (
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 text-sm transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-                disabled={pending}
-                onClick={() => void social('github')}
-                type="button"
-              >
-                <GitBranch aria-hidden="true" size={17} />
-                使用 GitHub{mode === 'login' ? ' 登录' : ' 注册'}
-              </button>
-            ) : null}
-            {providers.google ? (
-              <button
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-border bg-background px-3 text-sm transition-colors hover:bg-surface-muted disabled:cursor-wait disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-                disabled={pending}
-                onClick={() => void social('google')}
-                type="button"
-              >
-                <Globe2 aria-hidden="true" size={17} />
-                使用 Google{mode === 'login' ? ' 登录' : ' 注册'}
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <p className="text-sm text-muted-foreground">当前没有已配置的第三方登录方式。</p>
-        )}
-      </div>
+        {error ? (
+          <p className="mt-4 text-sm text-danger" role="alert">
+            {error}
+          </p>
+        ) : null}
 
-      {error ? (
-        <p className="mt-4 text-sm text-danger" role="alert">
-          {error}
+        <p className="mt-6 text-sm text-muted-foreground">
+          {mode === 'login' ? '还没有账户？' : '已经有账户？'}{' '}
+          <Link
+            className="inline-flex items-center gap-1 font-medium text-primary underline decoration-transparent underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            href={mode === 'login' ? '/register' : '/login'}
+          >
+            {mode === 'login' ? '去注册' : '去登录'}
+            <ArrowRight aria-hidden="true" size={15} />
+          </Link>
         </p>
-      ) : null}
-
-      <p className="mt-7 text-sm text-muted-foreground">
-        {mode === 'login' ? '还没有账户？' : '已经有账户？'}{' '}
-        <Link
-          className="inline-flex items-center gap-1 font-medium text-primary underline decoration-transparent underline-offset-4 transition-colors hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-          href={mode === 'login' ? '/register' : '/login'}
-        >
-          {mode === 'login' ? '去注册' : '去登录'}
-          <ArrowRight aria-hidden="true" size={15} />
-        </Link>
-      </p>
-    </section>
+      </CardContent>
+    </Card>
   )
 }

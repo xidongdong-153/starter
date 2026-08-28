@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import { ArrowLeft, FileText } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@web/components/ui/button'
 
 export const metadata: Metadata = {
   title: '文稿暂不可用',
@@ -12,13 +13,16 @@ export default async function WritingDetailPage({ params }: { params: Promise<{ 
 
   return (
     <main className="page-enter reading-container py-12 md:py-20">
-      <Link
-        className="inline-flex min-h-11 items-center gap-2 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-        href="/writing"
+      <Button
+        asChild
+        className="justify-start gap-2 font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
+        variant="ghost"
       >
-        <ArrowLeft aria-hidden="true" size={16} />
-        返回文稿
-      </Link>
+        <Link href="/writing">
+          <ArrowLeft aria-hidden="true" size={16} />
+          返回文稿
+        </Link>
+      </Button>
       <article className="mt-14 border-t border-border pt-8 md:mt-20 md:pt-10">
         <p className="text-sm font-semibold text-primary">WRITING / UNAVAILABLE</p>
         <h1 className="mt-4 text-4xl font-semibold sm:text-5xl">这篇文稿暂不可用</h1>

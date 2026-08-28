@@ -3,6 +3,7 @@
 import type { ThemeSetting } from '@web/lib/theme'
 import { Monitor, Moon, Sun } from 'lucide-react'
 import { useTheme } from '@web/hooks/use-theme'
+import { Button } from '@web/components/ui/button'
 
 const options: Array<{
   icon: typeof Sun
@@ -20,28 +21,30 @@ export function ThemeToggle() {
   return (
     <div
       aria-label="选择主题"
-      className="inline-flex h-10 items-center gap-1 rounded-md border border-border bg-surface-muted p-1"
+      className="inline-flex h-10 items-center gap-1 border border-border bg-surface-muted p-1"
       role="group"
     >
       {options.map((option) => {
         const Icon = option.icon
         const selected = theme === option.value
         return (
-          <button
+          <Button
             aria-label={option.label}
             aria-pressed={selected}
-            className={`grid size-8 place-items-center rounded-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+            className={`size-8 ${
               selected
-                ? 'bg-surface text-foreground shadow-sm'
+                ? 'bg-surface text-foreground shadow-sm hover:bg-surface'
                 : 'text-muted-foreground hover:bg-surface hover:text-foreground'
             }`}
             key={option.value}
             onClick={() => setTheme(option.value)}
+            size="icon"
             title={option.label}
             type="button"
+            variant="ghost"
           >
             <Icon aria-hidden="true" size={16} strokeWidth={1.8} />
-          </button>
+          </Button>
         )
       })}
     </div>

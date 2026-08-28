@@ -2,6 +2,7 @@
 
 import { RefreshCw } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@web/components/ui/button'
 
 export default function GlobalError({ reset }: { error: Error & { digest?: string }; reset: () => void }) {
   return (
@@ -13,20 +14,13 @@ export default function GlobalError({ reset }: { error: Error & { digest?: strin
           页面或 API 请求失败。可以重新加载，或者先回到首页。
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
-          <button
-            className="inline-flex min-h-11 items-center gap-2 rounded-sm bg-primary px-5 font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-            onClick={reset}
-            type="button"
-          >
+          <Button className="font-semibold transition-transform hover:-translate-y-0.5" onClick={reset} type="button">
             <RefreshCw aria-hidden="true" size={16} />
             重新加载
-          </button>
-          <Link
-            className="inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-5 font-medium transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-            href="/"
-          >
-            回到首页
-          </Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/">回到首页</Link>
+          </Button>
         </div>
       </section>
     </main>

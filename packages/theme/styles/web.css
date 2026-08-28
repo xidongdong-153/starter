@@ -11,19 +11,32 @@
   --color-surface-subtle: var(--theme-base-subtle);
   --color-surface-elevated: var(--theme-surface-1);
 
+  --color-card: var(--theme-surface-0);
+  --color-card-foreground: var(--theme-text);
+  --color-popover: var(--theme-surface-1);
+  --color-popover-foreground: var(--theme-text);
+
+  --color-muted: var(--theme-base-muted);
   --color-muted-foreground: var(--theme-text-muted);
   --color-subtle-foreground: var(--theme-text-subtle);
 
   --color-primary: var(--theme-primary);
   --color-primary-foreground: var(--theme-primary-contrast);
   --color-primary-hover: var(--theme-foam);
+
+  --color-secondary: var(--theme-base-muted);
+  --color-secondary-foreground: var(--theme-text);
+  --color-accent: var(--theme-base-muted);
+  --color-accent-foreground: var(--theme-text);
   --color-highlight: var(--theme-highlight);
   --color-danger: var(--theme-danger);
+  --color-destructive: var(--theme-danger);
   --color-success: var(--theme-success);
   --color-warning: var(--theme-warning);
   --color-info: var(--theme-info);
 
   --color-border: color-mix(in srgb, var(--theme-overlay-0) 58%, transparent);
+  --color-input: color-mix(in srgb, var(--theme-overlay-0) 58%, transparent);
   --color-border-subtle: color-mix(in srgb, var(--theme-overlay-0) 34%, transparent);
   --color-ring: color-mix(in srgb, var(--theme-primary) 55%, transparent);
 

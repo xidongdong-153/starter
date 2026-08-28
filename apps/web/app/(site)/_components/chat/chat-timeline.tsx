@@ -14,7 +14,7 @@ const toolStatusLabels: Record<AgentToolStatus | 'running', string> = {
   timed_out: '超时',
 }
 
-const bubbleBase = 'rounded-sm border px-4 py-3 text-sm leading-6'
+const bubbleBase = 'border px-4 py-3 text-sm leading-6'
 const userBubble = `${bubbleBase} border-border bg-surface-muted`
 const assistantBubble = `${bubbleBase} border-border-subtle bg-surface`
 const metaRow = 'flex flex-wrap items-center gap-2 text-xs text-muted-foreground'
@@ -127,7 +127,7 @@ function MessageBlocks({ blocks, pending }: { blocks: AgentMessageBlock[]; pendi
     <div className="mt-2 grid gap-3">
       {blocks.map((block, index) =>
         block.type === 'thinking' ? (
-          <details className="rounded-sm border border-border-subtle bg-surface-muted px-3 py-2" key={index}>
+          <details className="border border-border-subtle bg-surface-muted px-3 py-2" key={index}>
             <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               思考过程
             </summary>
@@ -153,7 +153,7 @@ function ToolRow({
   status: AgentToolStatus | 'running'
 }) {
   return (
-    <div className="rounded-sm border border-border-subtle bg-surface-muted px-4 py-2 text-xs text-muted-foreground">
+    <div className="border border-border-subtle bg-surface-muted px-4 py-2 text-xs text-muted-foreground">
       <span className="font-medium text-foreground">{name}</span>
       <span className="ml-2">{toolStatusLabels[status]}</span>
       {safeSummary === null ? null : <span className="ml-2 whitespace-pre-wrap">{safeSummary}</span>}
@@ -163,7 +163,7 @@ function ToolRow({
 
 function CompactionRow({ summary }: { summary: string }) {
   return (
-    <div className="rounded-sm border border-border-subtle px-4 py-2 text-xs text-muted-foreground">
+    <div className="border border-border-subtle px-4 py-2 text-xs text-muted-foreground">
       较早的对话已压缩：<span className="whitespace-pre-wrap">{summary}</span>
     </div>
   )

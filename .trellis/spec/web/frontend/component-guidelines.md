@@ -27,4 +27,8 @@ export default function HomePage() {
 
 ## 样式
 
-优先使用 `packages/theme/styles/web.css` 提供的语义 Tailwind token，如 `bg-background`、`text-muted-foreground`、`border-border`、`text-primary`。组件保持当前的 `rounded-sm`、focus-visible outline 和 `min-h-11` 交互尺寸模式。
+优先使用 `packages/theme/styles/web.css` 提供的语义 Tailwind token，如 `bg-background`、`text-muted-foreground`、`border-border`、`text-primary`。
+
+基础控件用 `components/ui/` 里的 shadcn 源码组件（Button、Card、Input、Textarea、Label、Separator、Badge、Skeleton），`cn` 在 `lib/utils.ts`。新页面先找现成组件，不够时在 `components/ui/` 新增，不往页面里手写重复的按钮、输入框 class。
+
+全站直角风：不写任何 `rounded-*` 类，包括 `rounded-sm`。层永和精致度用 shadow（`shadow-sm` 悬停时 `shadow-md`）、毛玻璃和颜色 token 表达。交互按钮保持 `min-h-11` 尺寸和 focus-visible ring。

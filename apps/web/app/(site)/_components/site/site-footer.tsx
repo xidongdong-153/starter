@@ -10,7 +10,7 @@ export function SiteFooter() {
       <div className="site-container flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
         <div>
           <Link
-            className="inline-flex rounded-sm text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
+            className="inline-flex text-lg font-semibold focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
             href="/"
           >
             Starter

@@ -1,5 +1,7 @@
 import { ArrowDown, FileText, FolderKanban, UserRound } from 'lucide-react'
 import Link from 'next/link'
+import { Badge } from '@web/components/ui/badge'
+import { Button } from '@web/components/ui/button'
 import { SessionHome } from './_components/home/session-home'
 
 const sections = [
@@ -55,33 +57,36 @@ export default function HomePage() {
               <dd className="mt-1 font-medium">localhost:7788</dd>
             </div>
           </dl>
-          <a
-            className="mt-10 inline-flex min-h-11 items-center gap-2 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-            href="#site-sections"
+          <Button
+            asChild
+            className="mt-10 justify-start gap-2 font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
+            variant="ghost"
           >
-            查看站点入口
-            <ArrowDown aria-hidden="true" size={16} />
-          </a>
+            <a href="#site-sections">
+              查看站点入口
+              <ArrowDown aria-hidden="true" size={16} />
+            </a>
+          </Button>
         </aside>
       </section>
 
       <section className="border-y border-border-subtle bg-surface-muted/55" id="site-sections">
-        <div className="site-container grid md:grid-cols-3">
+        <div className="site-container grid gap-4 py-10 md:grid-cols-3 md:gap-5 md:py-14">
           {sections.map((section) => {
             const Icon = section.icon
             return (
               <Link
-                className="group min-h-64 border-b border-border-subtle py-10 transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:border-b-0 md:border-r md:px-7 md:first:pl-0 md:last:border-r-0 md:last:pr-0"
+                className="group flex min-h-64 flex-col border border-border-subtle bg-card px-6 py-8 shadow-sm transition-all hover:-translate-y-0.5 hover:shadow-md focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary md:px-7"
                 href={section.href}
                 key={section.href}
               >
-                <div className="flex items-center justify-between text-xs text-subtle-foreground">
-                  <span>{section.index}</span>
+                <div className="flex items-center justify-between">
+                  <Badge variant="outline">{section.index}</Badge>
                   <Icon aria-hidden="true" size={18} strokeWidth={1.6} />
                 </div>
                 <h2 className="mt-12 text-2xl font-semibold">{section.title}</h2>
                 <p className="mt-3 max-w-sm text-sm leading-6 text-muted-foreground">{section.description}</p>
-                <span className="mt-8 inline-flex text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
+                <span className="mt-auto inline-flex pt-8 text-sm font-medium text-primary transition-transform group-hover:translate-x-1">
                   打开页面 →
                 </span>
               </Link>

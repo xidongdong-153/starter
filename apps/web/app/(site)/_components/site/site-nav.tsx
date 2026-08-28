@@ -4,6 +4,7 @@ import { FileText, FolderKanban, Home, Menu, MessagesSquare, Search, X } from 'l
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
+import { Button } from '@web/components/ui/button'
 
 const navItems = [
   { href: '/', icon: Home, label: '首页' },
@@ -51,16 +52,14 @@ export function SiteNav() {
     <header className="fixed inset-x-0 top-0 z-50 px-4 pt-[max(1rem,env(safe-area-inset-top))]">
       <nav
         aria-label="站点导航"
-        className="mx-auto flex h-14 w-full max-w-4xl items-center justify-between rounded-md border border-border bg-surface/95 px-2 shadow-sm backdrop-blur-md"
+        className="mx-auto flex h-14 w-full max-w-4xl items-center justify-between border border-border bg-surface/95 px-2 shadow-sm backdrop-blur-md"
       >
         <Link
           aria-label="回到首页"
-          className="flex h-10 items-center gap-2 rounded-sm px-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+          className="flex h-10 items-center gap-2 px-3 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           href="/"
         >
-          <span className="grid size-6 place-items-center rounded-sm bg-primary text-xs text-primary-foreground">
-            S
-          </span>
+          <span className="grid size-6 place-items-center bg-primary text-xs text-primary-foreground">S</span>
           <span>Starter</span>
         </Link>
 
@@ -68,7 +67,7 @@ export function SiteNav() {
           {navItems.map((item) => (
             <Link
               aria-current={isActive(item.href) ? 'page' : undefined}
-              className={`rounded-sm px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+              className={`px-3 py-2 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                 isActive(item.href)
                   ? 'bg-surface-muted text-foreground'
                   : 'text-muted-foreground hover:bg-surface-muted hover:text-foreground'
@@ -81,16 +80,18 @@ export function SiteNav() {
           ))}
         </div>
 
-        <button
+        <Button
           aria-expanded={open}
           aria-label={open ? '关闭菜单' : '打开菜单'}
-          className="grid size-10 place-items-center rounded-sm text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary md:hidden"
+          className="md:hidden"
           onClick={() => setOpen((current) => !current)}
           ref={menuButtonRef}
+          size="icon"
           type="button"
+          variant="ghost"
         >
           {open ? <X aria-hidden="true" size={20} /> : <Menu aria-hidden="true" size={20} />}
-        </button>
+        </Button>
       </nav>
 
       {open ? (
@@ -101,13 +102,13 @@ export function SiteNav() {
             onClick={() => setOpen(false)}
             type="button"
           />
-          <div className="mx-auto mt-2 grid w-full max-w-4xl gap-1 rounded-md border border-border bg-surface p-2 shadow-lg md:hidden">
+          <div className="mx-auto mt-2 grid w-full max-w-4xl gap-1 border border-border bg-surface p-2 shadow-lg md:hidden">
             {navItems.map((item, index) => {
               const Icon = item.icon
               return (
                 <Link
                   aria-current={isActive(item.href) ? 'page' : undefined}
-                  className={`flex min-h-12 items-center gap-3 rounded-sm px-4 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
+                  className={`flex min-h-12 items-center gap-3 px-4 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary ${
                     isActive(item.href)
                       ? 'bg-surface-muted text-foreground'
                       : 'text-muted-foreground hover:bg-surface-muted hover:text-foreground'

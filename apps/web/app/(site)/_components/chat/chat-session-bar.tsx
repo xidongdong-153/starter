@@ -4,14 +4,14 @@ import type { AgentSession } from '@starter/contracts'
 import { Archive, Pencil, Plus } from 'lucide-react'
 import { useState } from 'react'
 import type { ChangeEvent, FormEvent } from 'react'
+import { Button } from '@web/components/ui/button'
+import { Input } from '@web/components/ui/input'
 
 /** 和 contracts 的 agentSessionTitleSchema 一致：trim 后 1-120 字符。 */
 const TITLE_MAX_LENGTH = 120
 
-const controlBase =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60'
-const inputBase =
-  'min-h-11 rounded-sm border border-border bg-surface px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60'
+const selectClass =
+  'min-h-11 border border-input bg-surface px-3 text-sm transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
 
 /**
  * 会话区：选择器、新建、改名、归档。
@@ -106,7 +106,7 @@ export function ChatSessionBar({
             会话
           </label>
           <select
-            className={inputBase}
+            className={selectClass}
             disabled={!canMutateSessions}
             id="chat-session"
             onChange={handleSelectChange}
@@ -122,33 +122,28 @@ export function ChatSessionBar({
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          <button
-            className={`${controlBase} border border-border bg-surface`}
-            disabled={!canMutateSessions}
-            onClick={handleNew}
-            type="button"
-          >
+          <Button disabled={!canMutateSessions} onClick={handleNew} type="button" variant="outline">
             <Plus aria-hidden="true" size={16} />
             新建对话
-          </button>
-          <button
-            className={`${controlBase} border border-border bg-surface`}
+          </Button>
+          <Button
             disabled={!canMutateSessions || sessionId === null}
             onClick={handleRenameStart}
             type="button"
+            variant="outline"
           >
             <Pencil aria-hidden="true" size={16} />
             改名
-          </button>
-          <button
-            className={`${controlBase} border border-border bg-surface`}
+          </Button>
+          <Button
             disabled={!canMutateSessions || sessionId === null}
             onClick={handleArchiveStart}
             type="button"
+            variant="outline"
           >
             <Archive aria-hidden="true" size={16} />
             归档
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -169,9 +164,9 @@ export function ChatSessionBar({
             新标题
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <input
+            <Input
               autoFocus
-              className={`${inputBase} min-w-0 flex-1`}
+              className="min-w-0 flex-1"
               id="chat-session-rename"
               onChange={(event) => {
                 setDraft(event.target.value)
@@ -179,20 +174,12 @@ export function ChatSessionBar({
               }}
               value={draft}
             />
-            <button
-              className={`${controlBase} bg-primary text-primary-foreground`}
-              disabled={!canMutateSessions}
-              type="submit"
-            >
+            <Button disabled={!canMutateSessions} type="submit">
               保存
-            </button>
-            <button
-              className={`${controlBase} border border-border bg-surface`}
-              onClick={handleRenameCancel}
-              type="button"
-            >
+            </Button>
+            <Button onClick={handleRenameCancel} type="button" variant="outline">
               取消
-            </button>
+            </Button>
           </div>
           {renameError ? (
             <p className="text-sm text-danger" role="alert">
@@ -205,20 +192,12 @@ export function ChatSessionBar({
       {confirming ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <p className="text-sm text-muted-foreground">归档后这个对话会从列表消失，无法恢复。</p>
-          <button
-            className={`${controlBase} border border-border bg-surface`}
-            onClick={handleArchiveConfirm}
-            type="button"
-          >
+          <Button onClick={handleArchiveConfirm} type="button" variant="outline">
             确认归档
-          </button>
-          <button
-            className={`${controlBase} border border-border bg-surface`}
-            onClick={() => setConfirming(false)}
-            type="button"
-          >
+          </Button>
+          <Button onClick={() => setConfirming(false)} type="button" variant="outline">
             取消
-          </button>
+          </Button>
         </div>
       ) : null}
     </section>

@@ -3,17 +3,13 @@
 import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
+import { Button } from '@web/components/ui/button'
 import { useChatRun } from '@web/hooks/use-chat-run'
 import { authClient } from '@web/lib/auth-client'
 
 import { ChatComposer } from './chat-composer'
 import { ChatSessionBar } from './chat-session-bar'
 import { ChatTimeline } from './chat-timeline'
-
-const linkStyle =
-  'inline-flex min-h-11 items-center rounded-sm text-sm font-medium text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-primary focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
-const buttonStyle =
-  'mt-3 inline-flex min-h-11 items-center rounded-sm border border-border bg-surface px-4 text-sm font-medium hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary'
 
 /**
  * Chat 页面的客户端容器：登录判断、状态提示和输入区。
@@ -41,9 +37,9 @@ export function ChatPanel() {
     return (
       <div>
         <p className="text-sm text-muted-foreground">对话需要登录后使用，Agent 运行记录属于当前账户。</p>
-        <Link className={`${linkStyle} mt-4`} href="/login">
-          去登录
-        </Link>
+        <Button asChild className="mt-4" variant="link">
+          <Link href="/login">去登录</Link>
+        </Button>
       </div>
     )
   }
@@ -67,22 +63,22 @@ export function ChatPanel() {
   return (
     <div>
       {notice ? (
-        <div className="mb-6 rounded-sm border border-border bg-surface-muted px-4 py-3 text-sm">
+        <div className="mb-6 border border-border bg-surface-muted px-4 py-3 text-sm">
           <p role="status">{notice.message}</p>
           {notice.kind === 'auth' ? (
-            <Link className={linkStyle} href="/login">
-              重新登录
-            </Link>
+            <Button asChild variant="link">
+              <Link href="/login">重新登录</Link>
+            </Button>
           ) : null}
           {notice.retryText === undefined ? null : (
-            <button className={buttonStyle} onClick={() => handleSend(notice.retryText ?? '')} type="button">
+            <Button className="mt-3" onClick={() => handleSend(notice.retryText ?? '')} type="button" variant="outline">
               重试
-            </button>
+            </Button>
           )}
           {chat.boot === 'failed' ? (
-            <button className={buttonStyle} onClick={chat.reload} type="button">
+            <Button className="mt-3" onClick={chat.reload} type="button" variant="outline">
               重新加载
-            </button>
+            </Button>
           ) : null}
         </div>
       ) : null}

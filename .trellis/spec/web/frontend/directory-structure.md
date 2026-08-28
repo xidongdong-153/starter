@@ -9,7 +9,7 @@
 - `layout.tsx`：全局字体、metadata、viewport、主题初始化和 body。
 - `loading.tsx`、`error.tsx`、`not-found.tsx`：全局加载、错误和 404 状态。
 
-站点共享 UI 放在 `app/(site)/_components/`，跨路由客户端组件放在 `components/`，浏览器 hooks 放在 `hooks/`，数据访问放在 `lib/api/`。
+站点共享 UI 放在 `app/(site)/_components/`，跨路由客户端组件放在 `components/`，shadcn 源码组件放在 `components/ui/`（配套 `components.json` 和 `lib/utils.ts` 的 `cn`），浏览器 hooks 放在 `hooks/`，数据访问放在 `lib/api/`。
 
 ## 页面与数据访问
 

@@ -3,6 +3,7 @@ import { cache } from 'react'
 import { notFound } from 'next/navigation'
 import { ArrowLeft, BriefcaseBusiness, Link2, MapPin, Mail } from 'lucide-react'
 import Link from 'next/link'
+import { Button } from '@web/components/ui/button'
 import { uuidSchema } from '@starter/contracts'
 import { getPublicProfile, getPublicProfileAvatarUrl } from '@web/lib/api/profile.api'
 import { isApiRequestError } from '@web/lib/http'
@@ -36,20 +37,23 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
 
   return (
     <main className="page-enter site-container py-12 md:py-20">
-      <Link
-        className="inline-flex min-h-11 items-center gap-2 rounded-sm text-sm text-muted-foreground transition-colors hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary"
-        href="/profiles"
+      <Button
+        asChild
+        className="justify-start gap-2 font-normal text-muted-foreground hover:bg-transparent hover:text-foreground"
+        variant="ghost"
       >
-        <ArrowLeft aria-hidden="true" size={16} />
-        其他公开资料
-      </Link>
+        <Link href="/profiles">
+          <ArrowLeft aria-hidden="true" size={16} />
+          其他公开资料
+        </Link>
+      </Button>
 
       <section className="mt-12 max-w-3xl border-t border-border pt-8 md:mt-16 md:pt-10">
         <div className="flex flex-col gap-7 sm:flex-row sm:items-start">
           {profile.avatarUrl ? (
             <img
               alt={`${profile.name} 的头像`}
-              className="size-24 shrink-0 rounded-md border border-border object-cover sm:size-28"
+              className="size-24 shrink-0 border border-border object-cover sm:size-28"
               height={112}
               src={getPublicProfileAvatarUrl(profile.avatarUrl)}
               width={112}
@@ -57,7 +61,7 @@ export default async function PublicProfilePage({ params }: { params: Promise<{ 
           ) : (
             <div
               aria-hidden="true"
-              className="grid size-24 shrink-0 place-items-center rounded-md bg-surface-muted text-2xl text-primary sm:size-28"
+              className="grid size-24 shrink-0 place-items-center bg-surface-muted text-2xl text-primary sm:size-28"
             >
               {profile.name.slice(0, 1)}
             </div>

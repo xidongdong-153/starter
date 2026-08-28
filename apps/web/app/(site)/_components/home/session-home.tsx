@@ -4,11 +4,7 @@ import { ArrowRight, ExternalLink, LogOut, UserRound } from 'lucide-react'
 import Link from 'next/link'
 import { useEffect } from 'react'
 import { authClient } from '@web/lib/auth-client'
-
-const primaryAction =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-sm bg-primary px-5 font-semibold text-primary-foreground transition-transform hover:-translate-y-0.5 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary'
-const secondaryAction =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-sm border border-border bg-surface px-5 font-medium transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary'
+import { Button } from '@web/components/ui/button'
 
 export function SessionHome() {
   const { data: session, isPending } = authClient.useSession()
@@ -33,22 +29,26 @@ export function SessionHome() {
           当前账户：<span className="font-medium text-foreground">{session.user.name}</span>
         </p>
         <div className="mt-5 flex flex-wrap gap-3">
-          <a className={primaryAction} href="http://localhost:2333" rel="noopener noreferrer" target="_blank">
-            进入 Admin
-            <ExternalLink aria-hidden="true" size={16} />
-          </a>
-          <Link className={secondaryAction} href={`/profiles/${session.user.id}`}>
-            <UserRound aria-hidden="true" size={16} />
-            查看公开资料
-          </Link>
-          <button
-            className={secondaryAction}
+          <Button asChild className="font-semibold transition-transform hover:-translate-y-0.5">
+            <a href="http://localhost:2333" rel="noopener noreferrer" target="_blank">
+              进入 Admin
+              <ExternalLink aria-hidden="true" size={16} />
+            </a>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href={`/profiles/${session.user.id}`}>
+              <UserRound aria-hidden="true" size={16} />
+              查看公开资料
+            </Link>
+          </Button>
+          <Button
             onClick={() => authClient.signOut({ fetchOptions: { onSuccess: () => window.location.reload() } })}
             type="button"
+            variant="outline"
           >
             <LogOut aria-hidden="true" size={16} />
             退出
-          </button>
+          </Button>
         </div>
       </div>
     )
@@ -58,16 +58,18 @@ export function SessionHome() {
     <div className="mt-8 border-t border-border-subtle pt-6">
       <p className="text-sm text-muted-foreground">登录后可以进入 Admin，并直接打开自己的公开资料页。</p>
       <div className="mt-5 flex flex-wrap gap-3">
-        <Link className={primaryAction} href="/login">
-          登录
-          <ArrowRight aria-hidden="true" size={16} />
-        </Link>
-        <Link className={secondaryAction} href="/register">
-          注册
-        </Link>
-        <Link className={secondaryAction} href="/profiles">
-          查看公开资料
-        </Link>
+        <Button asChild className="font-semibold transition-transform hover:-translate-y-0.5">
+          <Link href="/login">
+            登录
+            <ArrowRight aria-hidden="true" size={16} />
+          </Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/register">注册</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/profiles">查看公开资料</Link>
+        </Button>
       </div>
     </div>
   )

@@ -3,9 +3,12 @@
 import type { AgentDefinitionSummary } from '@starter/contracts'
 import { Send, Square } from 'lucide-react'
 import type { ChangeEvent, KeyboardEvent } from 'react'
+import { Button } from '@web/components/ui/button'
+import { Label } from '@web/components/ui/label'
+import { Textarea } from '@web/components/ui/textarea'
 
-const controlBase =
-  'inline-flex min-h-11 items-center justify-center gap-2 rounded-sm px-4 text-sm font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-60'
+const selectClass =
+  'min-h-11 border border-input bg-surface px-3 text-sm transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
 
 /**
  * Chat 输入区：Agent 选择、文本框、发送和停止。
@@ -52,11 +55,11 @@ export function ChatComposer({
     <div className="mt-6 border-t border-border pt-6">
       <div className="flex flex-wrap items-end gap-4">
         <div className="grid gap-2">
-          <label className="text-xs text-muted-foreground" htmlFor="chat-agent">
+          <Label className="text-xs text-muted-foreground" htmlFor="chat-agent">
             Agent
-          </label>
+          </Label>
           <select
-            className="min-h-11 rounded-sm border border-border bg-surface px-3 text-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+            className={selectClass}
             disabled={running || agents.length === 0}
             id="chat-agent"
             onChange={handleAgentChange}
@@ -71,11 +74,11 @@ export function ChatComposer({
         </div>
       </div>
 
-      <label className="mt-4 block text-xs text-muted-foreground" htmlFor="chat-input">
+      <Label className="mt-4 block text-xs text-muted-foreground" htmlFor="chat-input">
         发送给 Agent 的内容
-      </label>
-      <textarea
-        className="mt-2 min-h-24 w-full resize-y rounded-sm border border-border bg-surface px-3 py-2 text-sm leading-6 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-60"
+      </Label>
+      <Textarea
+        className="mt-2 min-h-24 resize-y text-sm leading-6"
         disabled={running}
         id="chat-input"
         onChange={(event) => onTextChange(event.target.value)}
@@ -85,26 +88,21 @@ export function ChatComposer({
       />
 
       <div className="mt-3 flex flex-wrap items-center gap-3">
-        <button
-          className={`${controlBase} bg-primary text-primary-foreground`}
-          disabled={!canSend}
-          onClick={onSend}
-          type="button"
-        >
+        <Button disabled={!canSend} onClick={onSend} type="button">
           <Send aria-hidden="true" size={16} />
           发送
-        </button>
+        </Button>
         {running ? (
-          <button
-            className={`${controlBase} border border-border bg-surface`}
+          <Button
             disabled={stopping || !canStop}
             onClick={onStop}
             title={canStop ? undefined : '等运行启动后可以停止'}
             type="button"
+            variant="outline"
           >
             <Square aria-hidden="true" size={16} />
             {stopping ? '正在停止' : '停止生成'}
-          </button>
+          </Button>
         ) : null}
         {agents.length === 0 ? (
           <p className="text-sm text-muted-foreground">没有可用的 Agent，需要先在 Admin 启用一个 Agent。</p>
