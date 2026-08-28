@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "检查阶段按此核对页面状态、响应式与可访问性"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 质量检查命令清单（check/test/build）"}
+{"file": ".trellis/spec/theme/frontend/index.md", "reason": "theme 包改动需验证 admin 不受影响"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "跨包改动（theme → web）的层边界检查"}

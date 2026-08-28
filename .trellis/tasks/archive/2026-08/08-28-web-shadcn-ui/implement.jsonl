@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 前端规范：Server/Client 边界、目录结构、质量检查命令和可访问性必查项"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "组件规范：导航、可访问性、内容边界，页面改造需遵守"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "页面状态、响应式和检查命令"}
+{"file": ".trellis/spec/theme/frontend/index.md", "reason": "theme 包规范：web.css/core.css 变更规则和 admin 不受影响的验证方式"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "消除重复内联样式时按此指南判断组件抽取边界"}
