@@ -673,7 +673,7 @@ export const aiModelCalls = sqliteTable(
     ),
     check(
       "ai_model_calls_scenario_check",
-      sql`${table.scenario} IN ('model_test', 'agent_run', 'legacy')`,
+      sql`${table.scenario} IN ('model_test', 'agent_run', 'completion', 'legacy')`,
     ),
   ],
 );

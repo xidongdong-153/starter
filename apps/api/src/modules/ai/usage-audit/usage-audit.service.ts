@@ -65,7 +65,7 @@ export interface AiModelCallAuditContext {
   appId?: string | null;
   principalKind?: PrincipalContext["kind"];
   externalUserId?: string | null;
-  scenario: "model_test" | "agent_run" | "legacy";
+  scenario: "model_test" | "agent_run" | "completion" | "legacy";
   runId?: string;
   timeoutMs: number;
   generationRemainingMs?: number;

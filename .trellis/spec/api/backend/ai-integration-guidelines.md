@@ -58,7 +58,7 @@ pnpm --filter @starter/api ai:auth -- <providerId> --logout
 - `ai_enabled_models`：以 `(provider_id, model_id)` 为复合主键保存管理员白名单。
 - `ai_settings`：保存全局默认模型，Provider 与 model 两列必须同时为空或同时有值。
 - `user_ai_preferences`：以 `user_id` 为主键保存个人默认模型，用户删除时级联删除。
-- `ai_model_calls`：每次 Gateway Provider 请求一条记录；新 Run 调用写 `run_id`，模型测试三列都为空，`scenario` 为 `model_test | agent_run | legacy`。
+- `ai_model_calls`：每次 Gateway Provider 请求一条记录；新 Run 调用写 `run_id`，模型测试和无状态调用三列都为空，`scenario` 为 `model_test | agent_run | completion | legacy`。
 - `ai_tool_executions`：每次工具执行一条记录；只保存工具名、安全状态、effective timeout 和项目错误码，不保存 arguments/result。
 
 Gateway 内部签名：

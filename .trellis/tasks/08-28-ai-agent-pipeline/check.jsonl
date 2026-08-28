@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "检查 pipeline 未复制 Run/Session 实现、新表与归属判据符合第 5、8 节"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "检查步骤 Run 的终态、abort、恢复与既有 Run 语义一致，无第二套状态机"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "检查专用 session 创建补偿与 transcript 提取符合 Session 规范"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "按规范跑 pnpm check + pnpm test + db:check 验收"}

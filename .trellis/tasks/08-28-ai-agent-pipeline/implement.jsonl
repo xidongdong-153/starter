@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "系统总览：Run/Session 状态归属、第 10 节禁止第二套实现约束、第 12 节改代码顺序"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run API、并发、SSE、终态与启动恢复规范：pipeline 每步复用 startRun 必须对齐这里"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "Session 归属、双库创建补偿、transcript 投影：专用 session 创建与产出提取要扩展这里"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Executor 与事件映射规范：等待终态、事件队列消费、lane 语义"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "错误响应规范：pipeline 错误矩阵沿用统一 {ok,error,meta} 与既有错误码"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "质量门要求：类型/lint/format/test 顺序与命令"}

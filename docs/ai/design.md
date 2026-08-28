@@ -2,14 +2,17 @@
 
 这篇讲 `apps/api` 的 AI 模块怎么组织：谁负责什么、一次输入怎么变成最终输出、状态存在哪、失败时谁负责收尾。改代码前先看这里确认边界，再去 `.trellis/spec/api/backend/` 读对应的实现约束。
 
-## 1. 系统提供两类调用
+## 1. 系统提供三类调用
 
-| 调用           | 入口                                     | 用到什么                                                | 不产生什么                           |
-| -------------- | ---------------------------------------- | ------------------------------------------------------- | ------------------------------------ |
-| 模型连通性测试 | `POST /api/ai/test`                      | Provider 配置、模型白名单、统一 Gateway                 | 不建 Session、不建 Run、不写 Pi 历史 |
-| Agent 运行     | `POST /api/ai/sessions/{sessionId}/runs` | Pi Agent、Pi Session、Tool adapter、SSE、Run 记录、审计 | ——                                   |
+| 调用           | 入口                                     | 用到什么                                                | 不产生什么                                     |
+| -------------- | ---------------------------------------- | ------------------------------------------------------- | ---------------------------------------------- |
+| 模型连通性测试 | `POST /api/ai/test`                      | Provider 配置、模型白名单、统一 Gateway                 | 不建 Session、不建 Run、不写 Pi 历史           |
+| 一次性模型调用 | `POST /api/ai/completions`               | 模型白名单、统一 Gateway、审计（scenario=completion）   | 不带工具，不建 Session、不建 Run、不写 Pi 历史 |
+| Agent 运行     | `POST /api/ai/sessions/{sessionId}/runs` | Pi Agent、Pi Session、Tool adapter、SSE、Run 记录、审计 | ——                                             |
 
-下面主要讲第二类。它包含输入校验、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和进程重启恢复。
+一次性模型调用面向翻译一句话、分类一段文本这类单轮任务：调用方指定白名单内模型（可带 systemPrompt）加一段输入，直接拿结果，不用先建 Session 再启动 Run。它复用模型测试同一条 Gateway 和审计路径，只是 scenario 和鉴权受众不同。
+
+下面主要讲第三类。它包含输入校验、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和进程重启恢复。
 
 ## 2. 分层
 
@@ -59,6 +62,7 @@ flowchart LR
 | `agent/`         | Agent Definition 的增删改查、状态切换、`revision` 递增、Run 开始前把配置解析成可执行形态 | 不保存 Provider secret、Prompt 正文、Skill 正文和 Tool 实现 |
 | `session/`       | Session 归属、标题、`defaultAgentId`、归档、双库创建补偿、transcript 投影                | 不保存历史正文，历史在 Pi 那边                              |
 | `run/`           | Run 行、活跃登记、事件序号、对外事件、Pi 终态 entry、终态更新、启动恢复                  | 不跑模型循环，不直接读 Pi Session                           |
+| `completion/`    | 一次性无状态调用：白名单校验、单条 user message 构造、结果聚合或 SSE 透传                | 不带工具，不碰 Session/Run/事件表，审计走 invocation runner |
 | `application/`   | 应用凭据的创建、轮换、撤销、认证和审计事件                                               | 不做频率限制，不限制凭据能用哪个 Agent                      |
 | `configuration/` | Provider 配置、认证状态、模型目录与白名单、全局默认模型、用户模型偏好、模型连通性测试    | 不解密 secret，解密在 `infra/ai` 的凭据存储里               |
 | `prompt/`        | System Prompt 和 Prompt Template 的维护与可用性判断                                      | 不决定某个 Agent 用哪条，那是 Agent config 的引用           |

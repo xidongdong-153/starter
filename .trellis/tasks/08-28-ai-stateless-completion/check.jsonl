@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "检查 completion 端点未引入第二套执行实现，OpenAPI tag 与 security 声明符合第 11 节"}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "检查审计上下文填法、secret 边界、超时与 abort 归因与 Gateway 规范一致"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "按规范跑 pnpm check + pnpm test + db:check 验收"}

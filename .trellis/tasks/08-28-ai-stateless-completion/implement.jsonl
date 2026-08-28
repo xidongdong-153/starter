@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "Gateway 与 invocationRunner 复用规范：completion 走同一条模型调用与审计路径"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "系统总览：边界约束（第 10 节）、OpenAPI 面分类（第 11 节）、验收命令（第 13 节）"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "错误响应规范：新增端点的错误码沿用统一 {ok,error,meta} 与既有错误码"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "质量门要求：类型/lint/format/test 顺序与命令"}

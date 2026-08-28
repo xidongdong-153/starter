@@ -221,6 +221,69 @@ ai -X POST "$API_BASE/api/ai/sessions/$SESSION_ID/runs/$RUN_ID/abort"
 
 只有当前 API 进程仍持有这个 Run 时能 abort，否则 409 `AI.RUN_NOT_ACTIVE`。先 abort 接口、再断开自己的读流，顺序反了服务端会继续跑到底。
 
+### 3.7 一次性模型调用
+
+翻译一句话、分类一段文本这类单轮任务不用建 Session，直接调：
+
+```bash
+ai -X POST "$API_BASE/api/ai/completions" \
+  -H 'Content-Type: application/json' \
+  -H 'Accept: application/json' \
+  -d '{"model":{"providerId":"anthropic","modelId":"claude-sonnet-4-6"},"systemPrompt":"把输入翻译成英文","input":"你好"}'
+```
+
+请求体三个字段：`model` 必填，必须是管理员白名单内的模型，否则 403 `AI.MODEL_NOT_ALLOWED`；`systemPrompt` 可选，1 到 32000 字符；`input` 必填，1 到 100000 字符。指令写在 `systemPrompt`，要翻译或分类的文本写在 `input`。
+
+`Accept: application/json`（且不含 `text/event-stream`）时同步等完整结果：
+
+```json
+{
+  "ok": true,
+  "data": {
+    "content": "Hello",
+    "stopReason": "stop",
+    "usage": {
+      "inputTokens": 3,
+      "outputTokens": 7,
+      "cacheReadTokens": 0,
+      "cacheWriteTokens": 0,
+      "cacheWrite1hTokens": null,
+      "reasoningTokens": null,
+      "totalTokens": 10
+    }
+  },
+  "meta": { "requestId": "..." }
+}
+```
+
+其余 `Accept`（缺省、`*/*`、`text/event-stream`）返回 SSE，事件只有三种，`id` 从 1 递增：
+
+```text
+id: 1
+event: text_delta
+data: {"type":"text_delta","text":"Hello"}
+
+id: 2
+event: done
+data: {"type":"done","stopReason":"stop","usage":{...}}
+```
+
+失败时流里是一个 `error` 事件（带 `requestId`），之后流关闭：
+
+```text
+id: 2
+event: error
+data: {"type":"error","code":"AI.UPSTREAM_ERROR","message":"模型服务暂时不可用，可以稍后重试","retryable":true,"requestId":"..."}
+```
+
+几个行为边界：
+
+- `stopReason` 三种：`stop`（正常结束）、`length`（撞输出上限）、`aborted`（流未正常收尾）。`usage` 读不到时整个字段省略，不补 0。
+- 不带工具，也不带上下文。要工具或历史就走 Session + Run。
+- 单次请求受平台的 `AI_REQUEST_TIMEOUT_MS` 控制，超时 JSON 模式返回 504 `AI.UPSTREAM_TIMEOUT`，SSE 模式发 `error` 事件。
+- 每次调用平台在用量审计里记一条 `scenario=completion` 的模型调用（含 token、耗时、结果），不建 Session、不建 Run、不写会话历史。
+- JSON 模式下断开连接会同时取消上游模型请求；SSE 模式断开同样中止生成，不会像 Run 那样后台继续跑。
+
 ## 4. 一次完整接入的顺序
 
 ```mermaid
@@ -258,21 +321,22 @@ sequenceDiagram
 
 所有 JSON 接口返回 `{ ok, data, meta }` 或 `{ ok, error, meta }`，`meta.requestId` 建议记到你自己的日志里，排查时给平台方。
 
-| 方法   | 路径                                                   | 请求                                                                                        | 响应                     | 应用凭据可用        |
-| ------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- | ------------------------ | ------------------- |
-| GET    | `/api/ai/agents`                                       | `page`、`pageSize`（默认 1 / 20，`pageSize` 上限 100）                                      | 已启用 Agent 摘要分页    | 不可用，只认 Cookie |
-| GET    | `/api/ai/agents/{agentId}`                             | 无                                                                                          | Agent 摘要               | 不可用，只认 Cookie |
-| POST   | `/api/ai/sessions`                                     | `title?`、`defaultAgentId?`                                                                 | `AgentSession`           | 可用                |
-| GET    | `/api/ai/sessions`                                     | `page`、`pageSize`                                                                          | Session 分页，不含已归档 | 可用                |
-| GET    | `/api/ai/sessions/{sessionId}`                         | 无                                                                                          | `AgentSession`           | 可用                |
-| PATCH  | `/api/ai/sessions/{sessionId}`                         | `title?`、`defaultAgentId?`，至少一个                                                       | `AgentSession`           | 可用                |
-| DELETE | `/api/ai/sessions/{sessionId}`                         | 无                                                                                          | 归档后的 `AgentSession`  | 可用                |
-| GET    | `/api/ai/sessions/{sessionId}/transcript`              | `lane`（默认 `main`）、`cursor?`、`limit`（1-200，默认 50）、`direction`（默认 `backward`） | `items` + `nextCursor`   | 可用                |
-| POST   | `/api/ai/sessions/{sessionId}/runs`                    | `input`、`agentId?`、`lane?`                                                                | `text/event-stream`      | 可用                |
-| GET    | `/api/ai/sessions/{sessionId}/runs/{runId}`            | 无                                                                                          | `AgentRun`，可选 `live`  | 可用                |
-| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/abort`      | 无                                                                                          | `AgentRun`               | 可用                |
-| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/steer`      | `text`                                                                                      | `AgentRun`               | 可用                |
-| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/follow-ups` | `text`                                                                                      | `AgentRun`               | 可用                |
+| 方法   | 路径                                                   | 请求                                                                                        | 响应                        | 应用凭据可用        |
+| ------ | ------------------------------------------------------ | ------------------------------------------------------------------------------------------- | --------------------------- | ------------------- |
+| GET    | `/api/ai/agents`                                       | `page`、`pageSize`（默认 1 / 20，`pageSize` 上限 100）                                      | 已启用 Agent 摘要分页       | 不可用，只认 Cookie |
+| GET    | `/api/ai/agents/{agentId}`                             | 无                                                                                          | Agent 摘要                  | 不可用，只认 Cookie |
+| POST   | `/api/ai/sessions`                                     | `title?`、`defaultAgentId?`                                                                 | `AgentSession`              | 可用                |
+| GET    | `/api/ai/sessions`                                     | `page`、`pageSize`                                                                          | Session 分页，不含已归档    | 可用                |
+| GET    | `/api/ai/sessions/{sessionId}`                         | 无                                                                                          | `AgentSession`              | 可用                |
+| PATCH  | `/api/ai/sessions/{sessionId}`                         | `title?`、`defaultAgentId?`，至少一个                                                       | `AgentSession`              | 可用                |
+| DELETE | `/api/ai/sessions/{sessionId}`                         | 无                                                                                          | 归档后的 `AgentSession`     | 可用                |
+| GET    | `/api/ai/sessions/{sessionId}/transcript`              | `lane`（默认 `main`）、`cursor?`、`limit`（1-200，默认 50）、`direction`（默认 `backward`） | `items` + `nextCursor`      | 可用                |
+| POST   | `/api/ai/sessions/{sessionId}/runs`                    | `input`、`agentId?`、`lane?`                                                                | `text/event-stream`         | 可用                |
+| POST   | `/api/ai/completions`                                  | `model`、`systemPrompt?`、`input`                                                           | JSON 或 `text/event-stream` | 可用                |
+| GET    | `/api/ai/sessions/{sessionId}/runs/{runId}`            | 无                                                                                          | `AgentRun`，可选 `live`     | 可用                |
+| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/abort`      | 无                                                                                          | `AgentRun`                  | 可用                |
+| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/steer`      | `text`                                                                                      | `AgentRun`                  | 可用                |
+| POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/follow-ups` | `text`                                                                                      | `AgentRun`                  | 可用                |
 
 `DELETE` 是归档，不删数据：`archivedAt` 被填上，Session 从默认列表消失，不能再启动 Run，transcript 接口也读不到了（返回 404）。历史还在服务端，但没有接口能再拿到，需要的话归档前先把 transcript 拉走。
 
@@ -481,6 +545,10 @@ HTTP 层：
 | `AI.SESSION_STORAGE_FAILED`   | 500  | 会话存储读写失败                                                                                 | 隔几秒重试，持续失败联系平台方 |
 | `AI.APP_CREDENTIAL_REVOKED`   | 409  | 对已撤销凭据做轮换（管理接口）                                                                   | 建新凭据                       |
 | `AI.APP_CREDENTIAL_NOT_FOUND` | 404  | 凭据 id 不存在（管理接口）                                                                       | 核对 `appId`                   |
+| `AI.MODEL_NOT_ALLOWED`        | 403  | `completions` 请求的模型不在管理员白名单内                                                       | 让平台方把模型加进白名单       |
+| `AI.UPSTREAM_TIMEOUT`         | 504  | `completions` 模型响应超时                                                                       | 可重试                         |
+| `AI.UPSTREAM_ERROR`           | 503  | `completions` 模型服务报错                                                                       | 可重试                         |
+| `AI.PROVIDER_AUTH_FAILED`     | 503  | `completions` 模型服务认证失败                                                                   | 联系平台方检查 Provider 配置   |
 
 Run 终态错误码在 `run.failed.data.error.code` 和 `AgentRun.errorCode` 里，不走 HTTP 状态：
 

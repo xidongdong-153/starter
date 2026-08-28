@@ -4,12 +4,13 @@
 
 ## 1. 系统承诺
 
-当前 AI 系统提供两类调用：
+当前 AI 系统提供三类调用：
 
 - `POST /api/ai/test`：管理员或用户执行一次模型测试。它使用 Provider、模型白名单和统一 Gateway，但不创建 Agent Session、Agent Run 或 Pi transcript。
+- `POST /api/ai/completions`：一次性无状态模型调用。调用方直接指定白名单内模型（可带 systemPrompt）加一段输入，单轮拿结果；不传工具，不创建 Agent Session、Agent Run 或 Pi transcript，审计 `scenario='completion'`。
 - `POST /api/ai/sessions/{sessionId}/runs`：在用户自己的持久 Session 和指定 lane 中运行一个 Agent。它使用 Pi `Agent`、Pi Session、Tool adapter、SSE 和 Run 恢复记录。
 
-本文件重点说明第二类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。
+本文件重点说明第三类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。
 
 ## 2. 先看一张总图
 
@@ -366,7 +367,7 @@ Starter 主库保存：
 | `ai_model_calls` | Provider/model、scenario、runId、耗时、token、cost、结果和错误码 | prompt、response、secret、原始错误 |
 | `ai_tool_executions` | Tool 名称、时间、耗时、状态、timeout、错误码 | arguments、result、safeSummary |
 
-`ai_model_calls` 的 `scenario` 当前为 `model_test`、`agent_run` 或 `legacy`。新 Agent Run 的模型请求使用 `scenario='agent_run'` 和 nullable `run_id`；模型测试没有 Run 关联。
+`ai_model_calls` 的 `scenario` 当前为 `model_test`、`agent_run`、`completion` 或 `legacy`。新 Agent Run 的模型请求使用 `scenario='agent_run'` 和 nullable `run_id`；模型测试和无状态调用没有 Run 关联。
 
 ## 6. Run 状态和唯一终态
 
@@ -517,7 +518,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`：
 
 - `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit 和模型连通性测试。
-- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript 和 RunEvent SSE。
+- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript、RunEvent SSE 和一次性无状态调用 `POST /api/ai/completions`。
 - `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
 
 运行面 SSE 使用 `text/event-stream`：

@@ -23,6 +23,10 @@ import {
   createRequireProductApp,
 } from "./application/index.js";
 import { createRequireAiRuntimePrincipal } from "./principal.guard.js";
+import {
+  createAiCompletionRoute,
+  createAiCompletionService,
+} from "./completion/index.js";
 
 import {
   createAiAgentRunRepository,
@@ -176,6 +180,12 @@ export function createAiRoute(runtime: AppRuntime) {
     structuredOutputRepository,
     outputContractRegistry,
   });
+  const completionService = createAiCompletionService({
+    invocationRunner,
+    requireAllowedModel: configurationService.resolveAgentModel,
+    requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
+    logger: runtime.logger.child({ module: "ai-completion" }),
+  });
   void runService
     .recoverInterrupted()
     .then((report) => {
@@ -236,6 +246,13 @@ export function createAiRoute(runtime: AppRuntime) {
         service: runService,
         requireAuth: requireRuntimePrincipal,
         requireRead,
+      }),
+    )
+    .route(
+      "/",
+      createAiCompletionRoute({
+        service: completionService,
+        requireAuth: requireRuntimePrincipal,
       }),
     )
     .route(

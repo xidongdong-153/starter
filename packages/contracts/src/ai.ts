@@ -1592,3 +1592,40 @@ export const aiTestStreamEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type AiTestStreamEvent = z.infer<typeof aiTestStreamEventSchema>
+
+export const completionRequestSchema = z.strictObject({
+  model: aiModelRefSchema,
+  systemPrompt: z.string().trim().min(1).max(32_000).optional(),
+  input: z.string().trim().min(1).max(100_000),
+})
+
+export type CompletionRequest = z.infer<typeof completionRequestSchema>
+
+export const completionResultSchema = z.strictObject({
+  content: z.string(),
+  stopReason: z.enum(['stop', 'length', 'aborted']),
+  usage: aiUsageSchema.optional(),
+})
+
+export type CompletionResult = z.infer<typeof completionResultSchema>
+
+export const completionStreamEventSchema = z.discriminatedUnion('type', [
+  z.strictObject({
+    type: z.literal('text_delta'),
+    text: z.string(),
+  }),
+  z.strictObject({
+    type: z.literal('done'),
+    stopReason: z.enum(['stop', 'length', 'aborted']),
+    usage: aiUsageSchema.optional(),
+  }),
+  z.strictObject({
+    type: z.literal('error'),
+    code: apiErrorCodeSchema,
+    message: z.string().min(1),
+    retryable: z.boolean(),
+    requestId: z.string().min(1),
+  }),
+])
+
+export type CompletionStreamEvent = z.infer<typeof completionStreamEventSchema>

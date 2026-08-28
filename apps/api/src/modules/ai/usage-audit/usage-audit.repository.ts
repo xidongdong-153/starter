@@ -22,7 +22,7 @@ export interface BeginAiModelCallInput {
   projectId?: string;
   externalUserId?: string | null;
   principalKind?: string;
-  scenario: "model_test" | "agent_run" | "legacy";
+  scenario: "model_test" | "agent_run" | "completion" | "legacy";
   runId: string | null;
   turnId?: string | null;
   stepId?: string | null;
