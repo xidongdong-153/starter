@@ -128,6 +128,8 @@ export function createAiRoute(runtime: AppRuntime) {
     repository: sessionRepository,
     sessionStore: runtime.agentSessionStore,
     logger: runtime.logger.child({ module: "ai-session" }),
+    structuredOutputRepository,
+    outputContractRegistry,
   });
   void sessionService
     .checkConsistency()

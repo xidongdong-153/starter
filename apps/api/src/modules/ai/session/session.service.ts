@@ -1,4 +1,5 @@
 import type { Logger } from "pino";
+import type { Entry } from "@earendil-works/pi-agent-core";
 import type {
   AgentSession,
   AgentSessionListQuery,
@@ -11,10 +12,18 @@ import { ApiErrorCodes } from "@starter/contracts";
 
 import type { AgentSessionStore } from "@api/infra/agent/index.js";
 import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
+import type { AiOutputContractRegistry } from "@api/modules/ai/output/output-contract-registry.js";
+import { toStructuredOutputContractRef } from "@api/modules/ai/output/output-contract-registry.js";
+import type { AiStructuredOutputRepository } from "@api/modules/ai/output/structured-output.repository.js";
 import { AppError } from "@api/shared/app-error.js";
 import { generateId } from "@api/shared/id.js";
 
-import { projectTranscript, toAgentSession } from "./session.presenter.js";
+import {
+  collectStructuredOutputIds,
+  projectTranscript,
+  toAgentSession,
+  type TranscriptStructuredOutput,
+} from "./session.presenter.js";
 import type { AiAgentSessionRepository } from "./session.repository.js";
 
 export interface SessionConsistencyReport {
@@ -52,8 +61,13 @@ export function createAiAgentSessionService(input: {
   repository: AiAgentSessionRepository;
   sessionStore: AgentSessionStore;
   logger: Logger;
+  /** transcript 回放结构化输出需要；未提供时不注入 structuredOutput 字段。 */
+  structuredOutputRepository?: AiStructuredOutputRepository;
+  outputContractRegistry?: AiOutputContractRegistry;
 }): AiAgentSessionService {
   const { repository, sessionStore, logger } = input;
+  const structuredOutputRepository = input.structuredOutputRepository;
+  const outputContractRegistry = input.outputContractRegistry;
 
   async function assertDefaultAgent(id: string | null): Promise<void> {
     if (id === null) return;
@@ -187,6 +201,50 @@ export function createAiAgentSessionService(input: {
     return toAgentSession(result.record);
   }
 
+  /**
+   * 取回本页 toolResult entry 引用的结构化输出，value 按 registry 当前可见性打码
+   * （product 才带值，与 run 模块 structured-outputs 路由一致）。
+   * contract resolve 不到的条目跳过并记 WARN，对应 item 不带 structuredOutput 字段。
+   */
+  function readStructuredOutputsForTranscript(
+    entries: readonly Entry[],
+    sessionId: string,
+    requestId?: string,
+  ): Map<string, TranscriptStructuredOutput> | undefined {
+    if (!structuredOutputRepository || !outputContractRegistry)
+      return undefined;
+    const ids = collectStructuredOutputIds(entries);
+    if (ids.length === 0) return undefined;
+    const outputs = new Map<string, TranscriptStructuredOutput>();
+    for (const record of structuredOutputRepository.findByIds(ids)) {
+      const contract = outputContractRegistry.find({
+        name: record.contractName,
+        version: record.contractVersion,
+      });
+      const ref = contract
+        ? toStructuredOutputContractRef(record, contract)
+        : null;
+      if (!contract || !ref) {
+        logger.warn(
+          {
+            sessionId,
+            requestId,
+            referenceId: record.id,
+            contractName: record.contractName,
+            contractVersion: record.contractVersion,
+          },
+          "Structured Output contract 已从注册表移除，transcript 跳过该条",
+        );
+        continue;
+      }
+      outputs.set(record.id, {
+        contract: ref,
+        value: contract.visibility === "product" ? record.value : null,
+      });
+    }
+    return outputs;
+  }
+
   async function transcript(
     access: RuntimeAccessContext,
     sessionId: string,
@@ -218,11 +276,20 @@ export function createAiAgentSessionService(input: {
     const hasMore = entries.length > query.limit;
     const pageEntries = hasMore ? entries.slice(0, query.limit) : entries;
     const visibleEntries = backward ? [...pageEntries].reverse() : pageEntries;
-    const items = projectTranscript(visibleEntries, query.lane, (info) =>
-      logger.warn(
-        { ...info, sessionId, requestId },
-        "Agent transcript 跳过不可投影 entry",
-      ),
+    const structuredOutputs = readStructuredOutputsForTranscript(
+      visibleEntries,
+      sessionId,
+      requestId,
+    );
+    const items = projectTranscript(
+      visibleEntries,
+      query.lane,
+      (info) =>
+        logger.warn(
+          { ...info, sessionId, requestId },
+          "Agent transcript 跳过不可投影 entry",
+        ),
+      structuredOutputs,
     );
     const cursorEntry = backward
       ? visibleEntries[0]

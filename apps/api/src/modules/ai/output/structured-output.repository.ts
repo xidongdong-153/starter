@@ -1,4 +1,4 @@
-import { asc, eq } from "drizzle-orm";
+import { asc, eq, inArray } from "drizzle-orm";
 import {
   aiStructuredOutputValueSchema,
   type AiStructuredOutputValue,
@@ -32,6 +32,7 @@ export interface AiStructuredOutputRepository {
   ) => StructuredOutputRecord;
   listByRun: (runId: string) => StructuredOutputRecord[];
   findById: (id: string) => StructuredOutputRecord | undefined;
+  findByIds: (ids: string[]) => StructuredOutputRecord[];
 }
 
 export function createAiStructuredOutputRepository(
@@ -94,6 +95,19 @@ export function createAiStructuredOutputRepository(
         .where(eq(aiStructuredOutputs.id, id))
         .get();
       return row ? toRecord(row) : undefined;
+    },
+    findByIds(ids) {
+      if (ids.length === 0) return [];
+      return db
+        .select()
+        .from(aiStructuredOutputs)
+        .where(inArray(aiStructuredOutputs.id, ids))
+        .orderBy(
+          asc(aiStructuredOutputs.createdAt),
+          asc(aiStructuredOutputs.id),
+        )
+        .all()
+        .map(toRecord);
     },
   };
 }

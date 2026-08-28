@@ -917,6 +917,14 @@ export const agentTranscriptToolActivitySchema = z.strictObject({
   status: agentToolStatusSchema,
   errorCode: apiErrorCodeSchema.nullable(),
   safeSummary: z.string().max(1000).nullable(),
+  /** `emit_structured_output` 工具调用的输出回放；contract resolve 不到时该字段缺失。 */
+  structuredOutput: z
+    .strictObject({
+      contract: aiOutputContractRefSchema,
+      value: aiStructuredOutputValueSchema.nullable(),
+      referenceId: uuidSchema,
+    })
+    .optional(),
 })
 
 export const agentTranscriptSystemSchema = z.strictObject({

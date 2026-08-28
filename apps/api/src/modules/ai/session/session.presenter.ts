@@ -3,6 +3,8 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type {
   AgentTranscriptItem,
   AgentToolStatus,
+  AiOutputContractRef,
+  AiStructuredOutputValue,
   AiUsage,
   ApiErrorCode,
 } from "@starter/contracts";
@@ -40,6 +42,12 @@ export interface SkippedTranscriptEntry {
   reason: string;
 }
 
+/** transcript tool_activity 注入的结构化输出：contract ref + 按可见性打码后的 value。 */
+export interface TranscriptStructuredOutput {
+  contract: AiOutputContractRef;
+  value: AiStructuredOutputValue | null;
+}
+
 /**
  * 把 Pi 的中性 entry 投影为共享契约的 transcript item。
  *
@@ -50,27 +58,48 @@ export interface SkippedTranscriptEntry {
  * - 其它识别不了的 entry 过滤后回调 onSkipped，由调用方记录 WARN。
  * - runId 读取顺序：`message.runId`（UUID 校验）优先，其次 `message.details.runId`；
  *   两者都缺失时不投影该 item，避免编造 Run 归属。
+ * - `structuredOutputs` 是 toolResult entry 引用的结构化输出（key 是 referenceId）；
+ *   details 带 structuredOutputId 且 Map 中存在时注入 `structuredOutput` 字段。
  */
 export function projectTranscript(
   entries: readonly Entry[],
   lane: string,
   onSkipped: (info: SkippedTranscriptEntry) => void,
+  structuredOutputs?: ReadonlyMap<string, TranscriptStructuredOutput>,
 ): AgentTranscriptItem[] {
   const items: AgentTranscriptItem[] = [];
   for (const entry of entries) {
-    const item = projectEntry(entry, lane, onSkipped);
+    const item = projectEntry(entry, lane, onSkipped, structuredOutputs);
     if (item) items.push(item);
   }
   return items;
+}
+
+/**
+ * 收集本页 toolResult entry 引用的 structuredOutputId（UUID 校验 + 去重），
+ * 供 session service 批量取回结构化输出。解析路径与 readToolDetails 一致。
+ */
+export function collectStructuredOutputIds(
+  entries: readonly Entry[],
+): string[] {
+  const ids = new Set<string>();
+  for (const entry of entries) {
+    if (entry.type !== "message") continue;
+    if (entry.message.role !== "toolResult") continue;
+    const id = readToolDetails(entry.message.details)?.structuredOutputId;
+    if (id) ids.add(id);
+  }
+  return [...ids];
 }
 
 function projectEntry(
   entry: Entry,
   lane: string,
   onSkipped: (info: SkippedTranscriptEntry) => void,
+  structuredOutputs?: ReadonlyMap<string, TranscriptStructuredOutput>,
 ): AgentTranscriptItem | null {
   if (entry.type === "message") {
-    return projectMessage(entry, lane, onSkipped);
+    return projectMessage(entry, lane, onSkipped, structuredOutputs);
   }
   if (entry.type === "compaction") {
     return {
@@ -100,6 +129,7 @@ function projectMessage(
   entry: Extract<Entry, { type: "message" }>,
   lane: string,
   onSkipped: (info: SkippedTranscriptEntry) => void,
+  structuredOutputs?: ReadonlyMap<string, TranscriptStructuredOutput>,
 ): AgentTranscriptItem | null {
   const message = entry.message;
 
@@ -153,6 +183,10 @@ function projectMessage(
     const errorCode =
       details?.errorCode ??
       (status === "succeeded" ? null : ApiErrorCodes.AI_TOOL_FAILED);
+    const structuredOutputId = details?.structuredOutputId ?? null;
+    const structuredOutput = structuredOutputId
+      ? structuredOutputs?.get(structuredOutputId)
+      : undefined;
     const item = {
       type: "tool_activity" as const,
       id: entry.id,
@@ -165,6 +199,14 @@ function projectMessage(
       status,
       errorCode,
       safeSummary: details?.safeSummary ?? null,
+      ...(structuredOutput && structuredOutputId
+        ? {
+            structuredOutput: {
+              ...structuredOutput,
+              referenceId: structuredOutputId,
+            },
+          }
+        : {}),
     };
     return item;
   }
@@ -333,6 +375,7 @@ function readToolDetails(value: unknown): {
   status: AgentToolStatus;
   errorCode: ApiErrorCode | null;
   safeSummary: string | null;
+  structuredOutputId: string | null;
 } | null {
   if (!isRecord(value)) return null;
   const details = isRecord(value.details) ? value.details : value;
@@ -345,6 +388,7 @@ function readToolDetails(value: unknown): {
       typeof details.safeSummary === "string"
         ? details.safeSummary.slice(0, 1000)
         : null,
+    structuredOutputId: readUuid(details.structuredOutputId),
   };
 }
 
