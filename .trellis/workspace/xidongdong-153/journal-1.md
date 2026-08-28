@@ -682,3 +682,35 @@ Web 用公开 AI Runtime API 做出最小 Chat：单 Session、单 lane、文本
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: AI Runtime API 原子化（父子任务）
+
+**Date**: 2026-08-29
+**Task**: 08-28-ai-atomic-runtime（父）+ remove-ai-pipeline / ai-run-webhook / run-idempotency-key（三子）
+**Package**: api
+**Branch**: `main`
+
+### Summary
+
+把 AI Runtime 收敛为原子 API：删除 pipeline 编排（模块、contracts、两张表、docs/spec 引用全部清除）；新增 Run 终态 Webhook 推送（admin 端点 CRUD + HMAC-SHA256 签名投递器，周期 tick 补登终态 Run，AiUrlGuard 防 SSRF，退避重试 + 死信，AI_WEBHOOK_ENABLED 默认关闭，零侵入 run.service）；startRun 支持幂等键（scope + key 部分唯一索引，预检查在 reserve 前，唯一约束兜底并发，SSE 幂等回放）。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `05be8ca` | refactor(api)!: remove pipeline orchestration |
+| `eadb6f7` | feat(api): add ai run webhook delivery |
+| `fbffda5` | feat(api): add idempotency key to agent run start |
+| `ae5ae02`/`ccd1735`/`72bb10c` | chore(task): archive x3 |
+
+### Notes
+
+- Webhook 投递器设计取舍：不侵入 Run 终态事务，单一周期 tick 覆盖正常/崩溃漏发/恢复标记三场景，延迟下界 = 扫描间隔（默认 5s）
+- 幂等键语义：同 scope 同 key 返回既有 Run；busy 不消费 key；failed 不自动重跑；跨 Session 409
+- migration 0023（drop pipeline 两表）、0024（webhook 两表 + finished_at 索引）、0025（idempotency 两列 + 部分唯一索引）
+- 测试：ai-webhook.test.ts 10 例、ai-run-idempotency.test.ts 8 例；全量 392 过
+
+### Status
+
+[OK] **Completed**
