@@ -67,14 +67,14 @@
 - [x] `pnpm --filter @starter/api db:check` 确认无 pending migration（本任务不应产生）。
 - [x] 更新 `.trellis/spec/api/backend/agent-run-guidelines.md`：Route 清单补 3 个新端点；错误矩阵补结构化输出与 JSON 启动条目；SSE/JSON 分流规则。
 - [x] 更新 `.trellis/spec/api/backend/agent-session-guidelines.md`：transcript 投影新增 structuredOutput 注入规则与可见性打码。
-- [ ] 按 AGENTS.md 提交规范分 6 个 commit（每个修复一个，测试随对应功能或并入 Step 7 一个 `test(api)` commit）：
+- [x] 按 AGENTS.md 提交规范分 6 个 commit（每个修复一个，测试随对应功能或并入 Step 7 一个 `test(api)` commit）：
   - `fix(api): write real newlines in run stream heartbeat`
   - `fix(api): allow ai runtime headers in cors preflight`
   - `feat(api): open public agent listing to product apps`
   - `feat(api): add structured output read routes`
   - `feat(api): replay structured outputs in session transcript`
   - `feat(api): support json run start with accept negotiation`（含 `test(api): cover third-party runtime access`）
-- [ ] 提交前把改动摘要展示给用户确认，确认后才执行 commit。
+- [x] 提交前把改动摘要展示给用户确认，确认后才执行 commit。
 
 ## 回滚点
 
@@ -83,4 +83,4 @@
 
 ## 当前状态
 
-- 2026-08-28：Step 1-7 全部完成（trellis-implement 三批派发 + trellis-check 全量复核通过：pnpm check 全绿、366 测试全绿、无 pending migration）。spec 文档已更新（agent-run / agent-session guidelines）。剩余：按 6 个 commit 分批提交（待用户确认）。
+- 2026-08-28：任务全部完成。7 个 commit 已提交（b7c45d6 / 0e0362e / e89f4d3 / 94e4ea8 / 9254caf / fee3c99 / 303df3d），HEAD 复跑 pnpm check + 全量测试（53 文件 366 用例）全绿，工作区干净。每个功能 commit 均验证过中间态可独立编译（checkout-index 方式）。
