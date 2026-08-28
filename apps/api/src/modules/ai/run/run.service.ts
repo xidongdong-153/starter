@@ -9,6 +9,8 @@ import type {
   RunTimeline,
   RunTrace,
   StartAgentRunInput,
+  StructuredOutputItem,
+  StructuredOutputList,
 } from "@starter/contracts";
 import { ApiErrorCodes, starterRunDataSchema } from "@starter/contracts";
 
@@ -41,6 +43,8 @@ import {
 import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import type { AiAgentDefinitionService } from "../agent/agent.service.js";
+import type { AiOutputContractRegistry } from "../output/output-contract-registry.js";
+import { toStructuredOutputContractRef } from "../output/output-contract-registry.js";
 import type { AiStructuredOutputRepository } from "../output/structured-output.repository.js";
 import type { AiAgentSessionRepository } from "../session/session.repository.js";
 import type { RunLiveSnapshotState } from "./run.live-snapshot.js";
@@ -136,6 +140,14 @@ export interface AiAgentRunService {
     runId: string,
     afterSequence: number,
   ) => AsyncIterable<RunEvent>;
+  /** 运行面主体读取 Run 的结构化输出；value 按 contract 可见性打码。 */
+  structuredOutputs: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ) => StructuredOutputList;
+  /** Admin 读取 Run 的全部结构化输出，value 不打码。 */
+  adminStructuredOutputs: (runId: string) => StructuredOutputList;
   recoverInterrupted: () => Promise<RunRecoveryReport>;
 }
 
@@ -163,6 +175,8 @@ export function createAiAgentRunService(input: {
   eventRepository: AiRunEventRepository;
   traceRepository?: AiRunTraceRepository;
   structuredOutputRepository?: AiStructuredOutputRepository;
+  /** contract 渲染元数据（visibility / mode）的唯一来源，读取路径必需。 */
+  outputContractRegistry: AiOutputContractRegistry;
   /** Run span 的根上下文；默认 no-op。 */
   telemetry?: TelemetryContext;
 }): AiAgentRunService {
@@ -176,6 +190,7 @@ export function createAiAgentRunService(input: {
     logger,
   } = input;
   const structuredOutputRepository = input.structuredOutputRepository;
+  const outputContractRegistry = input.outputContractRegistry;
   const eventRepository = input.eventRepository;
   const telemetry = input.telemetry ?? NOOP_TELEMETRY_CONTEXT;
   /** 活跃 Run 的进程内快照，Run 终态后立即移除。 */
@@ -470,6 +485,64 @@ export function createAiAgentRunService(input: {
     const result = input.traceRepository?.findByRunId(runId);
     if (!result) throw notFound();
     return result;
+  }
+
+  /**
+   * 结构化输出读取路径。contract resolve 不到（已从代码注册表移除）的记录
+   * 跳过并记 WARN：registry 是渲染元数据的唯一来源，不可渲染的输出不返回。
+   * contract ref 组装与 session transcript 回放共用 toStructuredOutputContractRef。
+   */
+  function listStructuredOutputs(
+    runId: string,
+    includeAdminValues: boolean,
+  ): StructuredOutputList {
+    const records = structuredOutputRepository?.listByRun(runId) ?? [];
+    const items: StructuredOutputItem[] = [];
+    for (const record of records) {
+      const contract = outputContractRegistry.find({
+        name: record.contractName,
+        version: record.contractVersion,
+      });
+      const ref = contract
+        ? toStructuredOutputContractRef(record, contract)
+        : null;
+      if (!contract || !ref) {
+        logger.warn(
+          {
+            runId,
+            referenceId: record.id,
+            contractName: record.contractName,
+            contractVersion: record.contractVersion,
+          },
+          "Structured Output contract 已从注册表移除，读取时跳过该条",
+        );
+        continue;
+      }
+      items.push({
+        referenceId: record.id,
+        contract: ref,
+        value:
+          includeAdminValues || contract.visibility === "product"
+            ? record.value
+            : null,
+        createdAt: record.createdAt.toISOString(),
+      });
+    }
+    return { items };
+  }
+
+  function structuredOutputs(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ): StructuredOutputList {
+    requireScopedRun(access, sessionId, runId);
+    return listStructuredOutputs(runId, false);
+  }
+
+  function adminStructuredOutputs(runId: string): StructuredOutputList {
+    if (!repository.findById(runId)) throw notFound();
+    return listStructuredOutputs(runId, true);
   }
 
   function timeline(
@@ -992,6 +1065,8 @@ export function createAiAgentRunService(input: {
     timeline,
     sequenceForEvent,
     subscribe,
+    structuredOutputs,
+    adminStructuredOutputs,
     abort,
     steer,
     followUp,

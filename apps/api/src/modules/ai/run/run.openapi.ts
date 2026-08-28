@@ -7,6 +7,7 @@ import {
   runTraceSchema,
   startAgentRunSchema,
   steerAgentRunSchema,
+  structuredOutputListSchema,
   uuidSchema,
 } from "@starter/contracts";
 import { createRoute, z } from "@hono/zod-openapi";
@@ -14,6 +15,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 import {
   apiSuccessResponse,
   conflictResponse,
+  forbiddenResponse,
   internalErrorResponse,
   invalidRequestResponse,
   notFoundResponse,
@@ -25,6 +27,8 @@ const security: Array<Record<string, string[]>> = [
   { cookieAuth: [] },
   { bearerAuth: [] },
 ];
+const controlTags = ["AI Control"];
+const controlSecurity = [{ cookieAuth: [] }];
 
 const runParams = z.strictObject({
   sessionId: uuidSchema,
@@ -41,6 +45,11 @@ const traceResponse = apiSuccessResponse(
   runTraceSchema,
   "Run Trace",
   "RunTraceResponse",
+);
+const structuredOutputListResponse = apiSuccessResponse(
+  structuredOutputListSchema,
+  "Structured Output List",
+  "StructuredOutputListResponse",
 );
 const timelineRequest = {
   params: runParams,
@@ -71,6 +80,38 @@ export const getAgentRunEventsRoute = createRoute({
     200: timelineResponse,
     400: invalidRequestResponse,
     401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
+export const getAgentRunStructuredOutputsRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/runs/{runId}/structured-outputs",
+  tags,
+  security,
+  description:
+    "读取 Run 的结构化输出列表。contract 已从代码注册表移除的记录不返回；value 按 contract 可见性打码：admin 可见性对运行面主体为 null。",
+  request: { params: runParams },
+  responses: {
+    200: structuredOutputListResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
+export const getAdminRunStructuredOutputsRoute = createRoute({
+  method: "get",
+  path: "/api/ai/admin/runs/{runId}/structured-outputs",
+  tags: controlTags,
+  security: controlSecurity,
+  description:
+    "Admin 读取 Run 的全部结构化输出，value 不打码（admin 可见性只有 admin 能读）。需要 AI_CONFIG_READ 权限。",
+  request: { params: z.strictObject({ runId: uuidSchema }) },
+  responses: {
+    200: structuredOutputListResponse,
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
     404: notFoundResponse,
   },
 });

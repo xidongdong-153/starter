@@ -95,6 +95,9 @@ export function createAiRoute(runtime: AppRuntime) {
     skillRepository,
   });
   const outputContractRegistry = runtime.aiOutputContracts;
+  const structuredOutputRepository = createAiStructuredOutputRepository(
+    runtime.db,
+  );
   const configurationService = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
@@ -168,7 +171,8 @@ export function createAiRoute(runtime: AppRuntime) {
     executor: runExecutor,
     logger: runtime.logger.child({ module: "ai-run" }),
     telemetry: runtime.aiTelemetry,
-    structuredOutputRepository: createAiStructuredOutputRepository(runtime.db),
+    structuredOutputRepository,
+    outputContractRegistry,
   });
   void runService
     .recoverInterrupted()
@@ -229,6 +233,7 @@ export function createAiRoute(runtime: AppRuntime) {
       createAiAgentRunRoute({
         service: runService,
         requireAuth: requireRuntimePrincipal,
+        requireRead,
       }),
     )
     .route(

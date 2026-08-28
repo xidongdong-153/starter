@@ -10,9 +10,11 @@ import {
   abortAgentRunRoute,
   followUpAgentRunRoute,
   getActiveAgentRunRoute,
+  getAdminRunStructuredOutputsRoute,
   getAgentRunRoute,
   getAgentRunEventsRoute,
   getAgentRunEventsStreamRoute,
+  getAgentRunStructuredOutputsRoute,
   getAgentRunTimelineRoute,
   getAgentRunTraceRoute,
   startAgentRunRoute,
@@ -26,8 +28,10 @@ type AiAgentRunService = ReturnType<typeof createAiAgentRunService>;
 export function createAiAgentRunRoute(deps: {
   service: AiAgentRunService;
   requireAuth: AiRouteMiddleware;
+  /** Admin 面只读路由的 AI_CONFIG_READ 权限中间件。 */
+  requireRead: AiRouteMiddleware;
 }) {
-  const { service, requireAuth } = deps;
+  const { service, requireAuth, requireRead } = deps;
   const access = (c: { var: HonoEnv["Variables"] }) =>
     toRuntimeAccessContext(c.var.principal, c.var.resourceScope);
 
@@ -203,6 +207,35 @@ export function createAiAgentRunRoute(deps: {
         200,
       );
     })
+    .openapi(
+      { ...getAgentRunStructuredOutputsRoute, middleware: requireAuth },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.structuredOutputs(
+              access(c),
+              c.req.valid("param").sessionId,
+              c.req.valid("param").runId,
+            ),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
+    .openapi(
+      {
+        ...getAdminRunStructuredOutputsRoute,
+        middleware: [requireAuth, requireRead],
+      },
+      (c) =>
+        c.json(
+          createSuccessResponse(
+            service.adminStructuredOutputs(c.req.valid("param").runId),
+            c.var.requestId,
+          ),
+          200,
+        ),
+    )
     .openapi({ ...getAgentRunEventsRoute, middleware: requireAuth }, (c) => {
       const params = c.req.valid("param");
       const query = c.req.valid("query");

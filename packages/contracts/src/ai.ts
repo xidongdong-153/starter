@@ -652,6 +652,21 @@ export const agentRunOutputContractSchema = aiOutputContractRefSchema.nullable()
 export const aiStructuredOutputValueSchema = z.record(z.string(), z.unknown())
 export type AiStructuredOutputValue = z.infer<typeof aiStructuredOutputValueSchema>
 
+/** Run 结构化输出的读取 DTO；value 按 contract 可见性打码（admin 可见性对运行面主体为 null）。 */
+export const structuredOutputItemSchema = z.strictObject({
+  referenceId: uuidSchema,
+  contract: aiOutputContractRefSchema,
+  /** product 可见性返回值；admin 可见性对运行面主体为 null，admin 路由才有值。 */
+  value: aiStructuredOutputValueSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+})
+export type StructuredOutputItem = z.infer<typeof structuredOutputItemSchema>
+
+export const structuredOutputListSchema = z.strictObject({
+  items: z.array(structuredOutputItemSchema),
+})
+export type StructuredOutputList = z.infer<typeof structuredOutputListSchema>
+
 export const agentDefinitionConfigSchema = z.strictObject({
   schemaVersion: z.literal(2),
   model: strictAiModelRefSchema.nullable(),

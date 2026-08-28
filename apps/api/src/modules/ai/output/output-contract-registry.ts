@@ -114,3 +114,29 @@ function contractKey(
 ): string {
   return `${ref.name}@${ref.version}`;
 }
+
+/**
+ * 组装读取路径（structured-outputs 路由与 transcript 回放共用）的 contract ref：
+ * schemaHash / renderKind 取表内记录（emit 时刻的事实），visibility / mode 取 registry 当前定义。
+ * renderKind 存库是 string，校验失败返回 null，调用方按不可渲染跳过。
+ */
+export function toStructuredOutputContractRef(
+  record: {
+    contractName: string;
+    contractVersion: string;
+    schemaHash: string;
+    renderKind: string;
+  },
+  contract: ResolvedAiOutputContract,
+): AiOutputContractRef | null {
+  const renderKind = aiOutputRenderKindSchema.safeParse(record.renderKind);
+  if (!renderKind.success) return null;
+  return {
+    name: record.contractName,
+    version: record.contractVersion,
+    schemaHash: record.schemaHash,
+    renderKind: renderKind.data,
+    visibility: contract.visibility,
+    mode: contract.mode,
+  };
+}
