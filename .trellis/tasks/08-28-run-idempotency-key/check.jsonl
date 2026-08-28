@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-28-run-idempotency-key/prd.md", "reason": "对照验收标准逐条检查"}
+{"file": ".trellis/tasks/08-28-run-idempotency-key/design.md", "reason": "对照设计核对 startRun 顺序未破坏"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 契约回归检查"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "质量检查项"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "验收命令"}

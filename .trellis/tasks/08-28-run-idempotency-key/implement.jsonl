@@ -1,0 +1,9 @@
+{"file": ".trellis/tasks/08-28-run-idempotency-key/prd.md", "reason": "需求、语义矩阵与验收标准"}
+{"file": ".trellis/tasks/08-28-run-idempotency-key/design.md", "reason": "数据模型、startRun 插入点、scope 计算"}
+{"file": ".trellis/tasks/08-28-run-idempotency-key/implement.md", "reason": "执行清单"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 启动顺序契约：reserve 先于建行、终态唯一、lease 释放规则"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "Run 生命周期与输入阶段顺序"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "加列与部分索引 migration 规则"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "验收命令"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "契约新增的规范"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享思考指南"}

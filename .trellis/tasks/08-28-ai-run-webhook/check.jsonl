@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-28-ai-run-webhook/prd.md", "reason": "对照验收标准逐条检查"}
+{"file": ".trellis/tasks/08-28-ai-run-webhook/design.md", "reason": "对照设计核对实现与取舍"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "质量检查项"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "secret 边界与单进程约束"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "验收命令"}
