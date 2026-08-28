@@ -2,6 +2,8 @@ import { eq } from "drizzle-orm";
 import { expect, it } from "vitest";
 
 import {
+  aiEnabledModels,
+  aiProviderConfigs,
   aiToolExecutions,
   permissions,
   rolePermissions,
@@ -13,6 +15,13 @@ import {
   appendSkillDescriptions,
   createReadSkillTool,
 } from "@api/modules/ai/skill/skill-tools.js";
+import {
+  createAiAgentDefinitionRepository,
+  createAiAgentDefinitionService,
+} from "@api/modules/ai/agent/index.js";
+import { createAiPromptRepository } from "@api/modules/ai/prompt/prompt.repository.js";
+import { createAiPromptService } from "@api/modules/ai/prompt/prompt.service.js";
+import { createAiToolRegistry } from "@api/modules/ai/tool/tool-registry.js";
 
 import { createTestApp, readSuccess, register } from "./helpers.js";
 
@@ -206,6 +215,117 @@ it("read_skill 工具：注册在 orchestrator 中，启用技能返回 content�
   }
 });
 
+it("agent.resolve：当 Agent 配置了启用技能时，systemPrompt 自动注入 <available_skills> 描述块", async () => {
+  const { app, cleanup, runtime } = createTestApp();
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const skill = await postJson(app, "/api/ai/skills", admin.cookie, {
+      name: "sql-optimizer",
+      description: "SQL 性能优化技能",
+      content: "优化 SQL 的具体步骤...",
+    });
+    const skillBody = await readSuccess<{ id: string }>(skill);
+
+    const prompt = await postJson(app, "/api/ai/system-prompts", admin.cookie, {
+      name: "base-prompt",
+      content: "你是一个专业的助手。",
+    });
+    const promptBody = await readSuccess<{ id: string }>(prompt);
+
+    const model = seedModel(runtime);
+    const agent = await postJson(app, "/api/ai/admin/agents", admin.cookie, {
+      name: "skill-enabled-agent",
+      config: {
+        schemaVersion: 2,
+        model,
+        systemPromptId: promptBody.data.id,
+        skillIds: [skillBody.data.id],
+        toolRefs: [{ name: "read_skill", version: "1.0.0" }],
+        thinkingLevel: "off",
+        maxTurns: 8,
+      },
+    });
+    const agentBody = await readSuccess<{ id: string }>(agent);
+    await patchJson(
+      app,
+      `/api/ai/admin/agents/${agentBody.data.id}/status`,
+      admin.cookie,
+      {
+        status: "enabled",
+      },
+    );
+
+    const skillRepo = createAiSkillRepository(runtime.db);
+    const agentService = createAiAgentDefinitionService({
+      repository: createAiAgentDefinitionRepository(runtime.db),
+      resolveModel: async (m) => m,
+      promptService: createAiPromptService(
+        createAiPromptRepository(runtime.db),
+      ),
+      skillRepository: skillRepo,
+      toolRegistry: createAiToolRegistry([createReadSkillTool(skillRepo)]),
+      outputContractRegistry: runtime.aiOutputContracts,
+    });
+
+    const resolved = await agentService.resolve(agentBody.data.id, {
+      principal: {
+        kind: "starter_user" as const,
+        principalId: "user-1",
+        tenantId: "starter",
+        projectId: "starter",
+        externalUserId: "user-1",
+        appId: null,
+      },
+      scope: {
+        tenantId: "starter",
+        projectId: "starter",
+        subjectType: null,
+        subjectId: null,
+      },
+    });
+
+    expect(resolved.systemPrompt).toContain("你是一个专业的助手。");
+    expect(resolved.systemPrompt).toContain("<available_skills>");
+    expect(resolved.systemPrompt).toContain("<name>sql-optimizer</name>");
+    expect(resolved.systemPrompt).toContain(
+      "<description>SQL 性能优化技能</description>",
+    );
+    expect(resolved.systemPrompt).toContain("</available_skills>");
+  } finally {
+    cleanup();
+  }
+});
+
+function seedModel(runtime: ReturnType<typeof createTestApp>["runtime"]): {
+  providerId: string;
+  modelId: string;
+} {
+  const model = runtime.ai.listModels("openai")[0];
+  if (!model) throw new Error("测试模型目录为空");
+  const now = new Date();
+  runtime.db
+    .insert(aiProviderConfigs)
+    .values({
+      providerId: model.providerId,
+      enabled: true,
+      configRevision: 0,
+      checkedConfigRevision: 0,
+      authStatus: "ready",
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run();
+  runtime.db
+    .insert(aiEnabledModels)
+    .values({
+      providerId: model.providerId,
+      modelId: model.modelId,
+      enabledAt: now,
+    })
+    .run();
+  return { providerId: model.providerId, modelId: model.modelId };
+}
+
 async function registerAdmin(
   app: ReturnType<typeof createTestApp>["app"],
   runtime: ReturnType<typeof createTestApp>["runtime"],
@@ -277,4 +397,17 @@ async function getJson(
   cookie: string,
 ) {
   return app.request(path, { method: "GET", headers: { cookie } });
+}
+
+async function patchJson(
+  app: ReturnType<typeof createTestApp>["app"],
+  path: string,
+  cookie: string,
+  body: Record<string, unknown>,
+) {
+  return app.request(path, {
+    method: "PATCH",
+    headers: { cookie, "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
 }

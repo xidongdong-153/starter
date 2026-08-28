@@ -27,6 +27,7 @@ import type {
   ResolvedAiOutputContract,
 } from "../output/output-contract-registry.js";
 import type { AiPromptService } from "../prompt/prompt.service.js";
+import { appendSkillDescriptions } from "../skill/skill-tools.js";
 import type {
   AiSkillRecord,
   AiSkillRepository,
@@ -279,9 +280,9 @@ export function createAiAgentDefinitionService(input: {
     const model = config.model;
     const systemPromptId = config.systemPromptId;
     if (!model || !systemPromptId) throw invalidConfig();
-    const systemPrompt =
+    const rawSystemPrompt =
       promptService.resolveSystemPromptContent(systemPromptId);
-    if (!systemPrompt) throw invalidConfig();
+    if (!rawSystemPrompt) throw invalidConfig();
     const skills = config.skillIds.map((id) => {
       const skill = skillRepository.findSkillById(id);
       if (!skill || !skill.enabled) throw invalidConfig();
@@ -291,6 +292,8 @@ export function createAiAgentDefinitionService(input: {
         description: skill.description,
       };
     });
+    const systemPrompt =
+      appendSkillDescriptions(rawSystemPrompt, skills) ?? rawSystemPrompt;
     const tools = config.toolRefs.map((ref) => {
       const tool = toolRegistry.find(ref);
       if (!tool || !isAiToolAvailableInScope(tool, access.scope)) {
