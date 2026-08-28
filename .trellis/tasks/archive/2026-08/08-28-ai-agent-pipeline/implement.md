@@ -70,7 +70,7 @@
 - [x] `pnpm --filter @starter/api db:check` 干净。
 - [x] OpenAPI 自查：`GET /doc` 里 admin 五条路由在 `AI Control`、运行面三条在 `AI Runtime`，运行面双 security 可选。
 - [x] `.trellis/spec/api/backend/ai-system-design.md`：第 1 节补第三类调用（pipeline）；第 3 节补 pipeline 子域职责行；第 5.3 节表清单补两张新表；第 8 节补 pipeline 归属判据；第 11 节 tag 分类补路由。`docs/ai/design.md`、`docs/ai/integration.md` 同步（端点、模板语法、轮询 / abort、错误码、专用 session 语义）。
-- [ ] 按 trellis-check 流程跑质量检查，更新任务状态。
+- [x] 按 trellis-check 流程跑质量检查，更新任务状态。
 
 ## 风险文件与回滚点
 
