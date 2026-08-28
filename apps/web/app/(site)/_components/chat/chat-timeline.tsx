@@ -37,27 +37,31 @@ export interface ChatTimelineProps {
 
 /**
  * 渲染已持久化的 transcript 历史，再接上当前 Run 的流式视图。
- * 容器具备内部独立滚动，并在新消息到来或流式输出时自动平滑触底。
+ * 容器具备内部独立滚动，并在新消息到来或流式输出时直接滚动容器本身，避免页面全局滚动。
  */
 export function ChatTimeline({ history, pendingUserText, timeline, className }: ChatTimelineProps) {
-  const bottomRef = useRef<HTMLDivElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const isAutoScrollActiveRef = useRef(true)
 
   const empty = history.length === 0 && pendingUserText === null && timeline.length === 0
 
-  // 监听容器滚动，当用户向上翻阅时暂停强制自动触底
+  // 监听容器内部滚动，当用户主动向上翻阅历史时暂停自动触底
   function handleScroll() {
     const el = containerRef.current
     if (!el) return
-    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 120
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 80
     isAutoScrollActiveRef.current = isNearBottom
   }
 
-  // 依赖内容变化触发自动触底
+  // 依赖内容更新直接滚动内部容器，绝不调用会导致祖先窗口滚动的 scrollIntoView
   useEffect(() => {
+    const container = containerRef.current
+    if (!container) return
     if (isAutoScrollActiveRef.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+      container.scrollTo({
+        top: container.scrollHeight,
+        behavior: 'smooth',
+      })
     }
   }, [history, pendingUserText, timeline])
 
@@ -99,8 +103,6 @@ export function ChatTimeline({ history, pendingUserText, timeline, className }: 
           {timeline.map((item) => (
             <LiveRow item={item} key={timelineKey(item)} />
           ))}
-
-          <div ref={bottomRef} />
         </div>
       )}
     </div>

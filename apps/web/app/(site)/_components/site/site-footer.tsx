@@ -1,10 +1,20 @@
+'use client'
+
 import { ExternalLink } from 'lucide-react'
 import Link from 'next/link'
+import { usePathname } from 'next/navigation'
 import { ThemeToggle } from '@web/components/site/theme-toggle'
 
 const currentYear = new Date().getFullYear()
 
 export function SiteFooter() {
+  const pathname = usePathname()
+
+  // 对话页面作为全屏工作区，不渲染底部通栏以避免产生外层滚动条
+  if (pathname.startsWith('/chat')) {
+    return null
+  }
+
   return (
     <footer className="mt-20 border-t border-border-subtle py-10">
       <div className="site-container flex flex-col gap-8 md:flex-row md:items-end md:justify-between">
