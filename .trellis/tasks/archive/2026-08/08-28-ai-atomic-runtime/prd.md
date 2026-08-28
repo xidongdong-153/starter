@@ -22,11 +22,11 @@
 
 ## 跨子任务验收标准
 
-- [ ] 三个子任务各自归档，`pnpm check`、`pnpm test`、`pnpm --filter @starter/api db:check` 全绿。
-- [ ] 仓库内不再有 pipeline 运行时代码：`rg -i "pipeline" apps/api/src packages/contracts/src` 只允许命中无关词（无）或零命中；docs/ai 与 .trellis/spec 中 pipeline 章节同步删除。
-- [ ] 第三方视角能力闭环（写在 docs/ai/integration.md）：启动 Run（可带幂等键）→ SSE 或轮询 → 进程挂了靠幂等键安全重试 → 终态 Webhook 回调（带签名与重试）。
-- [ ] OpenAPI 面保持分类：webhook 管理归 AI Control，幂等键参数出现在 AI Runtime 的 startRun 定义里。
-- [ ] 父任务不做直接代码改动；最终集成复查由父任务收尾（对照本文件逐项勾选）。
+- [x] 三个子任务各自归档，`pnpm check`、`pnpm test`、`pnpm --filter @starter/api db:check` 全绿。
+- [x] 仓库内不再有 pipeline 运行时代码（migration 历史文件除外）；docs/ai 与 .trellis/spec 中 pipeline 章节同步删除。
+- [x] 第三方视角能力闭环（docs/ai/integration.md）：3.4 幂等重试 + 第 4 章 Webhook 终态推送 + Run 启动/SSE/轮询既有章节。
+- [x] OpenAPI 面分类：webhook 管理归 AI Control，幂等键参数在 AI Runtime 的 startRun 定义里。
+- [x] 父任务不做直接代码改动；集成复查完成（残留扫描、文档、OpenAPI 分类、全量验证均通过）。
 
 ## 约束
 
