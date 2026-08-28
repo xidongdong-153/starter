@@ -1629,3 +1629,114 @@ export const completionStreamEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type CompletionStreamEvent = z.infer<typeof completionStreamEventSchema>
+
+/**
+ * Run 终态 Webhook 推送（`run.terminal`）。
+ *
+ * 投递时的 HTTP body 就是这个 schema 的 JSON 序列化；第三方用同一份
+ * schema 校验 payload 后重算 HMAC 签名。
+ */
+export const webhookRunTerminalPayloadSchema = z.strictObject({
+  type: z.literal('run.terminal'),
+  appId: uuidSchema,
+  runId: uuidSchema,
+  sessionId: uuidSchema,
+  lane: agentLaneSchema,
+  agentId: uuidSchema,
+  agentRevision: z.number().int().min(1),
+  status: agentRunStatusSchema.exclude(['starting', 'running']),
+  errorCode: apiErrorCodeSchema.nullable(),
+  finishedAt: isoDateTimeSchema,
+  occurredAt: isoDateTimeSchema,
+})
+export type WebhookRunTerminalPayload = z.infer<typeof webhookRunTerminalPayloadSchema>
+
+export const aiWebhookEndpointStatusSchema = z.enum(['enabled', 'disabled'])
+export type AiWebhookEndpointStatus = z.infer<typeof aiWebhookEndpointStatusSchema>
+
+export const aiWebhookDeliveryStatusSchema = z.enum(['pending', 'delivered', 'dead'])
+export type AiWebhookDeliveryStatus = z.infer<typeof aiWebhookDeliveryStatusSchema>
+
+export const createAiWebhookEndpointSchema = z.strictObject({
+  appId: uuidSchema,
+  url: z.url(),
+})
+export type CreateAiWebhookEndpointInput = z.infer<typeof createAiWebhookEndpointSchema>
+
+export const updateAiWebhookEndpointSchema = z
+  .strictObject({
+    url: z.url().optional(),
+    status: aiWebhookEndpointStatusSchema.optional(),
+  })
+  .refine((value) => value.url !== undefined || value.status !== undefined, {
+    message: '至少提供一个要修改的字段',
+  })
+export type UpdateAiWebhookEndpointInput = z.infer<typeof updateAiWebhookEndpointSchema>
+
+/** 端点 DTO 不携带 signingSecret；secret 只在创建和 rotate 的响应里返回一次。 */
+export const aiWebhookEndpointSchema = z.strictObject({
+  endpointId: uuidSchema,
+  appId: uuidSchema,
+  url: z.url(),
+  status: aiWebhookEndpointStatusSchema,
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  lastDeliveryAt: isoDateTimeSchema.nullable(),
+})
+export type AiWebhookEndpoint = z.infer<typeof aiWebhookEndpointSchema>
+
+export const aiWebhookEndpointSecretSchema = z.strictObject({
+  endpoint: aiWebhookEndpointSchema,
+  signingSecret: z.string().min(32).max(240),
+})
+export type AiWebhookEndpointSecret = z.infer<typeof aiWebhookEndpointSecretSchema>
+
+export const aiWebhookEndpointParamsSchema = z.strictObject({
+  endpointId: uuidSchema,
+})
+
+export const aiWebhookEndpointListQuerySchema = z.strictObject({
+  appId: uuidSchema,
+})
+
+export const aiWebhookDeliverySchema = z.strictObject({
+  id: uuidSchema,
+  endpointId: uuidSchema,
+  appId: uuidSchema,
+  runId: uuidSchema,
+  eventType: z.string().min(1).max(64),
+  status: aiWebhookDeliveryStatusSchema,
+  attempts: z.number().int().min(0),
+  nextAttemptAt: isoDateTimeSchema.nullable(),
+  lastResponseCode: z.number().int().nullable(),
+  lastError: z.string().nullable(),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+  deliveredAt: isoDateTimeSchema.nullable(),
+  deadAt: isoDateTimeSchema.nullable(),
+})
+export type AiWebhookDelivery = z.infer<typeof aiWebhookDeliverySchema>
+
+export const aiWebhookDeliveryListSchema = z.object({
+  items: z.array(aiWebhookDeliverySchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+export type AiWebhookDeliveryList = z.infer<typeof aiWebhookDeliveryListSchema>
+
+export const aiWebhookDeliveryQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+  endpointId: uuidSchema.optional(),
+  appId: uuidSchema.optional(),
+  status: aiWebhookDeliveryStatusSchema.optional(),
+})
+export type AiWebhookDeliveryQuery = z.infer<typeof aiWebhookDeliveryQuerySchema>
+
+export const aiWebhookTestResultSchema = z.strictObject({
+  ok: z.boolean(),
+  responseCode: z.number().int().nullable(),
+  error: z.string().nullable(),
+})
+export type AiWebhookTestResult = z.infer<typeof aiWebhookTestResultSchema>

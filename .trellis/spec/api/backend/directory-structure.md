@@ -33,16 +33,19 @@ apps/api/src/modules/ai/
 ├── ai.route.ts
 ├── ai.schema.ts
 ├── agent/
+├── application/
+├── completion/
 ├── configuration/
 ├── prompt/
 ├── run/
 ├── session/
 ├── skill/
 ├── tool/
-└── usage-audit/
+├── usage-audit/
+└── webhook/
 ```
 
-`routes/index.ts` 仍只挂载 `createAiRoute(runtime)`。AI 根路由显式组合 agent、configuration、run、session、usage-audit、prompt 和 skill 子路由；tool 目录只放工具注册和测试工具，工具执行由 Pi Tool adapter 在 Agent executor 内完成。
+`routes/index.ts` 仍只挂载 `createAiRoute(runtime)`。AI 根路由显式组合 agent、application、completion、configuration、run、session、usage-audit、prompt、skill 和 webhook 子路由；tool 目录只放工具注册和测试工具，工具执行由 Pi Tool adapter 在 Agent executor 内完成。
 
 业务模块通过 `routes/index.ts` 注册，不要在 `create-app.ts` 里直接写业务 handler。`profile` 和 `files` 的 route 在创建 service 时注入 runtime 依赖，便于测试替换数据库和文件目录。
 

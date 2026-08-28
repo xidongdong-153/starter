@@ -34,6 +34,15 @@ const envSchema = z.object({
     .default(60_000),
   AI_PRIVATE_CIDR_ALLOWLIST: z.string().default(""),
   AI_TEST_TOOLS_ENABLED: z.stringbool().default(false),
+  AI_WEBHOOK_ENABLED: z.stringbool().default(false),
+  AI_WEBHOOK_SWEEP_INTERVAL_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .default(5_000),
+  AI_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(10_000),
+  AI_WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
+  AI_WEBHOOK_BACKOFF_MS: z.string().default("0,30000,120000,600000,1800000"),
   BETTER_AUTH_SECRET: z.string().min(32),
   BETTER_AUTH_URL: z.url().default("http://localhost:7788"),
   CORS_ORIGINS: z
@@ -64,12 +73,25 @@ const envSchema = z.object({
 export type AppEnv = z.infer<typeof envSchema> & {
   corsOrigins: string[];
   aiPrivateCidrs: string[];
+  /** AI_WEBHOOK_BACKOFF_MS 解析后的退避序列，至少一项。 */
+  aiWebhookBackoffMs: number[];
 };
 
 export function parseEnv(input: NodeJS.ProcessEnv = process.env): AppEnv {
   const values = envSchema.parse(input);
   if (values.SMTP_HOST && !values.SMTP_FROM) {
     throw new Error("配置 SMTP_HOST 时必须同时配置 SMTP_FROM");
+  }
+
+  const backoffParts = values.AI_WEBHOOK_BACKOFF_MS.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const aiWebhookBackoffMs = backoffParts.map(Number);
+  if (
+    backoffParts.length === 0 ||
+    aiWebhookBackoffMs.some((ms) => !Number.isInteger(ms) || ms < 0)
+  ) {
+    throw new Error("AI_WEBHOOK_BACKOFF_MS 必须是至少一个非负整数，逗号分隔");
   }
 
   return {
@@ -80,5 +102,6 @@ export function parseEnv(input: NodeJS.ProcessEnv = process.env): AppEnv {
     aiPrivateCidrs: values.AI_PRIVATE_CIDR_ALLOWLIST.split(",")
       .map((item) => item.trim())
       .filter(Boolean),
+    aiWebhookBackoffMs,
   };
 }

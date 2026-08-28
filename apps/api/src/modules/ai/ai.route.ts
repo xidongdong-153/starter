@@ -60,6 +60,14 @@ import {
   createAiInvocationRunner,
   createAiUsageAuditService,
 } from "./usage-audit/usage-audit.service.js";
+import { createAiUrlGuard } from "@api/infra/ai/index.js";
+import {
+  createAiWebhookDispatcher,
+  createAiWebhookRepository,
+  createAiWebhookRouteGroup,
+  createAiWebhookService,
+  createWebhookCrypto,
+} from "./webhook/index.js";
 
 export function createAiRoute(runtime: AppRuntime) {
   const requireAuth = createRequireAuth(runtime.auth);
@@ -84,6 +92,37 @@ export function createAiRoute(runtime: AppRuntime) {
     requireStarterUser: requireAuth,
     requireProductApp,
   });
+  const webhookRepository = createAiWebhookRepository(runtime.db);
+  const webhookCrypto = createWebhookCrypto(
+    runtime.env.AI_CREDENTIAL_ENCRYPTION_KEY,
+  );
+  const webhookUrlGuard = createAiUrlGuard({
+    appEnv: runtime.env.APP_ENV,
+    allowedPrivateCidrs: runtime.env.aiPrivateCidrs,
+    timeoutMs: runtime.env.AI_WEBHOOK_TIMEOUT_MS,
+  });
+  const webhookService = createAiWebhookService({
+    repository: webhookRepository,
+    applicationRepository: createAiApplicationRepository(runtime.db),
+    crypto: webhookCrypto,
+    urlGuard: webhookUrlGuard,
+    logger: runtime.logger.child({ module: "ai-webhook" }),
+  });
+  if (runtime.env.AI_WEBHOOK_ENABLED) {
+    const webhookDispatcher = createAiWebhookDispatcher({
+      db: runtime.db,
+      crypto: webhookCrypto,
+      urlGuard: webhookUrlGuard,
+      logger: runtime.logger.child({ module: "ai-webhook" }),
+      settings: {
+        sweepIntervalMs: runtime.env.AI_WEBHOOK_SWEEP_INTERVAL_MS,
+        maxAttempts: runtime.env.AI_WEBHOOK_MAX_ATTEMPTS,
+        backoffMs: runtime.env.aiWebhookBackoffMs,
+      },
+    });
+    runtime.webhookDispatcher = webhookDispatcher;
+    webhookDispatcher.start();
+  }
   const usageAuditService = createAiUsageAuditService(
     createAiUsageAuditRepository(runtime.db),
     runtime.logger.child({ module: "ai-usage-audit" }),
@@ -253,6 +292,15 @@ export function createAiRoute(runtime: AppRuntime) {
       createAiCompletionRoute({
         service: completionService,
         requireAuth: requireRuntimePrincipal,
+      }),
+    )
+    .route(
+      "/",
+      createAiWebhookRouteGroup({
+        service: webhookService,
+        requireAuth,
+        requireRead,
+        requireManage,
       }),
     )
     .route(

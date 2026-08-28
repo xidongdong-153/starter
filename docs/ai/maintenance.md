@@ -98,7 +98,7 @@ Run Service 始终是 Run 行、活跃登记、序号、Pi 终态 entry 和终�
 
 ## 4. AI 数据表
 
-定义都在 `apps/api/src/modules/ai/ai.schema.ts`，共 17 张。
+定义都在 `apps/api/src/modules/ai/ai.schema.ts`，共 19 张。
 
 | 表                               | 存什么                                                                                                                            | 明确不存                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -117,6 +117,8 @@ Run Service 始终是 Run 行、活跃登记、序号、Pi 终态 entry 和终�
 | `ai_agent_runs`                  | Run id、Session、Agent 和 `agentRevision`、lane、状态、执行快照、`requestId`、`finalEntryId`、错误码、时间戳                      | 消息正文、事件流                                |
 | `ai_model_calls`                 | 每次模型请求：身份与 scope、`scenario`、`runId`、Provider / 模型、耗时、超时、token、成本、结果和错误码                           | prompt、响应正文、secret、上游原始错误          |
 | `ai_tool_executions`             | 每次工具执行：关联的模型调用 id、工具名、耗时、超时、状态、错误码                                                                 | 入参、结果、`safeSummary`                       |
+| `ai_webhook_endpoints`           | Run 终态推送端点：所属应用、URL、AES-256-GCM 加密的 signing secret、enabled/disabled 状态、最后投递时间                           | 不存 secret 明文                                |
+| `ai_webhook_deliveries`          | 每次终态推送：端点、Run、payload 快照、状态（pending/delivered/dead）、尝试次数、下次尝试时间、最近响应码和错误                   | 不存 secret，payload 不含正文和身份字段         |
 
 `ai_tool_executions.ai_call_id` 外键指向 `ai_model_calls.id`，级联删除。查某次 Run 的工具执行要先按 `run_id` 找模型调用。
 
@@ -189,13 +191,18 @@ pnpm --filter @starter/web test
 
 ### 7.1 环境变量
 
-| 变量                           | 默认值                     | 说明                                                               |
-| ------------------------------ | -------------------------- | ------------------------------------------------------------------ |
-| `DATABASE_PATH`                | `./data/app.db`            | Starter 主库                                                       |
-| `AGENT_SESSION_DATABASE_PATH`  | `./data/agent-sessions.db` | Pi Session 库，独立文件                                            |
-| `AI_CREDENTIAL_ENCRYPTION_KEY` | 无默认，必填               | 32 字节密钥的 base64。换了这个值，已保存的 Provider 凭据全部解不开 |
-| `AI_REQUEST_TIMEOUT_MS`        | 60000                      | 单次模型请求超时，范围 1000 到 300000                              |
-| `AI_TEST_TOOLS_ENABLED`        | false                      | 打开后注册内置测试工具，生产不要开                                 |
+| 变量                           | 默认值                          | 说明                                                                |
+| ------------------------------ | ------------------------------- | ------------------------------------------------------------------- |
+| `DATABASE_PATH`                | `./data/app.db`                 | Starter 主库                                                        |
+| `AGENT_SESSION_DATABASE_PATH`  | `./data/agent-sessions.db`      | Pi Session 库，独立文件                                             |
+| `AI_CREDENTIAL_ENCRYPTION_KEY` | 无默认，必填                    | 32 字节密钥的 base64。换了这个值，已保存的 Provider 凭据全部解不开  |
+| `AI_REQUEST_TIMEOUT_MS`        | 60000                           | 单次模型请求超时，范围 1000 到 300000                               |
+| `AI_TEST_TOOLS_ENABLED`        | false                           | 打开后注册内置测试工具，生产不要开                                  |
+| `AI_WEBHOOK_ENABLED`           | false                           | Run 终态 Webhook 推送总开关，关闭时不扫描不投递，管理面 CRUD 仍可用 |
+| `AI_WEBHOOK_SWEEP_INTERVAL_MS` | 5000                            | 投递器扫描间隔，最小 1000                                           |
+| `AI_WEBHOOK_TIMEOUT_MS`        | 10000                           | 单次 Webhook 请求超时，最小 1000                                    |
+| `AI_WEBHOOK_MAX_ATTEMPTS`      | 5                               | 最大投递尝试次数，1-10                                              |
+| `AI_WEBHOOK_BACKOFF_MS`        | `0,30000,120000,600000,1800000` | 重试退避序列，逗号分隔，次数超出后重复末位                          |
 
 ### 7.2 migration
 
@@ -224,6 +231,16 @@ API 创建 AI 路由时会异步做两件事，结果只出现在日志里：
 - Session 一致性检查：发现两库孤儿记录会打 warn，带 `missingInPiCount` 和 `missingInMainCount`。
 - Run 启动恢复扫描：扫到非终态 Run 会打 info，带 `scanned`、`recoveredFromEntry`、`interrupted`、`corrupted`。`corrupted` 不为 0 说明 Pi 终态 entry 有重复或身份字段不匹配，要去查是不是同一个 Session 被两个进程写过。
 
+### 7.7 Webhook 投递器
+
+投递器在 `AI_WEBHOOK_ENABLED=true` 时随 AI 路由启动，`setInterval` 驱动 tick，进程退出前由 `runtime.close()` 停掉。排查投递问题看三处：
+
+1. 端点状态：`GET /api/ai/admin/webhook-endpoints?appId=`，确认是 `enabled`，`lastDeliveryAt` 能看出最近一次成功投递。
+2. 投递记录：`GET /api/ai/admin/webhook-deliveries?endpointId=&status=`，按 status 过滤。`pending` 带未来的 `nextAttemptAt` 是在等退避；`dead` 看 `lastError`（`http_500` 这类是目标服务器拒绝，`guard:private` 这类是 URL 被 SSRF 检查拒绝，改 URL 才能解）。
+3. API 日志：投递失败记 warn（带 endpointId、runId、attempts、错误摘要），tick 异常记 error。secret 和 body 不会出现在日志里。
+
+死信没有手工重投接口。目标服务修好后，新的终态 Run 会正常推送；需要重推旧 Run 时，删掉端点重建（secret 会换）或者等新的 Run。
+
 ## 8. 故障排查
 
 | 症状                                          | 先看哪里               | 怎么确认                                                                                                                                | 处理                                                                                                 |
@@ -239,3 +256,5 @@ API 创建 AI 路由时会异步做两件事，结果只出现在日志里：
 | Run 很快就变 `failed` + `AI.UPSTREAM_TIMEOUT` | 两个超时哪个先到       | 看 `ai_model_calls` 最后一条的 `duration_ms`：接近 `AI_REQUEST_TIMEOUT_MS` 是单次请求超时，接近 120 秒且模型调用有多条是 Run 总时长超限 | 单次请求超时调 `AI_REQUEST_TIMEOUT_MS`；Run 总时长超限要改 `maxRunMs`，或把 Agent 的 `maxTurns` 调小 |
 | Session 列表里少了记录                        | 两库一致性             | 看启动日志的一致性检查 warn；对比两库的 Session id                                                                                      | 主库缺记录说明创建补偿失败过，按业务决定补建还是清掉 Pi 侧孤儿                                       |
 | 同一个 Session 发第二条就 409                 | 活跃登记               | 错误码是 `AI.SESSION_BUSY`                                                                                                              | 等当前 Run 到终态，或让客户端换 lane；多实例部署时确认请求有没有打到别的进程                         |
+| Webhook 推送一直没到                          | 开关和端点状态         | 确认 `AI_WEBHOOK_ENABLED=true`；查端点是否 `enabled`、Run 是否 `product_app` 凭据发起、`finishedAt` 是否早于端点创建                    | 端点创建前或禁用窗口内结束的 Run 不会补发，重新跑一个 Run 验证                                       |
+| Webhook 投递一直是 dead                       | `lastError`            | `http_*` 是目标服务器持续返回非 2xx；`guard:*` 是 URL 被 SSRF 检查拒绝（内网、重定向、超时等）                                          | `http_*` 让接收方修服务；`guard:*` 改成公网可达的 URL                                                |

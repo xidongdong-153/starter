@@ -2,15 +2,18 @@
 
 这篇讲 `apps/api` 的 AI 模块怎么组织：谁负责什么、一次输入怎么变成最终输出、状态存在哪、失败时谁负责收尾。改代码前先看这里确认边界，再去 `.trellis/spec/api/backend/` 读对应的实现约束。
 
-## 1. 系统提供三类调用
+## 1. 系统提供四类调用
 
 | 调用           | 入口                                     | 用到什么                                                | 不产生什么                                     |
 | -------------- | ---------------------------------------- | ------------------------------------------------------- | ---------------------------------------------- |
 | 模型连通性测试 | `POST /api/ai/test`                      | Provider 配置、模型白名单、统一 Gateway                 | 不建 Session、不建 Run、不写 Pi 历史           |
 | 一次性模型调用 | `POST /api/ai/completions`               | 模型白名单、统一 Gateway、审计（scenario=completion）   | 不带工具，不建 Session、不建 Run、不写 Pi 历史 |
 | Agent 运行     | `POST /api/ai/sessions/{sessionId}/runs` | Pi Agent、Pi Session、Tool adapter、SSE、Run 记录、审计 | ——                                             |
+| 终态 Webhook   | 平台主动 POST 到第三方端点               | 周期扫描终态 Run、HMAC 签名、出站 guard、重试与死信     | 不进 Run 终态事务，不订阅 SSE 路径             |
 
 一次性模型调用面向翻译一句话、分类一段文本这类单轮任务：调用方指定白名单内模型（可带 systemPrompt）加一段输入，直接拿结果，不用先建 Session 再启动 Run。它复用模型测试同一条 Gateway 和审计路径，只是 scenario 和鉴权受众不同。
+
+终态 Webhook 是反向推送：Run 进终态后由 `webhook/` 的周期扫描补登并投递，见第 8 节。
 
 下面主要讲第三类。它包含输入校验、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和进程重启恢复。
 
@@ -69,6 +72,7 @@ flowchart LR
 | `skill/`         | Skill 文本维护，以及给模型用的 `read_skill` 工具                                         | 不把 Skill 正文塞进 system prompt                           |
 | `tool/`          | Tool registry：注册、按名字查找、scope 判断                                              | 不执行工具，执行在 `infra/agent` 的 adapter 里              |
 | `usage-audit/`   | 模型调用和工具执行的审计记录、用量查询、Gateway 调用包装                                 | 不作为 Run 状态来源                                         |
+| `webhook/`       | Webhook 端点 CRUD、signing secret 加解密、周期补登与投递、投递记录查询                   | 不进 Run 终态事务，不订阅事件路径，不提供死信手工重投       |
 
 `principal.ts` 和 `principal.guard.ts` 是运行面的身份层：`principal.guard.ts` 按有没有 `Authorization: Bearer` 头分叉到应用凭据或 Better Auth，`principal.ts` 把身份转成 `RuntimeAccessContext`（`principal` + `scope`），所有 Session 和 Run 查询都带这个上下文。
 
@@ -313,7 +317,43 @@ flowchart TD
 
 合法的终态 entry 必须同时匹配 `runId`、`sessionId`、`lane`、`agentId`、`agentRevision`。结构合法但身份字段不匹配也算损坏，不能只按 `runId` 接受。
 
-## 8. 鉴权与隔离
+## 8. Webhook 终态推送
+
+`webhook/` 的投递器是一个独立的周期 tick（默认 5 秒，`AI_WEBHOOK_SWEEP_INTERVAL_MS` 可调），不订阅 RunService 事件，也不挂在终态事务上。终态事实已经在 `ai_agent_runs` 行上，扫描它就够了——这是拿最多一个扫描周期的推送延迟，换 run 模块零改动。
+
+```mermaid
+%%{init: {"theme": "dark"}}%%
+flowchart TD
+  Timer["setInterval tick"] --> Enqueue["补登：终态 product_app Run<br/>finished_at > 内存水位"]
+  Enqueue -->|"每个 enabled 端点且<br/>run.finishedAt >= endpoint.createdAt"| Rows[("ai_webhook_deliveries<br/>UNIQUE endpoint_id + run_id")]
+  Rows --> Deliver["投递：到期 pending 记录<br/>每 tick 最多 50 条"]
+  Deliver --> Sign["HMAC 签名 t.v1"]
+  Sign --> Fetch["AiUrlGuard.fetch POST"]
+  Fetch -->|"2xx"| Done["delivered"]
+  Fetch -->|"4xx/5xx/超时/网络错"| Retry["attempts+1，退避后重试"]
+  Retry -->|"次数用完"| Dead["dead"]
+  Fetch -->|"AiUrlGuardError"| Dead
+  Retry --> Rows
+
+  classDef timer fill:#3d304d,stroke:#c7a8e8,color:#fff
+  classDef store fill:#29463b,stroke:#9bd3ad,color:#fff
+  classDef state fill:#4b3f24,stroke:#e1c46a,color:#fff
+  class Timer timer
+  class Rows store
+  class Done,Retry,Dead state
+```
+
+规则要点：
+
+- 入队幂等：`(endpoint_id, run_id)` 唯一，重复扫描不会重复入队。
+- 内存水位在进程启动时归零，崩溃漏发的终态 Run 重启后按同一规则补扫；端点创建之前结束的 Run 和禁用窗口内结束的 Run 永不补发。
+- 出站请求全部走 `AiUrlGuard`（DNS pin、内网拒绝、重定向拒绝、响应体上限、超时），防 SSRF。guard 拒绝属于配置性失败，直接死信不重试。
+- signing secret 用 `AI_CREDENTIAL_ENCRYPTION_KEY` 做 AES-256-GCM 加密存储，明文只出现在创建/轮换响应、test 探测和签名计算三处。
+- 总开关 `AI_WEBHOOK_ENABLED` 默认 false；关闭时管理面 CRUD 仍可用，只是不扫描不投递。
+
+接口、签名公式和重试参数见 [integration.md](./integration.md) 第 4 节；运维排查见 [maintenance.md](./maintenance.md)。
+
+## 9. 鉴权与隔离
 
 运行面的身份有两种，落到同一个 `RuntimeAccessContext`：
 
@@ -330,7 +370,7 @@ Session 查询条件按身份分两套：Starter 用户按 `principalKind` + `ow
 
 secret 只能由 `infra/ai` 的凭据存储解密。这些位置禁止出现 secret：Agent config、Run 快照、Session DTO、transcript、HarnessEvent、审计记录、日志和错误响应。应用凭据只存 sha256 哈希和前 12 位前缀，认证时按前缀查候选再做定长比较。
 
-## 9. 设计约束
+## 10. 设计约束
 
 不要在这些地方开第二套实现：
 
@@ -340,8 +380,9 @@ secret 只能由 `infra/ai` 的凭据存储解密。这些位置禁止出现 sec
 - 不把 HarnessEvent 当可靠历史，也不把 `ai_model_calls` 当 Run 状态来源。
 - 不在前端用 localStorage 或本地缓存恢复业务状态。
 - 不提前加分布式队列、跨节点活跃登记和多进程共享的 Run 注册表。当前活跃登记是单进程的。
+- Webhook 投递器不进 Run 终态事务，也不订阅事件发布路径；终态推送只依赖对 `ai_agent_runs` 的周期扫描。
 
-## 10. 继续读
+## 11. 继续读
 
 | 需求                                     | 去哪                                                         |
 | ---------------------------------------- | ------------------------------------------------------------ |

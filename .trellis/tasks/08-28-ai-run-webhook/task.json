@@ -3,7 +3,7 @@
   "name": "ai-run-webhook",
   "title": "AI Run Webhook 终态推送",
   "description": "第三方应用可配置 webhook，Run 进终态时 HMAC 签名回调，含重试退避与死信",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

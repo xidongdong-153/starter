@@ -317,6 +317,7 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "ai_agent_runs_agent_created_idx",
         "ai_agent_runs_status_created_idx",
         "ai_agent_runs_request_idx",
+        "ai_agent_runs_finished_idx",
       ].sort(),
     );
   } finally {

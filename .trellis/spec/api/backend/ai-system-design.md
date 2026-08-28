@@ -4,11 +4,12 @@
 
 ## 1. 系统承诺
 
-当前 AI 系统提供三类调用：
+当前 AI 系统提供三类调用和一个推送通道：
 
 - `POST /api/ai/test`：管理员或用户执行一次模型测试。它使用 Provider、模型白名单和统一 Gateway，但不创建 Agent Session、Agent Run 或 Pi transcript。
 - `POST /api/ai/completions`：一次性无状态模型调用。调用方直接指定白名单内模型（可带 systemPrompt）加一段输入，单轮拿结果；不传工具，不创建 Agent Session、Agent Run 或 Pi transcript，审计 `scenario='completion'`。
 - `POST /api/ai/sessions/{sessionId}/runs`：在用户自己的持久 Session 和指定 lane 中运行一个 Agent。它使用 Pi `Agent`、Pi Session、Tool adapter、SSE 和 Run 恢复记录。
+- Run 终态 Webhook：`product_app` 的 Run 进终态后，由 `webhook/` 的周期扫描补登并 POST 推送到管理员配置的端点，带 HMAC-SHA256 签名，失败退避重试，超限死信；它不进入 Run 终态事务，也不订阅事件发布路径。
 
 本文件重点说明第三类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。
 
@@ -113,6 +114,19 @@ Executor 负责：
 - 返回 executor 终态给 Run Service。
 
 Executor 不创建或更新 `ai_agent_runs`，不注册 HTTP route，也不发布 Run terminal event。
+
+### 3.5 Webhook 投递
+
+代码位置：`apps/api/src/modules/ai/webhook/`。
+
+Webhook 子域负责：
+
+- 管理面端点 CRUD、signing secret 的 AES-256-GCM 加解密（key 复用 `AI_CREDENTIAL_ENCRYPTION_KEY`）、连通性 test 探测和投递记录查询。
+- 周期 tick（`AI_WEBHOOK_SWEEP_INTERVAL_MS`，默认 5 秒）：先补登终态 `product_app` Run（`finished_at > 内存水位` 且不早于端点 `created_at`，`(endpoint_id, run_id)` 唯一保证幂等），再投递到期 pending 记录。
+- 出站请求全部走 `AiUrlGuard.fetch`；`AiUrlGuardError` 属配置性失败，直接置 `dead` 不重试。
+- 重试退避与最大次数由 `AI_WEBHOOK_BACKOFF_MS`、`AI_WEBHOOK_MAX_ATTEMPTS` 控制，超限置 `dead`；无手工重投。
+
+Webhook 投递器不进 Run 终态事务，不订阅 RunService 事件，不读写 Pi Session；它只扫 `ai_agent_runs`。进程重启后内存水位归零，漏发的终态 Run 按同一规则补扫，端点创建之前和禁用窗口内结束的 Run 永不补发。总开关 `AI_WEBHOOK_ENABLED` 默认 false，关闭时管理面 CRUD 仍可用。
 
 ## 4. 一次输入如何变成最终输出
 
@@ -366,6 +380,8 @@ Starter 主库保存：
 | `ai_agent_runs` | Run id、Session、Agent revision、lane、状态、snapshot、终态字段 | message 正文、事件流 |
 | `ai_model_calls` | Provider/model、scenario、runId、耗时、token、cost、结果和错误码 | prompt、response、secret、原始错误 |
 | `ai_tool_executions` | Tool 名称、时间、耗时、状态、timeout、错误码 | arguments、result、safeSummary |
+| `ai_webhook_endpoints` | 端点 URL、所属 app、加密 signing secret、enabled/disabled、最后投递时间 | secret 明文 |
+| `ai_webhook_deliveries` | 端点、Run、payload 快照、状态、尝试次数、下次尝试时间、最近响应码和错误 | secret；payload 不含正文和身份字段 |
 
 `ai_model_calls` 的 `scenario` 当前为 `model_test`、`agent_run`、`completion` 或 `legacy`。新 Agent Run 的模型请求使用 `scenario='agent_run'` 和 nullable `run_id`；模型测试和无状态调用没有 Run 关联。
 
@@ -512,12 +528,13 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - 不把 `ai_model_calls` 当作 Run 状态来源；Run 状态以 `ai_agent_runs` 为准，模型调用只是审计记录。
 - 不使用 fallback、localStorage 或前端缓存恢复业务状态。
 - 不提前加入分布式队列、跨节点 active registry 或 Web 聊天产品层。当前 active registry 是单进程的，`tenantId` / `projectId` 只是 scope 查询维度，不要在此之上再造一层租户模型。
+- Webhook 投递器不得进入 Run 终态事务，也不订阅事件发布路径；终态推送只依赖对 `ai_agent_runs` 的周期扫描，入队靠 `(endpoint_id, run_id)` 唯一约束幂等。
 
 ## 11. OpenAPI 面分类
 
 AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`：
 
-- `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit 和模型连通性测试。
+- `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit、模型连通性测试，以及 Webhook 端点管理（`/api/ai/admin/webhook-endpoints/*`）和投递记录查询（`/api/ai/admin/webhook-deliveries`）。
 - `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript、RunEvent SSE 和一次性无状态调用 `POST /api/ai/completions`。
 - `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
 
@@ -602,6 +619,7 @@ pnpm --filter @starter/api exec vitest run src/test/pi-session-store.test.ts --c
 pnpm --filter @starter/api exec vitest run src/test/ai-agent-sessions.test.ts --config vitest.config.ts
 pnpm --filter @starter/api exec vitest run src/test/ai-agent-runs.test.ts --config vitest.config.ts
 pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.test.ts --config vitest.config.ts
+pnpm --filter @starter/api exec vitest run src/test/ai-webhook.test.ts --config vitest.config.ts
 ```
 
 重点验收点：
@@ -613,6 +631,7 @@ pnpm --filter @starter/api exec vitest run src/test/ai-destructive-migration.tes
 - `ai_model_calls` 与 `ai_tool_executions` 不含 prompt、response、arguments、result 和 secret。
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。
 - 主库 Run 终态、Pi terminal entry 和恢复逻辑的字段一致。
+- Webhook 投递：签名可按文档公式验证，`run.service` 与 SSE 路径零改动，重复 tick 不重复入队，guard 拒绝直接死信，secret 不进日志和列表 DTO。
 
 ## 14. 相关规范
 

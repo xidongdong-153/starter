@@ -18,6 +18,7 @@ import type { AiOutputContractRegistry } from "@api/modules/ai/output/output-con
 import { createAiOutputContractRegistry } from "@api/modules/ai/output/output-contract-registry.js";
 import { createTestAiTools } from "@api/modules/ai/tool/test-tools.js";
 import type { AppAuth } from "@api/modules/auth/auth.config.js";
+import type { AiWebhookDispatcher } from "@api/modules/ai/webhook/webhook.dispatcher.js";
 import {
   createAiCrypto,
   createAiGateway,
@@ -42,6 +43,8 @@ export interface AppRuntime {
   activeRunRegistry: ActiveRunRegistry;
   /** Run 模块可注入的 executor；未注入时由 ai.route 层创建。 */
   piAgentExecutor?: PiAgentExecutor;
+  /** Webhook 投递器；AI_WEBHOOK_ENABLED=true 时由 ai.route 层创建并启动。 */
+  webhookDispatcher?: AiWebhookDispatcher;
   auth: AppAuth;
   database: DatabaseBundle;
   db: AppDatabase;
@@ -129,8 +132,35 @@ export function createRuntime(
     mailer,
   );
 
+  const runtime: AppRuntime = {
+    ai,
+    aiGateway,
+    aiTools,
+    aiOutputContracts,
+    aiTelemetry,
+    agentSessionStore,
+    activeRunRegistry,
+    piAgentExecutor: deps.piAgentExecutor,
+    auth,
+    database,
+    db: database.db,
+    env,
+    logger,
+    storage,
+    close,
+  };
+
+  // webhookDispatcher 由 ai.route 层在 AI_WEBHOOK_ENABLED=true 时挂到 runtime 上，
+  // close 统一停掉它，避免裸 timer 阻止进程退出。
   async function close(): Promise<void> {
     let closeError: unknown;
+    try {
+      runtime.webhookDispatcher?.stop();
+    } catch (error) {
+      closeError = error;
+      logger.error({ err: error }, "AI Webhook 投递器关闭失败");
+    }
+
     try {
       await agentSessionStore.close();
     } catch (error) {
@@ -148,23 +178,7 @@ export function createRuntime(
     if (closeError) throw closeError;
   }
 
-  return {
-    ai,
-    aiGateway,
-    aiTools,
-    aiOutputContracts,
-    aiTelemetry,
-    agentSessionStore,
-    activeRunRegistry,
-    piAgentExecutor: deps.piAgentExecutor,
-    auth,
-    database,
-    db: database.db,
-    env,
-    logger,
-    storage,
-    close,
-  };
+  return runtime;
 }
 
 /**

@@ -467,6 +467,7 @@ export const aiAgentRuns = sqliteTable(
       table.id,
     ),
     index("ai_agent_runs_request_idx").on(table.requestId),
+    index("ai_agent_runs_finished_idx").on(table.finishedAt),
     check(
       "ai_agent_runs_status_check",
       sql`${table.status} IN ('starting', 'running', 'completed', 'failed', 'aborted', 'interrupted')`,
@@ -720,6 +721,82 @@ export const aiToolExecutions = sqliteTable(
     index("ai_tool_executions_status_started_idx").on(
       table.status,
       table.startedAt,
+    ),
+  ],
+);
+
+export const aiWebhookEndpoints = sqliteTable(
+  "ai_webhook_endpoints",
+  {
+    id: text("id").primaryKey(),
+    appId: text("app_id")
+      .notNull()
+      .references(() => aiAppCredentials.id, { onDelete: "cascade" }),
+    url: text("url").notNull(),
+    signingSecretEncrypted: text("signing_secret_encrypted").notNull(),
+    status: text("status").notNull(),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    lastDeliveryAt: timestamp("last_delivery_at"),
+  },
+  (table) => [
+    index("ai_webhook_endpoints_app_idx").on(table.appId),
+    check(
+      "ai_webhook_endpoints_status_check",
+      sql`${table.status} IN ('enabled', 'disabled')`,
+    ),
+  ],
+);
+
+export const aiWebhookDeliveries = sqliteTable(
+  "ai_webhook_deliveries",
+  {
+    id: text("id").primaryKey(),
+    endpointId: text("endpoint_id")
+      .notNull()
+      .references(() => aiWebhookEndpoints.id, { onDelete: "cascade" }),
+    /** 冗余列，投递记录列表查询免 join 端点表。 */
+    appId: text("app_id").notNull(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: "cascade" }),
+    eventType: text("event_type").notNull(),
+    /** 入队时的 payload 快照，投递时原样发送。 */
+    payloadJson: text("payload_json").notNull(),
+    status: text("status").notNull().default("pending"),
+    attempts: integer("attempts").notNull().default(0),
+    /** null 表示立即可投。 */
+    nextAttemptAt: timestamp("next_attempt_at"),
+    lastResponseCode: integer("last_response_code"),
+    lastError: text("last_error"),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+    deliveredAt: timestamp("delivered_at"),
+    deadAt: timestamp("dead_at"),
+  },
+  (table) => [
+    index("ai_webhook_deliveries_endpoint_created_idx").on(
+      table.endpointId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_webhook_deliveries_status_next_attempt_idx").on(
+      table.status,
+      table.nextAttemptAt,
+    ),
+    uniqueIndex("ai_webhook_deliveries_endpoint_run_uidx").on(
+      table.endpointId,
+      table.runId,
+    ),
+    check(
+      "ai_webhook_deliveries_status_check",
+      sql`${table.status} IN ('pending', 'delivered', 'dead')`,
     ),
   ],
 );
