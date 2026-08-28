@@ -1,5 +1,12 @@
+'use client'
+
 import type { AgentMessageBlock, AgentToolStatus, AgentTranscriptItem } from '@starter/contracts'
+import { Bot, ChevronDown, Sparkles, User, Wrench } from 'lucide-react'
+import { useEffect, useRef } from 'react'
+
+import { Badge } from '@web/components/ui/badge'
 import type { ChatTimelineItem } from '@web/lib/ai/chat-events'
+import { cn } from '@web/lib/utils'
 
 /** tool 状态文案，键包含 API 的 tool 终态和流式过程中的 running。 */
 const toolStatusLabels: Record<AgentToolStatus | 'running', string> = {
@@ -14,11 +21,6 @@ const toolStatusLabels: Record<AgentToolStatus | 'running', string> = {
   timed_out: '超时',
 }
 
-const bubbleBase = 'border px-4 py-3 text-sm leading-6'
-const userBubble = `${bubbleBase} border-border bg-surface-muted`
-const assistantBubble = `${bubbleBase} border-border-subtle bg-surface`
-const metaRow = 'flex flex-wrap items-center gap-2 text-xs text-muted-foreground'
-
 const assistantStatusLabels = {
   aborted: '已取消',
   completed: '已完成',
@@ -26,37 +28,81 @@ const assistantStatusLabels = {
   interrupted: '已中断',
 } as const
 
-/**
- * 渲染已持久化的 transcript 历史，再接上当前 Run 的流式视图。
- *
- * 历史来自 `GET /transcript`，流式部分来自本地折叠的 timeline。
- * Run 进终态后调用方会用新的 transcript 替换流式部分，两边不会同时显示同一条消息。
- */
-export function ChatTimeline({
-  history,
-  pendingUserText,
-  timeline,
-}: {
+export interface ChatTimelineProps {
   history: AgentTranscriptItem[]
   pendingUserText: string | null
   timeline: ChatTimelineItem[]
-}) {
-  return (
-    <div className="grid gap-3">
-      {history.map((item) => (
-        <TranscriptRow item={item} key={item.id} />
-      ))}
+  className?: string
+}
 
-      {pendingUserText === null ? null : (
-        <div className={userBubble}>
-          <p className="text-xs text-muted-foreground">我</p>
-          <p className="mt-2 whitespace-pre-wrap">{pendingUserText}</p>
+/**
+ * 渲染已持久化的 transcript 历史，再接上当前 Run 的流式视图。
+ * 容器具备内部独立滚动，并在新消息到来或流式输出时自动平滑触底。
+ */
+export function ChatTimeline({ history, pendingUserText, timeline, className }: ChatTimelineProps) {
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const containerRef = useRef<HTMLDivElement>(null)
+  const isAutoScrollActiveRef = useRef(true)
+
+  const empty = history.length === 0 && pendingUserText === null && timeline.length === 0
+
+  // 监听容器滚动，当用户向上翻阅时暂停强制自动触底
+  function handleScroll() {
+    const el = containerRef.current
+    if (!el) return
+    const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight <= 120
+    isAutoScrollActiveRef.current = isNearBottom
+  }
+
+  // 依赖内容变化触发自动触底
+  useEffect(() => {
+    if (isAutoScrollActiveRef.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [history, pendingUserText, timeline])
+
+  return (
+    <div
+      aria-label="对话消息流"
+      className={cn('flex-1 overflow-y-auto p-4 md:p-6', className)}
+      onScroll={handleScroll}
+      ref={containerRef}
+    >
+      {empty ? (
+        <div className="flex h-full min-h-[300px] flex-col items-center justify-center p-8 text-center">
+          <div className="grid size-12 place-items-center border border-border bg-surface-muted/60 text-primary shadow-sm">
+            <Sparkles aria-hidden="true" size={24} />
+          </div>
+          <h3 className="mt-4 text-base font-semibold text-foreground">开始与 Agent 对话</h3>
+          <p className="mt-2 max-w-sm text-xs leading-5 text-muted-foreground">
+            在下方输入框中键入你的提问或任务，支持 Enter 发送，Shift + Enter 换行。
+          </p>
+        </div>
+      ) : (
+        <div className="mx-auto max-w-3xl space-y-5">
+          {history.map((item) => (
+            <TranscriptRow item={item} key={item.id} />
+          ))}
+
+          {pendingUserText === null ? null : (
+            <div className="flex items-start justify-end gap-3">
+              <div className="max-w-[85%] border border-border bg-surface-muted px-4 py-3 text-sm leading-6 shadow-sm">
+                <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                  <User aria-hidden="true" size={13} />
+                  <span>我</span>
+                </div>
+                <p className="mt-1.5 whitespace-pre-wrap text-foreground">{pendingUserText}</p>
+              </div>
+            </div>
+          )}
+
+          {timeline.map((item) => (
+            <LiveRow item={item} key={timelineKey(item)} />
+          ))}
+
+          <div ref={bottomRef} />
         </div>
       )}
-
-      {timeline.map((item) => (
-        <LiveRow item={item} key={timelineKey(item)} />
-      ))}
     </div>
   )
 }
@@ -64,9 +110,14 @@ export function ChatTimeline({
 function TranscriptRow({ item }: { item: AgentTranscriptItem }) {
   if (item.type === 'user_message') {
     return (
-      <div className={userBubble}>
-        <p className="text-xs text-muted-foreground">我</p>
-        <p className="mt-2 whitespace-pre-wrap">{item.content}</p>
+      <div className="flex items-start justify-end gap-3">
+        <div className="max-w-[85%] border border-border bg-surface-muted px-4 py-3 text-sm leading-6 shadow-sm">
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <User aria-hidden="true" size={13} />
+            <span>我</span>
+          </div>
+          <p className="mt-1.5 whitespace-pre-wrap text-foreground">{item.content}</p>
+        </div>
       </div>
     )
   }
@@ -74,13 +125,26 @@ function TranscriptRow({ item }: { item: AgentTranscriptItem }) {
   if (item.type === 'assistant_message') {
     const blocks: AgentMessageBlock[] = item.blocks ?? [{ text: item.content, type: 'text' }]
     return (
-      <div className={assistantBubble}>
-        <div className={metaRow}>
-          <span>助手</span>
-          {item.status === 'completed' ? null : <span>{assistantStatusLabels[item.status]}</span>}
-          {item.errorCode === null ? null : <span>{item.errorCode}</span>}
+      <div className="flex items-start gap-3">
+        <div className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-primary shadow-sm">
+          <Bot aria-hidden="true" size={16} />
         </div>
-        <MessageBlocks blocks={blocks} pending={false} />
+        <div className="min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">助手</span>
+            {item.status === 'completed' ? null : (
+              <Badge className="text-[10px]" variant="secondary">
+                {assistantStatusLabels[item.status]}
+              </Badge>
+            )}
+            {item.errorCode === null ? null : (
+              <Badge className="text-[10px]" variant="destructive">
+                {item.errorCode}
+              </Badge>
+            )}
+          </div>
+          <MessageBlocks blocks={blocks} pending={false} />
+        </div>
       </div>
     )
   }
@@ -102,39 +166,56 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
   }
 
   return (
-    <div className={assistantBubble}>
-      <div className={metaRow}>
-        <span>助手</span>
-        {item.completed ? null : <span>生成中</span>}
+    <div className="flex items-start gap-3">
+      <div className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-primary shadow-sm">
+        <Bot aria-hidden="true" size={16} />
       </div>
-      <MessageBlocks blocks={item.blocks} pending={!item.completed} />
+      <div className="min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">助手</span>
+          {item.completed ? null : (
+            <Badge className="animate-pulse text-[10px]" variant="outline">
+              生成中
+            </Badge>
+          )}
+        </div>
+        <MessageBlocks blocks={item.blocks} pending={!item.completed} />
+      </div>
     </div>
   )
 }
 
 /**
  * text 块按纯文本渲染并保留换行，thinking 块默认折叠。
- *
- * `pending` 区分两种空块：还在生成时是等待，已结束时是这次确实没有文本。
- * transcript 里失败的 Run 会留下 `blocks: []` 的 assistant 消息，不能再显示成等待中。
  */
 function MessageBlocks({ blocks, pending }: { blocks: AgentMessageBlock[]; pending: boolean }) {
   if (blocks.length === 0) {
-    return <p className="mt-2 text-muted-foreground">{pending ? '等待模型输出…' : '这次没有产生文本内容。'}</p>
+    return <p className="mt-2 text-xs text-muted-foreground">{pending ? '等待模型输出…' : '这次没有产生文本内容。'}</p>
   }
 
   return (
-    <div className="mt-2 grid gap-3">
+    <div className="mt-2.5 space-y-3">
       {blocks.map((block, index) =>
         block.type === 'thinking' ? (
-          <details className="border border-border-subtle bg-surface-muted px-3 py-2" key={index}>
-            <summary className="cursor-pointer text-xs text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
-              思考过程
+          <details
+            className="group border border-border-subtle bg-surface-muted/60 px-3 py-2.5 text-xs transition-colors open:bg-surface-muted"
+            key={index}
+          >
+            <summary className="flex cursor-pointer select-none items-center justify-between font-medium text-muted-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <span className="flex items-center gap-1.5">
+                <Sparkles aria-hidden="true" size={13} />
+                思考过程
+              </span>
+              <ChevronDown
+                aria-hidden="true"
+                className="transition-transform duration-200 group-open:rotate-180"
+                size={14}
+              />
             </summary>
-            <p className="mt-2 whitespace-pre-wrap text-xs text-muted-foreground">{block.text}</p>
+            <p className="mt-2.5 whitespace-pre-wrap leading-5 text-muted-foreground">{block.text}</p>
           </details>
         ) : (
-          <p className="whitespace-pre-wrap" key={index}>
+          <p className="whitespace-pre-wrap text-foreground" key={index}>
             {block.text}
           </p>
         ),
@@ -152,18 +233,26 @@ function ToolRow({
   safeSummary: string | null
   status: AgentToolStatus | 'running'
 }) {
+  const isRunning = status === 'running'
+  const isFailed = status === 'failed' || status === 'cancelled' || status === 'timed_out' || status === 'forbidden'
+
   return (
-    <div className="border border-border-subtle bg-surface-muted px-4 py-2 text-xs text-muted-foreground">
-      <span className="font-medium text-foreground">{name}</span>
-      <span className="ml-2">{toolStatusLabels[status]}</span>
-      {safeSummary === null ? null : <span className="ml-2 whitespace-pre-wrap">{safeSummary}</span>}
+    <div className="flex items-center justify-between gap-3 border border-border-subtle bg-surface-muted/40 px-3.5 py-2 text-xs shadow-xs">
+      <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
+        <Wrench aria-hidden="true" className="shrink-0 text-foreground" size={14} />
+        <span className="font-medium text-foreground">{name}</span>
+        {safeSummary === null ? null : <span className="truncate text-muted-foreground">— {safeSummary}</span>}
+      </div>
+      <Badge className="shrink-0 text-[10px]" variant={isRunning ? 'outline' : isFailed ? 'destructive' : 'secondary'}>
+        {toolStatusLabels[status]}
+      </Badge>
     </div>
   )
 }
 
 function CompactionRow({ summary }: { summary: string }) {
   return (
-    <div className="border border-border-subtle px-4 py-2 text-xs text-muted-foreground">
+    <div className="border border-border-subtle bg-surface-muted/20 px-3 py-2 text-center text-xs text-muted-foreground">
       较早的对话已压缩：<span className="whitespace-pre-wrap">{summary}</span>
     </div>
   )
