@@ -100,6 +100,8 @@ export function ChatTimeline({ history, pendingUserText, timeline, className }: 
             </div>
           )}
 
+          {pendingUserText !== null && timeline.length === 0 ? <PendingAssistantRow /> : null}
+
           {timeline.map((item) => (
             <LiveRow item={item} key={timelineKey(item)} />
           ))}
@@ -182,6 +184,25 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
           )}
         </div>
         <MessageBlocks blocks={item.blocks} pending={!item.completed} />
+      </div>
+    </div>
+  )
+}
+
+function PendingAssistantRow() {
+  return (
+    <div className="flex items-start gap-3">
+      <div className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-primary shadow-sm">
+        <Bot aria-hidden="true" size={16} />
+      </div>
+      <div className="min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">助手</span>
+          <Badge className="animate-pulse text-[10px]" variant="outline">
+            生成中
+          </Badge>
+        </div>
+        <p className="mt-2 text-xs text-muted-foreground">等待模型输出…</p>
       </div>
     </div>
   )
