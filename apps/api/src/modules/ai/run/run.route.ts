@@ -5,6 +5,7 @@ import { streamSSE } from "hono/streaming";
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import { createSuccessResponse } from "@api/shared/response.js";
 import { toRuntimeAccessContext } from "@api/modules/ai/principal.js";
+import { startAgentRunJsonSchema } from "@starter/contracts";
 
 import {
   abortAgentRunRoute,
@@ -45,6 +46,21 @@ export function createAiAgentRunRoute(deps: {
         input: c.req.valid("json"),
         requestId: c.var.requestId,
       });
+      // Accept 分流：显式 application/json 且不含 text/event-stream 返回 JSON 启动模式；
+      // 缺省、*/* 或仅 text/event-stream 维持 SSE，向后兼容既有客户端。
+      const accept = c.req.header("accept") ?? "";
+      if (
+        accept.includes("application/json") &&
+        !accept.includes("text/event-stream")
+      ) {
+        return c.json(
+          createSuccessResponse(
+            startAgentRunJsonSchema.parse({ runId: result.runId }),
+            c.var.requestId,
+          ),
+          200,
+        );
+      }
       const runId = result.runId;
       const events = service.subscribe(
         accessContext,

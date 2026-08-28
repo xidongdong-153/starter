@@ -1078,6 +1078,12 @@ export const startAgentRunSchema = z.strictObject({
 
 export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>
 
+/** `Accept: application/json` 启动 Run 的 JSON 响应 data；Run 照常执行，用 `GET /runs/{runId}` 轮询。 */
+export const startAgentRunJsonSchema = z.strictObject({
+  runId: uuidSchema,
+})
+export type StartAgentRunJson = z.infer<typeof startAgentRunJsonSchema>
+
 export const steerAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
 export type SteerAgentRunInput = z.infer<typeof steerAgentRunSchema>
 

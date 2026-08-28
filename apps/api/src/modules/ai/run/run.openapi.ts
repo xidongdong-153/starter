@@ -5,6 +5,7 @@ import {
   runTimelineQuerySchema,
   runTimelineSchema,
   runTraceSchema,
+  startAgentRunJsonSchema,
   startAgentRunSchema,
   steerAgentRunSchema,
   structuredOutputListSchema,
@@ -14,6 +15,7 @@ import { createRoute, z } from "@hono/zod-openapi";
 
 import {
   apiSuccessResponse,
+  apiSuccessSchema,
   conflictResponse,
   forbiddenResponse,
   internalErrorResponse,
@@ -134,6 +136,11 @@ const runResponse = apiSuccessResponse(
   "Agent Run",
   "AgentRunResponse",
 );
+const startRunJsonDataSchema = apiSuccessSchema(
+  startAgentRunJsonSchema,
+  "AgentRunStartJsonResponse",
+);
+
 const streamResponse = {
   content: { "text/event-stream": { schema: z.string() } },
 
@@ -141,6 +148,19 @@ const streamResponse = {
     "Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。",
     "sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。",
     "连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。",
+  ].join(""),
+};
+
+const startRunResponse = {
+  content: {
+    "text/event-stream": { schema: z.string() },
+    "application/json": { schema: startRunJsonDataSchema },
+  },
+  description: [
+    "Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。",
+    "sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。",
+    "连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。",
+    "Accept 含 application/json 且不含 text/event-stream 时返回 JSON（只含 runId，Run 在后台照常执行，用 GET /runs/{runId} 轮询）。",
   ].join(""),
 };
 
@@ -160,10 +180,10 @@ export const startAgentRunRoute = createRoute({
   tags,
   security,
   description:
-    "启动 Agent Run 并返回 RunEvent SSE。事件写入持久时间线成功后才发送；连接断开不会改变 Run。",
+    "启动 Agent Run，按 Accept 分流返回 RunEvent SSE 或 JSON（只含 runId）。事件写入持久时间线成功后才发送；连接断开不会改变 Run。",
   request: streamRequest,
   responses: {
-    200: streamResponse,
+    200: startRunResponse,
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,
