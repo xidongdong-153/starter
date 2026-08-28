@@ -123,7 +123,7 @@ export function createAiAgentRunRoute(deps: {
           const seenSequences = new Set<number>();
           let terminal = false;
           const heartbeat = setInterval(() => {
-            void stream.write(": heartbeat\\n\\n").catch(() => undefined);
+            void stream.write(": heartbeat\n\n").catch(() => undefined);
           }, 15_000);
           let resolveAbort!: () => void;
           const aborted = new Promise<void>((resolve) => {
