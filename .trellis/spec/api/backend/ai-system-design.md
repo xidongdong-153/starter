@@ -193,20 +193,22 @@ sequenceDiagram
   agentId?: string
   lane?: string
   input: string
+  idempotencyKey?: string
 }
 ```
 
-`input` 去除首尾空白后必须是 1 到 100000 个字符。没有传 `agentId` 时使用 Session 的 `defaultAgentId`；两者都没有时返回 `COMMON.INVALID_REQUEST`。
+`input` 去除首尾空白后必须是 1 到 100000 个字符。没有传 `agentId` 时使用 Session 的 `defaultAgentId`；两者都没有时返回 `COMMON.INVALID_REQUEST`。`idempotencyKey` 去除首尾空白后 8 到 128 字符，字符集 `[A-Za-z0-9._:-]`。
 
 Run Service 接着按以下顺序执行：
 
 1. 校验当前用户拥有该 Session，且 Session 没有归档。
 2. 解析 Agent 当前配置和 revision。
-3. 对 `sessionId + lane` 做 registry reserve。冲突在创建 Run 行之前返回 `AI.SESSION_BUSY`。
-4. 为非 `main` lane 创建 Pi lane。
-5. 在主库创建 `starting` Run 行，并保存无 secret snapshot。
-6. 准备 Executor、attach active handle、更新为 `running`。
-7. 正常启动时发送 sequence 1 的 `run.started`。
+3. 请求带 `idempotencyKey` 时按 `idempotency_scope + idempotency_key` 预检查：命中同 Session 直接返回既有 Run（SSE 模式 subscribe 回放），异 Session 返回 409 `AI.IDEMPOTENCY_KEY_CONFLICT`。这一步在 reserve 之前，不占 lane 租约；scope 由 `RuntimeAccessContext` 七字段拼出，与 Session 可见性判据一致。
+4. 对 `sessionId + lane` 做 registry reserve。冲突在创建 Run 行之前返回 `AI.SESSION_BUSY`，此时 key 未被消费。
+5. 为非 `main` lane 创建 Pi lane。
+6. 在主库创建 `starting` Run 行，并保存无 secret snapshot；带 key 启动时行里写入 key 和 scope，key 在这一步成功后才被消费，并发同 key 竞争由部分唯一索引兜底（释放租约后重查走预检查同一分支）。
+7. 准备 Executor、attach active handle、更新为 `running`。
+8. 正常启动时发送 sequence 1 的 `run.started`。
 
 `prepare`、`attach` 或 `markRunning` 失败时，Run Service 会创建失败终态事件并释放原始 lane lease，不能只按尚未创建的 runId handle 释放。
 

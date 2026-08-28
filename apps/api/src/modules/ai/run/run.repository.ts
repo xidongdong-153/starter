@@ -23,6 +23,8 @@ export interface AiAgentRunCreateInput {
   snapshotJson: string;
   requestId: string;
   now: Date;
+  idempotencyKey?: string;
+  idempotencyScope?: string;
 }
 
 export interface AiAgentRunTerminalInput {
@@ -46,6 +48,11 @@ export interface AiAgentRunRepository {
     access: RuntimeAccessContext,
   ) => AiAgentRunRecord | undefined;
   findById: (id: string) => AiAgentRunRecord | undefined;
+  /** 按 scope + key 查幂等命中的 Run；部分唯一索引 (scope, key) WHERE key IS NOT NULL 覆盖。 */
+  findByIdempotencyKey: (
+    scope: string,
+    key: string,
+  ) => AiAgentRunRecord | undefined;
   markRunning: (id: string, now: Date) => boolean;
   completeWithTerminalEvent: (
     input: AiAgentRunTerminalInput & { event: RunEventDraft },
@@ -69,6 +76,12 @@ export function createAiAgentRunRepository(
         snapshotJson: input.snapshotJson,
         requestId: input.requestId,
         createdAt: input.now,
+        ...(input.idempotencyKey !== undefined
+          ? {
+              idempotencyKey: input.idempotencyKey,
+              idempotencyScope: input.idempotencyScope,
+            }
+          : {}),
       })
       .run();
     return findById(input.id)!;
@@ -124,6 +137,22 @@ export function createAiAgentRunRepository(
 
   function findById(id: string): AiAgentRunRecord | undefined {
     return db.select().from(aiAgentRuns).where(eq(aiAgentRuns.id, id)).get();
+  }
+
+  function findByIdempotencyKey(
+    scope: string,
+    key: string,
+  ): AiAgentRunRecord | undefined {
+    return db
+      .select()
+      .from(aiAgentRuns)
+      .where(
+        and(
+          eq(aiAgentRuns.idempotencyScope, scope),
+          eq(aiAgentRuns.idempotencyKey, key),
+        ),
+      )
+      .get();
   }
 
   function markRunning(id: string, now: Date): boolean {
@@ -195,6 +224,7 @@ export function createAiAgentRunRepository(
     findInScope,
     findActiveInScope,
     findById,
+    findByIdempotencyKey,
     markRunning,
     completeWithTerminalEvent,
     listNonTerminal,

@@ -439,6 +439,10 @@ export const aiAgentRuns = sqliteTable(
     agentRevision: integer("agent_revision").notNull(),
     snapshotJson: text("snapshot_json").notNull(),
     requestId: text("request_id").notNull(),
+    /** startRun 幂等键，与 idempotencyScope 一起构成唯一约束；不带 key 的启动为 NULL。 */
+    idempotencyKey: text("idempotency_key"),
+    /** 幂等隔离 scope：kind|tenantId|projectId|principalId|externalUserId|subjectType|subjectId。 */
+    idempotencyScope: text("idempotency_scope"),
     finalEntryId: text("final_entry_id"),
     errorCode: text("error_code"),
     createdAt: timestamp("created_at").notNull(),
@@ -468,6 +472,9 @@ export const aiAgentRuns = sqliteTable(
     ),
     index("ai_agent_runs_request_idx").on(table.requestId),
     index("ai_agent_runs_finished_idx").on(table.finishedAt),
+    uniqueIndex("ai_agent_runs_idempotency_unique")
+      .on(table.idempotencyScope, table.idempotencyKey)
+      .where(sql`idempotency_key IS NOT NULL`),
     check(
       "ai_agent_runs_status_check",
       sql`${table.status} IN ('starting', 'running', 'completed', 'failed', 'aborted', 'interrupted')`,

@@ -56,8 +56,9 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 
 ## 3. Contracts
 
-- `ai_agent_runs` 存 Run 索引与无 secret snapshot：id、session_id、agent_id、lane、status、agent_revision、snapshot_json、request_id、final_entry_id、error_code、created_at、started_at、finished_at。message 和事件不进主库。
+- `ai_agent_runs` 存 Run 索引与无 secret snapshot：id、session_id、agent_id、lane、status、agent_revision、snapshot_json、request_id、idempotency_key、idempotency_scope、final_entry_id、error_code、created_at、started_at、finished_at。message 和事件不进主库。
 - snapshot 用 `agentRunSnapshotSchema` 校验后 `JSON.stringify` 保存；读取时再次 parse，失败视为数据损坏（运行时不应发生）。
+- startRun 幂等键：`idempotency_key + idempotency_scope` 的部分唯一索引（`WHERE idempotency_key IS NOT NULL`）是最终防线；scope 由 `RuntimeAccessContext` 七字段拼出（kind|tenantId|projectId|principalId|externalUserId|subjectType|subjectId），与 accessWhere 判据一致。预检查在 reserve 之前：命中同 Session 直接返回既有 Run 的 runId（SSE 走 subscribe 回放），异 Session 409；create 命中唯一约束时先释放原始 lease 再重查走同一分支。key 只在 Run 行创建成功后被消费（busy、校验失败、404 都不消费），终态 Run（含 failed）同 key 返回原 Run 不重跑。
 - Run Service 是 registry reserve/attach/release、Run row、RunEventPublisher、`run.started` 和 terminal event 的唯一所有者；Executor 不创建或更新主库 Run。
 - `registry.reserve` 返回的原始 lease 必须保留到 Run 终态。`prepare`、`attach` 或 `markRunning` 失败时可能还没有 runId handle，清理路径必须直接释放原始 lease，不能只按 runId 释放。
 - 终态顺序固定：等待 executor result -> 写 `starter.run` -> 条件更新主库 -> 发布唯一 terminal event -> release registry。
@@ -84,6 +85,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 | Agent 非 enabled | 409 | `AI.AGENT_NOT_ENABLED`（resolve 抛出） |
 | Agent 配置引用无效 | 400 | `AI.AGENT_CONFIG_INVALID`（resolve 抛出） |
 | registry 同 session+lane 冲突（Run row 创建前） | 409 | `AI.SESSION_BUSY`，不创建 Run |
+| 同 scope 幂等键已绑定其他 Session 的 Run | 409 | `AI.IDEMPOTENCY_KEY_CONFLICT`，不影响既有 Run |
 | lane 创建失败 | 500 | `AI.SESSION_STORAGE_FAILED` |
 | 控制接口（abort/steer/follow-up）无 active handle | 409 | `AI.RUN_NOT_ACTIVE` |
 | structured-outputs 运行面路由：session/run 不属于该 principal | 404 | `COMMON.NOT_FOUND` |

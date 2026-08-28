@@ -263,6 +263,8 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "agent_revision",
         "snapshot_json",
         "request_id",
+        "idempotency_key",
+        "idempotency_scope",
         "final_entry_id",
         "error_code",
         "created_at",
@@ -270,14 +272,21 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "finished_at",
       ].sort(),
     );
-    // 终态关系字段允许为空，其余业务字段必须非空
+    // 终态关系字段和幂等键允许为空，其余业务字段必须非空
     expect(
       columns
         .filter((column) => column.notnull === 0)
         .map((column) => column.name)
         .sort(),
     ).toEqual(
-      ["final_entry_id", "error_code", "started_at", "finished_at"].sort(),
+      [
+        "final_entry_id",
+        "error_code",
+        "started_at",
+        "finished_at",
+        "idempotency_key",
+        "idempotency_scope",
+      ].sort(),
     );
 
     const ddl = (
@@ -318,6 +327,7 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "ai_agent_runs_status_created_idx",
         "ai_agent_runs_request_idx",
         "ai_agent_runs_finished_idx",
+        "ai_agent_runs_idempotency_unique",
       ].sort(),
     );
   } finally {

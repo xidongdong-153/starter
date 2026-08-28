@@ -220,6 +220,23 @@ export function createAiAgentRunService(input: {
 
     const resolved = await agentService.resolve(agentId, access);
     const lane = startInput.input.lane ?? "main";
+
+    // 幂等预检查在 reserve 之前：命中既有 Run 就直接返回，不占 lane 租约。
+    // key 只在 Run 行创建成功后才被消费，这里的末命中不代表后续失败也不消费。
+    const idempotencyKey = startInput.input.idempotencyKey;
+    let idempotencyScope: string | undefined;
+    if (idempotencyKey !== undefined) {
+      idempotencyScope = idempotencyScopeOf(access);
+      const existing = repository.findByIdempotencyKey(
+        idempotencyScope,
+        idempotencyKey,
+      );
+      if (existing) {
+        if (existing.sessionId !== sessionId) throw idempotencyConflict();
+        return replayExistingRun(access, sessionId, existing.id);
+      }
+    }
+
     const runId = generateId();
     const snapshot = buildSnapshot(resolved.id, resolved.revision, resolved);
 
@@ -335,9 +352,38 @@ export function createAiAgentRunService(input: {
         snapshotJson: JSON.stringify(snapshot),
         requestId,
         now: new Date(),
+        ...(idempotencyKey !== undefined && idempotencyScope !== undefined
+          ? { idempotencyKey, idempotencyScope }
+          : {}),
       });
     } catch (cause) {
       registry.release(lease);
+      contexts.delete(runId);
+      liveSnapshots.delete(runId);
+      // 并发竞争：另一个同 key 请求先创建了 Run，命中部分唯一索引。
+      // 释放租约后重查，按既有 Run 返回或 409；key 不落在两个 Run 上。
+      if (
+        idempotencyKey !== undefined &&
+        idempotencyScope !== undefined &&
+        isIdempotencyUniqueViolation(cause)
+      ) {
+        runTelemetry.close({
+          attributes: {
+            "starter.ai.run.outcome": "failed",
+            "starter.ai.error.code": ApiErrorCodes.AI_IDEMPOTENCY_KEY_CONFLICT,
+            "starter.ai.error.category": "validation",
+          },
+          status: { status: "error" },
+        });
+        const existing = repository.findByIdempotencyKey(
+          idempotencyScope,
+          idempotencyKey,
+        );
+        if (existing) {
+          if (existing.sessionId !== sessionId) throw idempotencyConflict();
+          return replayExistingRun(access, sessionId, existing.id);
+        }
+      }
       logger.error(
         { err: cause, runId, sessionId, requestId },
         "Agent Run row 创建失败",
@@ -1057,6 +1103,23 @@ export function createAiAgentRunService(input: {
     );
   }
 
+  function idempotencyConflict(): AppError {
+    return new AppError(
+      ApiErrorCodes.AI_IDEMPOTENCY_KEY_CONFLICT,
+      "幂等键已绑定其他 Session",
+      409,
+    );
+  }
+
+  /** 幂等命中时返回与首次启动同构的结果：同一 runId + 从 sequence 0 起的事件流。 */
+  function replayExistingRun(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+  ): StartRunResult {
+    return { runId, events: subscribe(access, sessionId, runId, 0) };
+  }
+
   return {
     startRun,
     get,
@@ -1250,5 +1313,34 @@ function isAlreadyExistsError(error: unknown): boolean {
     error instanceof Error &&
     (error.message.includes("Lane already exists") ||
       error.message.includes("already_exists"))
+  );
+}
+
+/**
+ * 幂等隔离 scope：与 session.repository 的 accessWhere 判据字段一一对应，
+ * 同一可见性身份算出同一 scope，不同调用方（不同应用或用户）互不冲突。
+ */
+function idempotencyScopeOf(access: RuntimeAccessContext): string {
+  const p = access.principal;
+  return [
+    p.kind,
+    p.tenantId,
+    p.projectId,
+    p.principalId,
+    p.externalUserId ?? "",
+    access.scope.subjectType ?? "",
+    access.scope.subjectId ?? "",
+  ].join("|");
+}
+
+/** create 命中幂等部分唯一索引：better-sqlite3 唯一约束错误或携带索引名的错误。 */
+function isIdempotencyUniqueViolation(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  if ((error as { code?: unknown }).code === "SQLITE_CONSTRAINT_UNIQUE") {
+    return true;
+  }
+  return (
+    error instanceof Error &&
+    error.message.includes("ai_agent_runs_idempotency_unique")
   );
 }

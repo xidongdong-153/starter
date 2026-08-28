@@ -166,7 +166,7 @@ ai -N -X POST "$API_BASE/api/ai/sessions/$SESSION_ID/runs" \
 
 这个接口返回 `text/event-stream`，不是 `{ ok, data, meta }`。`-N` 关掉缓冲才能看到增量。
 
-请求体三个字段：`input` 必填，去掉首尾空白后 1 到 100000 字符；`agentId` 可选，不传就用 Session 的 `defaultAgentId`，两个都没有返回 400；`lane` 可选，默认 `main`。
+请求体四个字段：`input` 必填，去掉首尾空白后 1 到 100000 字符；`agentId` 可选，不传就用 Session 的 `defaultAgentId`，两个都没有返回 400；`lane` 可选，默认 `main`；`idempotencyKey` 可选，用于超时后安全重发，见下一节。
 
 流的样子：
 
@@ -182,7 +182,32 @@ event: message.delta
 data: {"version":1,...,"type":"message.delta","data":{"messageId":"019...","delta":"这个工单"}}
 ```
 
-### 3.4 断流后轮询 Run 状态
+### 3.4 幂等重试
+
+启动请求超时或响应在网络上丢失时，你不知道 Run 有没有创建。带 `idempotencyKey` 启动，失败后原样重发，服务端按 key 返回既有 Run，不会重复执行：
+
+```bash
+ai -N -X POST "$API_BASE/api/ai/sessions/$SESSION_ID/runs" \
+  -H 'Accept: application/json' \
+  -H 'Content-Type: application/json' \
+  -d '{"input":"处理这个工单","idempotencyKey":"ticket-42-first-run"}'
+```
+
+`idempotencyKey` 可选，去掉首尾空白后 8 到 128 字符，只允许字母、数字和 `. _ : -`。建议每个业务动作生成一个新 key（uuid v4 或 ULID 都行），重试时原样带上；两个不同的业务动作不要共用 key。
+
+key 按调用方隔离：同一个应用凭据（或同一个 Starter 用户）范围内 key 才互斥，不同凭据用相同的 key 互不影响。
+
+| 场景                                              | 结果                                                        |
+| ------------------------------------------------- | ----------------------------------------------------------- |
+| 同 key 重试，原 Run 在同一个 Session              | 返回原 `runId`；SSE 模式从 sequence 1 回放该 Run 的全部事件 |
+| 同 key 重试，原 Run 已终态（含 failed）           | 返回原 `runId`，不重新执行；要重跑换一个新 key              |
+| 同 key 重试，原 Run 还在跑                        | 返回原 `runId`，不报 `AI.SESSION_BUSY`                      |
+| 同 key 用在同一个凭据的另一个 Session             | 409 `AI.IDEMPOTENCY_KEY_CONFLICT`，原 Run 不受影响          |
+| 启动前就失败（lane 被占、参数错、Session 不存在） | key 未被使用，修正后同 key 重试会创建新 Run                 |
+
+key 不设过期：Run 记录在，key 就占用着。不要用固定 key 反复启动同类任务，那会一直命中第一次的 Run。
+
+### 3.5 断流后轮询 Run 状态
 
 SSE 断开不会中止 Run，服务端继续跑。重连拿不到已经错过的事件，改成轮询：
 
@@ -194,7 +219,7 @@ ai "$API_BASE/api/ai/sessions/$SESSION_ID/runs/$RUN_ID"
 
 Run 进终态后 `live` 是 `null`，这时读 transcript 拿最终结果。API 重启也会让 `live` 变成 `null`：如果 Run 已经把终态写进会话存储，重启后会恢复成真实终态（`completed` / `failed` / `aborted`）；只有恢复不回来的才变 `interrupted`。
 
-### 3.5 读 transcript
+### 3.6 读 transcript
 
 ```bash
 ai "$API_BASE/api/ai/sessions/$SESSION_ID/transcript?lane=main&limit=50"
@@ -213,7 +238,7 @@ ai "$API_BASE/api/ai/sessions/$SESSION_ID/transcript?lane=main&limit=50"
 
 `content` 只拼 `text` 块；要按原顺序展示思考内容和正文，用 `blocks`。
 
-### 3.6 停止生成
+### 3.7 停止生成
 
 ```bash
 ai -X POST "$API_BASE/api/ai/sessions/$SESSION_ID/runs/$RUN_ID/abort"
@@ -221,7 +246,7 @@ ai -X POST "$API_BASE/api/ai/sessions/$SESSION_ID/runs/$RUN_ID/abort"
 
 只有当前 API 进程仍持有这个 Run 时能 abort，否则 409 `AI.RUN_NOT_ACTIVE`。先 abort 接口、再断开自己的读流，顺序反了服务端会继续跑到底。
 
-### 3.7 一次性模型调用
+### 3.8 一次性模型调用
 
 翻译一句话、分类一段文本这类单轮任务不用建 Session，直接调：
 
@@ -702,6 +727,7 @@ HTTP 层：
 | `AI.AGENT_NOT_ENABLED`          | 409  | 目标 Agent 不是已启用状态                                                                        | 换 Agent，或让管理员启用       |
 | `AI.AGENT_CONFIG_INVALID`       | 400  | Agent 引用的模型、System Prompt、Skill 或 Tool 当前不可用，`details.resource` 指出是哪一类       | 联系平台方修配置，重试无用     |
 | `AI.SESSION_BUSY`               | 409  | 同一个 `sessionId + lane` 已有 Run 在跑                                                          | 等当前 Run 终态，或换 lane     |
+| `AI.IDEMPOTENCY_KEY_CONFLICT`   | 409  | 同一个凭据范围内 `idempotencyKey` 已绑在另一个 Session 的 Run 上                                 | 核对 key 和 Session 是否配套   |
 | `AI.RUN_NOT_ACTIVE`             | 409  | abort、steer、follow-up 时 Run 已不在当前进程活跃                                                | 读 Run 状态确认是否已终态      |
 | `AI.SESSION_STORAGE_FAILED`     | 500  | 会话存储读写失败                                                                                 | 隔几秒重试，持续失败联系平台方 |
 | `AI.APP_CREDENTIAL_REVOKED`     | 409  | 对已撤销凭据做轮换（管理接口）                                                                   | 建新凭据                       |

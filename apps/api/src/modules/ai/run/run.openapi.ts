@@ -179,8 +179,13 @@ export const startAgentRunRoute = createRoute({
   path: "/api/ai/sessions/{sessionId}/runs",
   tags,
   security,
-  description:
+  description: [
     "启动 Agent Run，按 Accept 分流返回 RunEvent SSE 或 JSON（只含 runId）。事件写入持久时间线成功后才发送；连接断开不会改变 Run。",
+    "body 可选 idempotencyKey：同一调用方 scope 内相同 key 的重复启动返回既有 Run（SSE 模式从 sequence 0 回放该 Run 事件），不新建 Run；",
+    "同 key 已绑定其他 session 时返回 409 AI.IDEMPOTENCY_KEY_CONFLICT；不同调用方（不同应用或用户）使用相同 key 互不相关。",
+    "key 只在 Run 行创建成功后被消费：lane 占用（AI.SESSION_BUSY）、参数校验失败、Session 或 Agent 不存在等启动前失败不消费 key，之后同 key 重试会创建新 Run。",
+    "Run 已终态（含 failed）后同 key 重试返回那个 Run，不重新执行；需要重跑请换新 key。",
+  ].join(""),
   request: streamRequest,
   responses: {
     200: startRunResponse,

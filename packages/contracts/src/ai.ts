@@ -1070,10 +1070,23 @@ export type AgentRun = z.infer<typeof agentRunSchema>
 
 const agentRunInputTextSchema = z.string().trim().min(1).max(100_000)
 
+/** startRun 幂等键：trim 后 8-128 字符，只允许字母、数字、下划线和 . : -。 */
+const agentRunIdempotencyKeySchema = z
+  .string()
+  .trim()
+  .min(8)
+  .max(128)
+  .regex(/^[\w.:-]+$/u)
+
 export const startAgentRunSchema = z.strictObject({
   agentId: uuidSchema.optional(),
   lane: agentLaneSchema.optional(),
   input: agentRunInputTextSchema,
+  /**
+   * 可选幂等键。同一调用方 scope 内，相同 key 的重复启动返回既有 Run 而不是新建；
+   * key 在 Run 行创建成功后才被消费，此前的失败（如 lane 占用）不占用 key。
+   */
+  idempotencyKey: agentRunIdempotencyKeySchema.optional(),
 })
 
 export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>

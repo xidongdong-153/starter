@@ -138,12 +138,13 @@ Run Service 按固定顺序推进，顺序决定了失败时的清理责任：
 1. 按 `RuntimeAccessContext` 查 Session，不在 scope 内或已归档都返回 404。
 2. 取 `agentId`，请求没传就用 Session 的 `defaultAgentId`，两个都没有返回 400 `COMMON.INVALID_REQUEST`。
 3. 解析 Agent：状态必须是 `enabled`（否则 409），模型、System Prompt、Skill 和 Tool 必须当前可用（否则 400 `AI.AGENT_CONFIG_INVALID`，`details.resource` 指出是哪一类）。Tool 还要过 scope 判断，绑定到别的 `tenantId` / `projectId` 的工具解析不到。
-4. `registry.reserve(sessionId, lane)`。冲突在建 Run 行之前就返回 409 `AI.SESSION_BUSY`，不会留下垃圾行。
-5. 非 `main` lane 先在 Pi 侧创建，失败要 release 已占的 lease 再报 500。
-6. 建事件队列、序号发生器和 live 快照。
-7. 插入 `starting` Run 行，带无 secret 快照。失败要 release lease。
-8. `executor.prepare`、`registry.attach`、`markRunning` 三步任何一步失败，都走 `finalizeRun` 写 `failed` 终态并释放，不能只抛异常。
-9. 正常路径发 sequence 1 的 `run.started`，然后异步启动执行。
+4. 请求带 `idempotencyKey` 时，先按 `idempotency_scope + idempotency_key` 查既有 Run：命中且同 Session 就直接返回原 `runId`（SSE 模式回放该 Run 事件），命中但 Session 不同返回 409 `AI.IDEMPOTENCY_KEY_CONFLICT`。这一步在 reserve 之前，不占 lane 租约，运行中的 Run 同 key 重试不会撞 `AI.SESSION_BUSY`。
+5. `registry.reserve(sessionId, lane)`。冲突在建 Run 行之前就返回 409 `AI.SESSION_BUSY`，不会留下垃圾行。
+6. 非 `main` lane 先在 Pi 侧创建，失败要 release 已占的 lease 再报 500。
+7. 建事件队列、序号发生器和 live 快照。
+8. 插入 `starting` Run 行，带无 secret 快照。失败要 release lease；带 key 启动时行里写入 key 和 scope，两个同 key 请求并发竞争时后插者命中部分唯一索引，释放租约后按既有 Run 返回或 409。key 只在这一步成功后才被消费。
+9. `executor.prepare`、`registry.attach`、`markRunning` 三步任何一步失败，都走 `finalizeRun` 写 `failed` 终态并释放，不能只抛异常。
+10. 正常路径发 sequence 1 的 `run.started`，然后异步启动执行。
 
 ### 4.2 模型循环
 
