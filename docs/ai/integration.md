@@ -284,48 +284,6 @@ data: {"type":"error","code":"AI.UPSTREAM_ERROR","message":"模型服务暂时�
 - 每次调用平台在用量审计里记一条 `scenario=completion` 的模型调用（含 token、耗时、结果），不建 Session、不建 Run、不写会话历史。
 - JSON 模式下断开连接会同时取消上游模型请求；SSE 模式断开同样中止生成，不会像 Run 那样后台继续跑。
 
-### 3.8 跑一条 Pipeline
-
-固定多步工作流（先提取要点、再翻译）不用自己轮询每步 Run、拼下一步输入。管理员先在后台注册一条 Pipeline：每一步指定一个 `agentId` 和一段输入模板，模板里 `{{input}}` 是你的原始输入，`{{steps.N.output}}` 是第 N 步（从 0 计）的产出。你拿到一个 `pipelineId`，之后每次只传一段输入：
-
-```bash
-ai -X POST "$API_BASE/api/ai/pipelines/$PIPELINE_ID/runs" \
-  -H 'Content-Type: application/json' \
-  -d '{"input":"帮我总结这个工单的处理进度"}'
-```
-
-`input` 的约束和 Run 一样：去掉首尾空白后 1 到 100000 字符。定义必须存在且是 enabled 状态，否则 404。响应只有 `runId`，执行异步推进：
-
-```json
-{ "ok": true, "data": { "runId": "019..." }, "meta": { "requestId": "..." } }
-```
-
-Pipeline 没有 SSE，统一 JSON 轮询：
-
-```bash
-ai "$API_BASE/api/ai/pipeline-runs/$RUN_ID"
-```
-
-`data.status` 是 `running`、`completed`、`failed`、`aborted` 之一，后三个是终态；创建即 `running`，没有排队中间态。终态响应里：
-
-- `steps` 是每步的执行明细：`index`、`agentId`、`agentRevision`、`runId`、`lane`、`status`、`output`、`errorCode`、起止时间。`output` 截断到 1000 字符（带省略标记），中间产出的全文用 `runId` 查 transcript。
-- `finalOutput` 是最后一步的产出，全量返回，就是你要的结果。
-- `sessionId` 是这次运行专用的 Session，transcript 按 `lane=pipeline-<i>` 分步骤存，可以像普通 Session 一样读。
-- 失败时 `errorCode` 透传出错那一步的错误码（比如 `AI.AGENT_NOT_ENABLED`、`AI.UPSTREAM_ERROR`），已完成步骤的明细保留，出错之后的步骤不会有 Run。某一步失败整条就终止，不跳过重试。
-
-中途取消：
-
-```bash
-ai -X POST "$API_BASE/api/ai/pipeline-runs/$RUN_ID/abort"
-```
-
-当前正在跑的步骤 Run 被取消，后续步骤不启动，pipeline 转 `aborted`。终态切换是异步的，abort 接口受理后继续轮询查询端点。对已经终态的 pipeline run 调 abort 返回 409 `AI.RUN_NOT_ACTIVE`。
-
-两个提前想清楚的点：
-
-- `pipelineId` 只能由管理员给。运行面没有 Pipeline 列表接口，应用凭据也调不了控制面。
-- API 进程重启时，进行中的 pipeline run 统一转 `failed` + `AI.RUN_INTERRUPTED`，不会自动续跑；要结果就重新发起一次。
-
 ## 4. 一次完整接入的顺序
 
 ```mermaid
@@ -379,9 +337,6 @@ sequenceDiagram
 | POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/abort`      | 无                                                                                          | `AgentRun`                  | 可用                |
 | POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/steer`      | `text`                                                                                      | `AgentRun`                  | 可用                |
 | POST   | `/api/ai/sessions/{sessionId}/runs/{runId}/follow-ups` | `text`                                                                                      | `AgentRun`                  | 可用                |
-| POST   | `/api/ai/pipelines/{pipelineId}/runs`                  | `input`                                                                                     | `{ runId }`，异步执行       | 可用                |
-| GET    | `/api/ai/pipeline-runs/{runId}`                        | 无                                                                                          | `PipelineRun`               | 可用                |
-| POST   | `/api/ai/pipeline-runs/{runId}/abort`                  | 无                                                                                          | `{ runId, status }`         | 可用                |
 
 `DELETE` 是归档，不删数据：`archivedAt` 被填上，Session 从默认列表消失，不能再启动 Run，transcript 接口也读不到了（返回 404）。历史还在服务端，但没有接口能再拿到，需要的话归档前先把 transcript 拉走。
 
@@ -389,9 +344,7 @@ sequenceDiagram
 
 `AgentRun` 的字段：`id`、`sessionId`、`agentId`、`agentRevision`、`lane`、`status`、`snapshot`、`requestId`、`finalEntryId`、`errorCode`、`createdAt`、`startedAt`、`finishedAt`、可选 `live`。`status` 六种：`starting`、`running`、`completed`、`failed`、`aborted`、`interrupted`。非终态时 `finishedAt`、`finalEntryId`、`errorCode` 一定是 `null`；终态时 `live` 一定是 `null`（字段还在，只是没内容）。
 
-`PipelineRun` 的字段：`id`、`pipelineId`、`pipelineRevision`、`sessionId`、`status`、`steps`、`finalOutput`、`errorCode`、`requestId`、`createdAt`、`startedAt`、`finishedAt`。`status` 有 `pending`，但实际只会见到 `running`、`completed`、`failed`、`aborted` 四种（创建即 `running`）。每步明细含 `runId`，可以用 `GET /api/ai/sessions/{sessionId}/runs/{runId}` 和 transcript 独立查步骤的执行记录。
-
-OpenAPI 里这些运行面端点的 `security` 只声明了 `cookieAuth`（transcript 那个端点连声明都没写），实际同样接受应用凭据，声明没跟上实现。Pipeline 三条端点例外，OpenAPI 里同时声明了 `cookieAuth` 和 `bearerAuth`。
+OpenAPI 里这些运行面端点的 `security` 只声明了 `cookieAuth`（transcript 那个端点连声明都没写），实际同样接受应用凭据，声明没跟上实现。
 
 ## 6. 消费 HarnessEvent
 
@@ -580,23 +533,22 @@ async function run(sessionId: string, input: string) {
 
 HTTP 层：
 
-| 错误码                        | 状态 | 触发条件                                                                                         | 客户端动作                               |
-| ----------------------------- | ---- | ------------------------------------------------------------------------------------------------ | ---------------------------------------- |
-| `AUTH.UNAUTHENTICATED`        | 401  | secret 缺失、错误、已撤销，或 subject 头不合法                                                   | 检查凭据和三个头，不要原样重试           |
-| `COMMON.NOT_FOUND`            | 404  | Session 或 Run 不存在、属于别的 scope、Session 已归档                                            | 当作会话失效，新建 Session               |
-| `COMMON.INVALID_REQUEST`      | 400  | 请求体不合 schema；既没传 `agentId` 也没有 `defaultAgentId`；`defaultAgentId` 指向不存在的 Agent | 修正请求                                 |
-| `AI.AGENT_NOT_ENABLED`        | 409  | 目标 Agent 不是已启用状态                                                                        | 换 Agent，或让管理员启用                 |
-| `AI.AGENT_CONFIG_INVALID`     | 400  | Agent 引用的模型、System Prompt、Skill 或 Tool 当前不可用，`details.resource` 指出是哪一类       | 联系平台方修配置，重试无用               |
-| `AI.SESSION_BUSY`             | 409  | 同一个 `sessionId + lane` 已有 Run 在跑                                                          | 等当前 Run 终态，或换 lane               |
-| `AI.RUN_NOT_ACTIVE`           | 409  | abort、steer、follow-up 时 Run 已不在当前进程活跃；abort 已终态的 Pipeline Run                   | 读 Run / Pipeline Run 状态确认是否已终态 |
-| `AI.SESSION_STORAGE_FAILED`   | 500  | 会话存储读写失败                                                                                 | 隔几秒重试，持续失败联系平台方           |
-| `AI.APP_CREDENTIAL_REVOKED`   | 409  | 对已撤销凭据做轮换（管理接口）                                                                   | 建新凭据                                 |
-| `AI.APP_CREDENTIAL_NOT_FOUND` | 404  | 凭据 id 不存在（管理接口）                                                                       | 核对 `appId`                             |
-| `AI.PIPELINE_NAME_CONFLICT`   | 409  | 管理接口：Pipeline 名称已存在                                                                    | 换名字                                   |
-| `AI.MODEL_NOT_ALLOWED`        | 403  | `completions` 请求的模型不在管理员白名单内                                                       | 让平台方把模型加进白名单                 |
-| `AI.UPSTREAM_TIMEOUT`         | 504  | `completions` 模型响应超时                                                                       | 可重试                                   |
-| `AI.UPSTREAM_ERROR`           | 503  | `completions` 模型服务报错                                                                       | 可重试                                   |
-| `AI.PROVIDER_AUTH_FAILED`     | 503  | `completions` 模型服务认证失败                                                                   | 联系平台方检查 Provider 配置             |
+| 错误码                        | 状态 | 触发条件                                                                                         | 客户端动作                     |
+| ----------------------------- | ---- | ------------------------------------------------------------------------------------------------ | ------------------------------ |
+| `AUTH.UNAUTHENTICATED`        | 401  | secret 缺失、错误、已撤销，或 subject 头不合法                                                   | 检查凭据和三个头，不要原样重试 |
+| `COMMON.NOT_FOUND`            | 404  | Session 或 Run 不存在、属于别的 scope、Session 已归档                                            | 当作会话失效，新建 Session     |
+| `COMMON.INVALID_REQUEST`      | 400  | 请求体不合 schema；既没传 `agentId` 也没有 `defaultAgentId`；`defaultAgentId` 指向不存在的 Agent | 修正请求                       |
+| `AI.AGENT_NOT_ENABLED`        | 409  | 目标 Agent 不是已启用状态                                                                        | 换 Agent，或让管理员启用       |
+| `AI.AGENT_CONFIG_INVALID`     | 400  | Agent 引用的模型、System Prompt、Skill 或 Tool 当前不可用，`details.resource` 指出是哪一类       | 联系平台方修配置，重试无用     |
+| `AI.SESSION_BUSY`             | 409  | 同一个 `sessionId + lane` 已有 Run 在跑                                                          | 等当前 Run 终态，或换 lane     |
+| `AI.RUN_NOT_ACTIVE`           | 409  | abort、steer、follow-up 时 Run 已不在当前进程活跃                                                | 读 Run 状态确认是否已终态      |
+| `AI.SESSION_STORAGE_FAILED`   | 500  | 会话存储读写失败                                                                                 | 隔几秒重试，持续失败联系平台方 |
+| `AI.APP_CREDENTIAL_REVOKED`   | 409  | 对已撤销凭据做轮换（管理接口）                                                                   | 建新凭据                       |
+| `AI.APP_CREDENTIAL_NOT_FOUND` | 404  | 凭据 id 不存在（管理接口）                                                                       | 核对 `appId`                   |
+| `AI.MODEL_NOT_ALLOWED`        | 403  | `completions` 请求的模型不在管理员白名单内                                                       | 让平台方把模型加进白名单       |
+| `AI.UPSTREAM_TIMEOUT`         | 504  | `completions` 模型响应超时                                                                       | 可重试                         |
+| `AI.UPSTREAM_ERROR`           | 503  | `completions` 模型服务报错                                                                       | 可重试                         |
+| `AI.PROVIDER_AUTH_FAILED`     | 503  | `completions` 模型服务认证失败                                                                   | 联系平台方检查 Provider 配置   |
 
 Run 终态错误码在 `run.failed.data.error.code` 和 `AgentRun.errorCode` 里，不走 HTTP 状态：
 
@@ -611,8 +563,6 @@ Run 终态错误码在 `run.failed.data.error.code` 和 `AgentRun.errorCode` 里
 | `AI.REQUEST_ABORTED`        | 被 abort，`status` 是 `aborted`                        | false       |
 | `AI.RUN_INTERRUPTED`        | 进程在终态前退出，`status` 是 `interrupted`            | false       |
 | `SYSTEM.INTERNAL_ERROR`     | 启动或收尾阶段的内部错误                               | false       |
-
-Pipeline run 的 `errorCode` 用同一套码：步骤失败时透传那一步 Run 的错误码，进程中断后重启统一是 `AI.RUN_INTERRUPTED`。
 
 单次工具执行失败不等于 Run 失败。工具报错、参数不合法、权限不足、scope 不匹配和工具自己超时，都只变成一份安全结果交回模型，Agent 自己决定下一轮，`AI.TOOL_FAILED` 不会成为 Run 的终态错误码。`tool.completed.data.status` 里能看到 `failed`、`timed_out`、`forbidden` 这些值，Run 仍可能正常完成。只有两种工具层的情况会结束 Run：用户取消，以及 Run 总时长耗尽后模型还要调工具。
 
@@ -635,17 +585,16 @@ Pipeline run 的 `errorCode` 用同一套码：步骤失败时透传那一步 Ru
 
 这些端点存在，但不是给第三方用的：
 
-| 分组           | 端点前缀                                                                                   | 用途                                        |
-| -------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------- |
-| Provider 配置  | `/api/ai/admin/providers/*`                                                                | 配模型服务方、密钥、连通性检查、启用状态    |
-| 模型目录       | `/api/ai/admin/models`、`/api/ai/admin/default-model`                                      | 维护可用模型白名单和全局默认模型            |
-| Prompt         | `/api/ai/system-prompts/*`、`/api/ai/settings/system-prompt`、`/api/ai/prompt-templates/*` | 维护提示词                                  |
-| Skill          | `/api/ai/skills/*`                                                                         | 维护技能文本                                |
-| Agent 管理     | `/api/ai/admin/agents/*`、`/api/ai/admin/tools`                                            | 建改 Agent、查工具清单                      |
-| Pipeline 管理  | `/api/ai/admin/pipelines/*`                                                                | 注册多步流水线（步骤 + 模板），控制启用状态 |
-| 应用凭据       | `/api/ai/admin/applications/*`                                                             | 建、轮换、撤销凭据                          |
-| 用量审计       | `/api/ai/usage/calls`、`/api/ai/usage/calls/{callId}`                                      | 查模型调用记录                              |
-| 模型连通性测试 | `/api/ai/test`                                                                             | 管理员在后台点一次模型测试                  |
-| 用户模型偏好   | `/api/ai/models`、`/api/ai/preferences`                                                    | Starter 自己的用户设置，依赖浏览器登录态    |
+| 分组           | 端点前缀                                                                                   | 用途                                     |
+| -------------- | ------------------------------------------------------------------------------------------ | ---------------------------------------- |
+| Provider 配置  | `/api/ai/admin/providers/*`                                                                | 配模型服务方、密钥、连通性检查、启用状态 |
+| 模型目录       | `/api/ai/admin/models`、`/api/ai/admin/default-model`                                      | 维护可用模型白名单和全局默认模型         |
+| Prompt         | `/api/ai/system-prompts/*`、`/api/ai/settings/system-prompt`、`/api/ai/prompt-templates/*` | 维护提示词                               |
+| Skill          | `/api/ai/skills/*`                                                                         | 维护技能文本                             |
+| Agent 管理     | `/api/ai/admin/agents/*`、`/api/ai/admin/tools`                                            | 建改 Agent、查工具清单                   |
+| 应用凭据       | `/api/ai/admin/applications/*`                                                             | 建、轮换、撤销凭据                       |
+| 用量审计       | `/api/ai/usage/calls`、`/api/ai/usage/calls/{callId}`                                      | 查模型调用记录                           |
+| 模型连通性测试 | `/api/ai/test`                                                                             | 管理员在后台点一次模型测试               |
+| 用户模型偏好   | `/api/ai/models`、`/api/ai/preferences`                                                    | Starter 自己的用户设置，依赖浏览器登录态 |
 
 应用凭据调不通这些端点，全部需要 Better Auth 登录态。其中大部分还要权限点（`AI_CONFIG_READ`、`AI_CONFIG_MANAGE`、`AI_USAGE_READ`），但 `POST /api/ai/test`、`GET /api/ai/skills`、`GET /api/ai/prompt-templates`、`GET /api/ai/models` 和 `GET|PUT /api/ai/preferences` 只要登录态。要新增凭据或改 Agent 配置，走平台方的后台。

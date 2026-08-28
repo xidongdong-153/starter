@@ -1,0 +1,8 @@
+{"file": ".trellis/tasks/08-28-remove-ai-pipeline/prd.md", "reason": "删除范围与验收标准"}
+{"file": ".trellis/tasks/08-28-remove-ai-pipeline/implement.md", "reason": "执行清单与提交说明"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "pipeline 在系统设计中的全部引用点，Phase 3.3 需同步删除"}
+{"file": ".trellis/spec/api/backend/directory-structure.md", "reason": "模块删除后目录说明需核对"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "drop migration 的生成与核对规则"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端规范入口与验收命令"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 删除 schema 的规范"}
+{"file": ".trellis/spec/guides/index.md", "reason": "共享思考指南"}

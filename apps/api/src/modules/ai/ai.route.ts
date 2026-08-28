@@ -45,14 +45,6 @@ import { createAiConfigurationRoute } from "./configuration/configuration.route.
 import { createAiRepository } from "./configuration/configuration.repository.js";
 import { createAiCustomProviderRepository } from "./configuration/custom-provider.repository.js";
 import { createAiService } from "./configuration/configuration.service.js";
-import {
-  createAiPipelineDefinitionRepository,
-  createAiPipelineDefinitionRoute,
-  createAiPipelineDefinitionService,
-  createAiPipelineRunRepository,
-  createAiPipelineRunRoute,
-  createAiPipelineRunService,
-} from "./pipeline/index.js";
 import { createAiPromptRepository } from "./prompt/prompt.repository.js";
 import { createAiPromptRoute } from "./prompt/prompt.route.js";
 import { createAiPromptService } from "./prompt/prompt.service.js";
@@ -194,29 +186,6 @@ export function createAiRoute(runtime: AppRuntime) {
     requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
     logger: runtime.logger.child({ module: "ai-completion" }),
   });
-  const pipelineDefinitionService = createAiPipelineDefinitionService({
-    repository: createAiPipelineDefinitionRepository(runtime.db),
-    agentRepository: createAiAgentDefinitionRepository(runtime.db),
-  });
-  const pipelineRunService = createAiPipelineRunService({
-    repository: createAiPipelineRunRepository(runtime.db),
-    definitionService: pipelineDefinitionService,
-    sessionService,
-    runService,
-    structuredOutputRepository,
-    sessionStore: runtime.agentSessionStore,
-    logger: runtime.logger.child({ module: "ai-pipeline-run" }),
-  });
-  void pipelineRunService
-    .recoverInterrupted()
-    .then((report) => {
-      if (report.scanned > 0) {
-        runtime.logger.info({ report }, "Pipeline Run 启动恢复扫描完成");
-      }
-    })
-    .catch((error: unknown) => {
-      runtime.logger.error({ err: error }, "Pipeline Run 启动恢复扫描失败");
-    });
   void runService
     .recoverInterrupted()
     .then((report) => {
@@ -284,22 +253,6 @@ export function createAiRoute(runtime: AppRuntime) {
       createAiCompletionRoute({
         service: completionService,
         requireAuth: requireRuntimePrincipal,
-      }),
-    )
-    .route(
-      "/",
-      createAiPipelineDefinitionRoute({
-        service: pipelineDefinitionService,
-        requireAuth,
-        requireRead,
-        requireManage,
-      }),
-    )
-    .route(
-      "/",
-      createAiPipelineRunRoute({
-        service: pipelineRunService,
-        requireRuntimePrincipal,
       }),
     )
     .route(

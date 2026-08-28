@@ -265,7 +265,6 @@ function userContentToString(
 
 /**
  * 拼接 assistant message 的 text 块；thinking / toolCall 块不进正文。
- * Pipeline 步骤产出提取（无结构化输出时兑底）与 transcript 投影共用。
  */
 export function assistantContentToString(
   content: Extract<AgentMessage, { role: "assistant" }>["content"],
