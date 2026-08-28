@@ -1,0 +1,8 @@
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 的 repository/service/route/OpenAPI 与测试约定，新增 active-run 接口必须照它写"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "事件协议、afterSequence 恢复语义和 live 快照的边界"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端分层与响应包装规则"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "404 与错误码映射，active-run 查询的越权和归档分支要一致"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "Web 消费 Run 协议的接口表、SSE 解析规则、错误矩阵和状态归属"}
+{"file": ".trellis/spec/web/frontend/hook-guidelines.md", "reason": "use-chat-run 这类编排 hook 的写法约束"}
+{"file": ".trellis/spec/web/frontend/state-management.md", "reason": "恢复态的 state 与 ref 归属，异步回调的身份校验"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 里新增 query schema 的位置与命名"}

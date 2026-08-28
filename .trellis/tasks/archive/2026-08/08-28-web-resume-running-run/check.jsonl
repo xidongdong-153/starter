@@ -1,0 +1,6 @@
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Tests Required 一节列出 Run 侧必须覆盖的用例"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API 侧质量门槛"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "Web 侧 SSE 解析与归并的测试要求"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "Web 侧质量门槛"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contracts + api + web 三层同时改动，检查跨层一致性"}
+{"file": ".trellis/spec/guides/code-reuse-thinking-guide.md", "reason": "恢复路径必须复用已有折叠和轮询逻辑，不另写一套"}
