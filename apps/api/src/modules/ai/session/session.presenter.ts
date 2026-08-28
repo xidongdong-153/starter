@@ -232,7 +232,11 @@ function skipMessage(
   return null;
 }
 
-function resolveRunId(message: AgentMessage): string | null {
+/**
+ * 从 Pi message 读取挂载的 runId（顶层字段优先，details 兼容旧 entry）。
+ * Run Service 写入侧与 transcript 投影共用同一读取规则。
+ */
+export function resolveRunId(message: AgentMessage): string | null {
   const direct = readUuid((message as { runId?: unknown }).runId);
   if (direct) return direct;
   const nested = (message as { details?: unknown }).details;
@@ -259,7 +263,11 @@ function userContentToString(
   );
 }
 
-function assistantContentToString(
+/**
+ * 拼接 assistant message 的 text 块；thinking / toolCall 块不进正文。
+ * Pipeline 步骤产出提取（无结构化输出时兑底）与 transcript 投影共用。
+ */
+export function assistantContentToString(
   content: Extract<AgentMessage, { role: "assistant" }>["content"],
 ): string {
   return textBlocks(

@@ -4,13 +4,14 @@
 
 ## 1. 系统承诺
 
-当前 AI 系统提供三类调用：
+当前 AI 系统提供四类调用：
 
 - `POST /api/ai/test`：管理员或用户执行一次模型测试。它使用 Provider、模型白名单和统一 Gateway，但不创建 Agent Session、Agent Run 或 Pi transcript。
 - `POST /api/ai/completions`：一次性无状态模型调用。调用方直接指定白名单内模型（可带 systemPrompt）加一段输入，单轮拿结果；不传工具，不创建 Agent Session、Agent Run 或 Pi transcript，审计 `scenario='completion'`。
 - `POST /api/ai/sessions/{sessionId}/runs`：在用户自己的持久 Session 和指定 lane 中运行一个 Agent。它使用 Pi `Agent`、Pi Session、Tool adapter、SSE 和 Run 恢复记录。
+- `POST /api/ai/pipelines/{pipelineId}/runs`：启动一条预注册的流水线。服务端创建专用 Agent Session，顺序执行每个步骤的 Agent Run（复用第三类的全部机制），把上一步产出渲染进下一步输入，直到最后一步完成或某步失败；返回 pipeline runId，调用方轮询 `GET /api/ai/pipeline-runs/{runId}`。
 
-本文件重点说明第三类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。
+本文件重点说明第三类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。第四类 Pipeline 是它之上的编排层，见 3.5。
 
 ## 2. 先看一张总图
 
@@ -113,6 +114,14 @@ Executor 负责：
 - 返回 executor 终态给 Run Service。
 
 Executor 不创建或更新 `ai_agent_runs`，不注册 HTTP route，也不发布 Run terminal event。
+
+### 3.5 Pipeline
+
+代码位置：`apps/api/src/modules/ai/pipeline/`。
+
+Pipeline 是 Run 之上的编排层，不引入第二种执行引擎。definition 子域负责控制面：`ai_pipeline_definitions` 的 CRUD、状态切换（draft / enabled / disabled）、revision 递增、步骤校验（每步 agentId 指向已存在的 AgentDefinition，`inputTemplate` 静态校验只允许引用更早步骤）。run 子域负责运行面编排循环：启动时创建归属发起 principal 的专用 Agent Session，逐步渲染模板、调 `runService.startRun`（lane 固定 `pipeline-<i>`）、等步骤 Run 终态、提取产出（结构化输出优先，lane transcript 的 assistant 文本兜底）、把步骤明细写进 `ai_pipeline_runs.steps_state_json`，某步失败整条终止。
+
+步骤 Run 的状态机、事件持久化、审计、abort 和恢复全部归 run 模块所有，pipeline 层只多一层编排索引。进程重启时 pipeline 恢复扫描把自己的 running 行统一转 `failed + AI.RUN_INTERRUPTED`，不续跑；步骤 Run 本身由 `runService.recoverInterrupted()` 独立处理。
 
 ## 4. 一次输入如何变成最终输出
 
@@ -364,6 +373,8 @@ Starter 主库保存：
 | `ai_agent_definitions` | Agent 名称、状态、revision、无 secret config 引用 | Provider secret、Prompt/Skill 正文、Tool handler |
 | `ai_agent_sessions` | Session id、owner、title、defaultAgentId、归档时间 | transcript、lane tree、Tool result |
 | `ai_agent_runs` | Run id、Session、Agent revision、lane、状态、snapshot、终态字段 | message 正文、事件流 |
+| `ai_pipeline_definitions` | Pipeline 名称、状态、revision、步骤定义 JSON（agentId + inputTemplate） | Agent 配置本体、模板渲染结果 |
+| `ai_pipeline_runs` | Pipeline run id、定义 revision 快照、principal / scope 列族、状态、步骤执行明细 JSON、最终产出、errorCode | transcript 正文、事件流 |
 | `ai_model_calls` | Provider/model、scenario、runId、耗时、token、cost、结果和错误码 | prompt、response、secret、原始错误 |
 | `ai_tool_executions` | Tool 名称、时间、耗时、状态、timeout、错误码 | arguments、result、safeSummary |
 
@@ -445,6 +456,8 @@ flowchart TD
 
 `session.repository.ts` 的 `accessWhere` 是可见范围的唯一判据：Starter 用户按 `principalKind + ownerId + tenantId + projectId`；应用凭据按 `principalKind + appId + tenantId + projectId + externalUserId + subjectType + subjectId` 全等匹配。Run 查询挂在 Session 上，跟同一套条件。新增运行面查询必须走 `accessWhere`，不要自己拼 owner 条件。
 
+`pipeline/run.repository.ts` 的可见范围判据与 Session 同构：`ai_pipeline_runs` 带同一套 principal / scope 列族，按同样的全等条件匹配，跨 principal 访问统一 404。Pipeline run 查询不挂在 Session 上，走自己表的条件。
+
 应用凭据只存 sha256 哈希和前 12 位前缀（`application.crypto.ts`），认证时按前缀取候选再做 `timingSafeEqual`。`AI_CONFIG_MANAGE` 权限的管理员负责创建、rotate 和 revoke。
 
 Tool 的权限检查由 adapter 按 principal kind 分流：只有 `starter_user` 用 `principal.principalId` 查 Starter 授权表；`product_app` 对带 `requiredPermission` 的 Tool 直接 `AI.TOOL_FORBIDDEN`，伪造与 Starter 用户相同的 `X-AI-External-User-Id` 也不会查 `user_roles`；权限查询异常同样按拒绝处理。Adapter 只收 Run 启动时已解析的 `RegisteredAiTool[]`，handler 不接收裸 userId、Hono Context、Better Auth session 或数据库 client。
@@ -470,6 +483,7 @@ Tool 的权限检查由 adapter 按 principal kind 分流：只有 `starter_user
 - Provider 配置和认证状态。
 - 模型目录和白名单。
 - AgentDefinition。
+- Pipeline 定义（读用 `AI_CONFIG_READ`，写用 `AI_CONFIG_MANAGE`）。
 - Prompt、Skill、Tool Registry。
 - 用量审计查询。
 
@@ -517,8 +531,8 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 
 AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`：
 
-- `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit 和模型连通性测试。
-- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript、RunEvent SSE 和一次性无状态调用 `POST /api/ai/completions`。
+- `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Pipeline 定义（`GET/POST /api/ai/admin/pipelines`、`GET/PATCH /api/ai/admin/pipelines/{pipelineId}`、`PATCH /api/ai/admin/pipelines/{pipelineId}/status`）、Tool summary、Usage audit 和模型连通性测试。
+- `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript、RunEvent SSE、一次性无状态调用 `POST /api/ai/completions`，以及 Pipeline 三条（`POST /api/ai/pipelines/{pipelineId}/runs`、`GET /api/ai/pipeline-runs/{runId}`、`POST /api/ai/pipeline-runs/{runId}/abort`）。Pipeline 运行面没有 SSE，只有 JSON 轮询；这三条的 OpenAPI `security` 同时声明 `cookieAuth` 与 `bearerAuth`。
 - `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
 
 运行面 SSE 使用 `text/event-stream`：

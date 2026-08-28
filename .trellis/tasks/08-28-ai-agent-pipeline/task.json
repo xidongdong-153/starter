@@ -3,7 +3,7 @@
   "name": "ai-agent-pipeline",
   "title": "AI Agent 流水线编排",
   "description": "顺序多步流水线：步骤 A 的输出作为步骤 B 的输入，服务端编排多个 Agent Run",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

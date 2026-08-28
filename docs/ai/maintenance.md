@@ -98,7 +98,7 @@ Run Service 始终是 Run 行、活跃登记、序号、Pi 终态 entry 和终�
 
 ## 4. AI 数据表
 
-定义都在 `apps/api/src/modules/ai/ai.schema.ts`，共 15 张。
+定义都在 `apps/api/src/modules/ai/ai.schema.ts`，共 17 张。
 
 | 表                               | 存什么                                                                                                                            | 明确不存                                        |
 | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------- |
@@ -117,8 +117,10 @@ Run Service 始终是 Run 行、活跃登记、序号、Pi 终态 entry 和终�
 | `ai_agent_runs`                  | Run id、Session、Agent 和 `agentRevision`、lane、状态、执行快照、`requestId`、`finalEntryId`、错误码、时间戳                      | 消息正文、事件流                                |
 | `ai_model_calls`                 | 每次模型请求：身份与 scope、`scenario`、`runId`、Provider / 模型、耗时、超时、token、成本、结果和错误码                           | prompt、响应正文、secret、上游原始错误          |
 | `ai_tool_executions`             | 每次工具执行：关联的模型调用 id、工具名、耗时、超时、状态、错误码                                                                 | 入参、结果、`safeSummary`                       |
+| `ai_pipeline_definitions`        | Pipeline 名称、描述、状态、`revision`、步骤定义 JSON（每步 agentId + inputTemplate + laneLabel）                                  | Agent 定义本体、secret                          |
+| `ai_pipeline_runs`               | Pipeline run：归属列族（同 `ai_agent_sessions`）、专用 `sessionId`、输入、状态、步骤执行明细 JSON、最终产出、错误码、时间戳       | 步骤的 transcript 与事件（在各自的 Run 里）     |
 
-`ai_tool_executions.ai_call_id` 外键指向 `ai_model_calls.id`，级联删除。查某次 Run 的工具执行要先按 `run_id` 找模型调用。
+`ai_tool_executions.ai_call_id` 外键指向 `ai_model_calls.id`，级联删除。查某次 Run 的工具执行要先按 `run_id` 找模型调用。`ai_pipeline_runs.session_id` 外键指向 `ai_agent_sessions.id`，级联删除；步骤执行明细里的 `runId` 指向 `ai_agent_runs.id`，查步骤全文去读对应 Run 的 transcript。
 
 改完 schema：
 

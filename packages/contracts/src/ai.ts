@@ -1629,3 +1629,157 @@ export const completionStreamEventSchema = z.discriminatedUnion('type', [
 ])
 
 export type CompletionStreamEvent = z.infer<typeof completionStreamEventSchema>
+
+// ---------------------------------------------------------------------------
+// Pipeline（流水线编排）
+// ---------------------------------------------------------------------------
+
+export const pipelineDefinitionStatusSchema = z.enum(['draft', 'enabled', 'disabled'])
+export type PipelineDefinitionStatus = z.infer<typeof pipelineDefinitionStatusSchema>
+
+export const pipelineDefinitionNameSchema = z.string().trim().min(1).max(80)
+export const pipelineDefinitionDescriptionSchema = z.string().max(500)
+
+/** 模板与输入共用的文本长度边界；渲染结果直接作为下一步 Run 输入。 */
+const pipelineTextSchema = z.string().trim().min(1).max(100_000)
+
+/** 流水线步骤数上限：防单条流水线把单进程 runner 占死（8 步 x 120 秒最坏 16 分钟）。 */
+export const PIPELINE_MAX_STEPS = 8
+
+/**
+ * 步骤定义。`inputTemplate` 只支持 `{{input}}` 与 `{{steps.N.output}}` 两种变量，
+ * 保存时静态校验（步骤 i 只能引用 steps.<i-1> 及更早）；`laneLabel` 仅用于展示。
+ */
+export const pipelineStepDefinitionSchema = z.strictObject({
+  agentId: uuidSchema,
+  inputTemplate: pipelineTextSchema,
+  laneLabel: agentLaneSchema.optional(),
+})
+export type PipelineStepDefinition = z.infer<typeof pipelineStepDefinitionSchema>
+
+const pipelineStepDefinitionsSchema = z.array(pipelineStepDefinitionSchema).min(1).max(PIPELINE_MAX_STEPS)
+
+export const pipelineDefinitionSummarySchema = z.strictObject({
+  id: uuidSchema,
+  name: pipelineDefinitionNameSchema,
+  description: pipelineDefinitionDescriptionSchema,
+  status: pipelineDefinitionStatusSchema,
+  revision: z.number().int().min(1),
+  stepCount: z.number().int().min(1).max(PIPELINE_MAX_STEPS),
+  createdAt: isoDateTimeSchema,
+  updatedAt: isoDateTimeSchema,
+})
+export type PipelineDefinitionSummary = z.infer<typeof pipelineDefinitionSummarySchema>
+
+export const pipelineDefinitionDetailSchema = pipelineDefinitionSummarySchema.extend({
+  steps: pipelineStepDefinitionsSchema,
+})
+export type PipelineDefinitionDetail = z.infer<typeof pipelineDefinitionDetailSchema>
+
+export const createPipelineDefinitionSchema = z.strictObject({
+  name: pipelineDefinitionNameSchema,
+  description: pipelineDefinitionDescriptionSchema.optional(),
+  steps: pipelineStepDefinitionsSchema,
+})
+export type CreatePipelineDefinitionInput = z.infer<typeof createPipelineDefinitionSchema>
+
+export const updatePipelineDefinitionSchema = z
+  .strictObject({
+    name: pipelineDefinitionNameSchema.optional(),
+    description: pipelineDefinitionDescriptionSchema.optional(),
+    steps: pipelineStepDefinitionsSchema.optional(),
+  })
+  .refine((value) => Object.values(value).some((item) => item !== undefined), {
+    message: '至少提供一个要修改的字段',
+  })
+export type UpdatePipelineDefinitionInput = z.infer<typeof updatePipelineDefinitionSchema>
+
+export const updatePipelineDefinitionStatusSchema = z.strictObject({
+  status: pipelineDefinitionStatusSchema,
+})
+export type UpdatePipelineDefinitionStatusInput = z.infer<typeof updatePipelineDefinitionStatusSchema>
+
+export const pipelineDefinitionListQuerySchema = z.strictObject({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(20),
+})
+export type PipelineDefinitionListQuery = z.infer<typeof pipelineDefinitionListQuerySchema>
+
+export const pipelineDefinitionSummaryListSchema = z.strictObject({
+  items: z.array(pipelineDefinitionSummarySchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+export type PipelineDefinitionSummaryList = z.infer<typeof pipelineDefinitionSummaryListSchema>
+
+export const pipelineDefinitionDetailListSchema = z.strictObject({
+  items: z.array(pipelineDefinitionDetailSchema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+export type PipelineDefinitionDetailList = z.infer<typeof pipelineDefinitionDetailListSchema>
+
+/**
+ * 状态机含 `pending`（对齐表 CHECK 约束），实际只写 `running` / `completed` /
+ * `failed` / `aborted`：创建即 running，进程重启恢复把 running 统一落 failed。
+ */
+export const pipelineRunStatusSchema = z.enum(['pending', 'running', 'completed', 'failed', 'aborted'])
+export type PipelineRunStatus = z.infer<typeof pipelineRunStatusSchema>
+
+/**
+ * 步骤执行明细。`output` 是该步产出（结构化输出优先、assistant 文本兜底），
+ * DTO 侧截断到 1000 字符加省略标记；全量事实在 transcript（用 runId 可查）。
+ */
+export const pipelineRunStepStateSchema = z.strictObject({
+  index: z
+    .number()
+    .int()
+    .min(0)
+    .max(PIPELINE_MAX_STEPS - 1),
+  agentId: uuidSchema,
+  agentRevision: z.number().int().min(1),
+  runId: uuidSchema,
+  lane: agentLaneSchema,
+  status: agentRunStatusSchema,
+  output: z.string().nullable(),
+  errorCode: apiErrorCodeSchema.nullable(),
+  startedAt: isoDateTimeSchema.nullable(),
+  finishedAt: isoDateTimeSchema.nullable(),
+})
+export type PipelineRunStepState = z.infer<typeof pipelineRunStepStateSchema>
+
+export const pipelineRunSchema = z.strictObject({
+  id: uuidSchema,
+  pipelineId: uuidSchema,
+  pipelineRevision: z.number().int().min(1),
+  sessionId: uuidSchema,
+  status: pipelineRunStatusSchema,
+  steps: z.array(pipelineRunStepStateSchema).max(PIPELINE_MAX_STEPS),
+  finalOutput: z.string().nullable(),
+  errorCode: apiErrorCodeSchema.nullable(),
+  requestId: z.string().min(1).max(200),
+  createdAt: isoDateTimeSchema,
+  startedAt: isoDateTimeSchema.nullable(),
+  finishedAt: isoDateTimeSchema.nullable(),
+})
+export type PipelineRun = z.infer<typeof pipelineRunSchema>
+
+export const startPipelineRunSchema = z.strictObject({
+  input: pipelineTextSchema,
+})
+export type StartPipelineRunInput = z.infer<typeof startPipelineRunSchema>
+
+/** 启动 pipeline run 的 JSON 响应 data；异步执行，调用方轮询 GET /api/ai/pipeline-runs/{id}。 */
+export const startPipelineRunJsonSchema = z.strictObject({
+  runId: uuidSchema,
+})
+export type StartPipelineRunJson = z.infer<typeof startPipelineRunJsonSchema>
+
+/** abort 受理响应；pipeline 终态切换是异步的，调用方继续轮询查询端点。 */
+export const pipelineRunAbortSchema = z.strictObject({
+  runId: uuidSchema,
+  status: pipelineRunStatusSchema,
+})
+export type PipelineRunAbort = z.infer<typeof pipelineRunAbortSchema>

@@ -341,7 +341,7 @@ stateDiagram-v2
 | `POST /api/ai/admin/pipelines` | `requireAuth` + `AI_CONFIG_MANAGE` | 创建（draft），静态模板校验在此生效 |
 | `GET /api/ai/admin/pipelines/{id}` | `requireAuth` + `AI_CONFIG_READ` | 详情含完整步骤定义 |
 | `PATCH /api/ai/admin/pipelines/{id}` | `requireAuth` + `AI_CONFIG_MANAGE` | 更新步骤 / 描述，revision +1 |
-| `POST /api/ai/admin/pipelines/{id}/status` | `requireAuth` + `AI_CONFIG_MANAGE` | draft/enabled/disabled 切换（对齐 agent status 端点形态） |
+| `PATCH /api/ai/admin/pipelines/{id}/status` | `requireAuth` + `AI_CONFIG_MANAGE` | draft/enabled/disabled 切换（对齐 agent status 端点形态） |
 
 行为对齐 AgentDefinition 路由族：删除语义不做（agent 定义也没有删除，restrict FK 保持引用完整）。
 

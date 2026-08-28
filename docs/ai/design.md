@@ -2,17 +2,18 @@
 
 这篇讲 `apps/api` 的 AI 模块怎么组织：谁负责什么、一次输入怎么变成最终输出、状态存在哪、失败时谁负责收尾。改代码前先看这里确认边界，再去 `.trellis/spec/api/backend/` 读对应的实现约束。
 
-## 1. 系统提供三类调用
+## 1. 系统提供四类调用
 
-| 调用           | 入口                                     | 用到什么                                                | 不产生什么                                     |
-| -------------- | ---------------------------------------- | ------------------------------------------------------- | ---------------------------------------------- |
-| 模型连通性测试 | `POST /api/ai/test`                      | Provider 配置、模型白名单、统一 Gateway                 | 不建 Session、不建 Run、不写 Pi 历史           |
-| 一次性模型调用 | `POST /api/ai/completions`               | 模型白名单、统一 Gateway、审计（scenario=completion）   | 不带工具，不建 Session、不建 Run、不写 Pi 历史 |
-| Agent 运行     | `POST /api/ai/sessions/{sessionId}/runs` | Pi Agent、Pi Session、Tool adapter、SSE、Run 记录、审计 | ——                                             |
+| 调用           | 入口                                       | 用到什么                                                           | 不产生什么                                     |
+| -------------- | ------------------------------------------ | ------------------------------------------------------------------ | ---------------------------------------------- |
+| 模型连通性测试 | `POST /api/ai/test`                        | Provider 配置、模型白名单、统一 Gateway                            | 不建 Session、不建 Run、不写 Pi 历史           |
+| 一次性模型调用 | `POST /api/ai/completions`                 | 模型白名单、统一 Gateway、审计（scenario=completion）              | 不带工具，不建 Session、不建 Run、不写 Pi 历史 |
+| Agent 运行     | `POST /api/ai/sessions/{sessionId}/runs`   | Pi Agent、Pi Session、Tool adapter、SSE、Run 记录、审计            | ——                                             |
+| Pipeline 运行  | `POST /api/ai/pipelines/{pipelineId}/runs` | Agent Run 全套机制，外加专用 Session、顺序编排、模板渲染、编排索引 | 不提供 pipeline 级 SSE，用 JSON 轮询           |
 
 一次性模型调用面向翻译一句话、分类一段文本这类单轮任务：调用方指定白名单内模型（可带 systemPrompt）加一段输入，直接拿结果，不用先建 Session 再启动 Run。它复用模型测试同一条 Gateway 和审计路径，只是 scenario 和鉴权受众不同。
 
-下面主要讲第三类。它包含输入校验、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和进程重启恢复。
+下面主要讲第三类。它包含输入校验、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和进程重启恢复。第四类复用同一套执行机制，编排语义见第 8 节。
 
 ## 2. 分层
 
@@ -62,6 +63,7 @@ flowchart LR
 | `agent/`         | Agent Definition 的增删改查、状态切换、`revision` 递增、Run 开始前把配置解析成可执行形态 | 不保存 Provider secret、Prompt 正文、Skill 正文和 Tool 实现 |
 | `session/`       | Session 归属、标题、`defaultAgentId`、归档、双库创建补偿、transcript 投影                | 不保存历史正文，历史在 Pi 那边                              |
 | `run/`           | Run 行、活跃登记、事件序号、对外事件、Pi 终态 entry、终态更新、启动恢复                  | 不跑模型循环，不直接读 Pi Session                           |
+| `pipeline/`      | Pipeline 定义的 CRUD 与状态切换、编排循环、模板校验与渲染、步骤产出提取                  | 不复制 Run 的执行、事件和恢复，每步就是一个标准 Agent Run   |
 | `completion/`    | 一次性无状态调用：白名单校验、单条 user message 构造、结果聚合或 SSE 透传                | 不带工具，不碰 Session/Run/事件表，审计走 invocation runner |
 | `application/`   | 应用凭据的创建、轮换、撤销、认证和审计事件                                               | 不做频率限制，不限制凭据能用哪个 Agent                      |
 | `configuration/` | Provider 配置、认证状态、模型目录与白名单、全局默认模型、用户模型偏好、模型连通性测试    | 不解密 secret，解密在 `infra/ai` 的凭据存储里               |
@@ -313,7 +315,42 @@ flowchart TD
 
 合法的终态 entry 必须同时匹配 `runId`、`sessionId`、`lane`、`agentId`、`agentRevision`。结构合法但身份字段不匹配也算损坏，不能只按 `runId` 接受。
 
-## 8. 鉴权与隔离
+## 8. Pipeline 编排
+
+固定顺序的多步工作流（先提取要点、再翻译、最后生成摘要）不用调用方自己轮询每步 Run、拼下一步输入：管理员预先注册一条 Pipeline，每步引用一个 AgentDefinition 加一段输入模板，调用方一条 `pipelineId + input` 请求触发整条，服务端顺序执行到终态。代码在 `apps/api/src/modules/ai/pipeline/`，分 definition（控制面 CRUD）和 run（运行面编排）两个子域。
+
+Pipeline 不是第二种执行引擎：每一步就是一次标准 Agent Run，复用 `startRun` 全套（lane reserve、事件落库、模型审计、结构化输出、终态、恢复），pipeline 只负责步骤顺序、把上一步产出渲染进下一步输入、把进度索引到自己的表里。
+
+执行模型：
+
+- 专用 Session：启动时创建一个归属发起 principal / scope 的 Agent Session（标题 `Pipeline: <名称>`），所有步骤都在它上面跑。Session 不归档，transcript 就是这次流水线的完整执行记录。
+- lane：第 i 步固定用 `pipeline-<i>`，transcript 按步骤分支，提取产出时按 lane 精确读取。定义里的 `laneLabel` 只用于展示，不影响 lane。
+- 模板：每步的 `inputTemplate` 只有两个变量——`{{input}}`（原始输入）和 `{{steps.N.output}}`（第 N 步产出，从 0 计）。定义保存时静态校验：步骤 i 只能引用 N < i 的步骤，引用自己或未来步骤直接 400。渲染是单遍字符串替换，替换结果不再扫描，模型输出里的 `{{...}}` 字样不会被二次展开。没有条件、循环和过滤器，要逻辑就写进 Agent 的 prompt。
+- 产出提取：步骤 Run 完成后，先看结构化输出（取最后一条 value，JSON 序列化成字符串），没有就读该 lane transcript 里属于这个 Run 的最后一条 assistant 文本。
+- fail fast：某步失败（含步骤 agent 解析失败、Run 启动失败），后续步骤不启动，整条转 failed，errorCode 透传那一步的错误码；已完成步骤的明细保留。
+- 步骤明细：每步终态写一次 `ai_pipeline_runs.steps_state_json`（runId、状态、全量产出）。查询端点里每步 `output` 截断到 1000 字符加省略标记，`finalOutput` 全量返回；全量事实在 transcript，用步骤 runId 可查。
+
+状态机：
+
+```mermaid
+%%{init: {"theme": "dark"}}%%
+stateDiagram-v2
+  [*] --> running : 创建行（同帧启动步骤 0）
+  running --> completed : 全部步骤 completed
+  running --> failed : 步骤 failed（fail fast）/ 重启扫描
+  running --> aborted : abort
+  completed --> [*]
+  failed --> [*]
+  aborted --> [*]
+```
+
+创建即 running，没有中间排队状态（表 CHECK 和契约枚举里的 `pending` 只是约束占位，代码从不写它）。abort 取消当前正在跑的步骤 Run，步骤间隙收到的 abort 会让循环不再启动下一步；对非 running 的 pipeline run 调 abort 返回 409 `AI.RUN_NOT_ACTIVE`。
+
+进程重启：启动扫描把 running 行统一转 `failed + AI.RUN_INTERRUPTED`，不续跑。续跑要求编排循环能从任意步骤重入，复杂度和收益不成比例；调用方拿到 failed 重新发起一次即可，已付成本步骤的明细都在。步骤 Run 本身的恢复由 Run 层的扫描独立完成，两层各管各的表。
+
+两张新表：`ai_pipeline_definitions`（名称唯一、状态、revision、步骤定义 JSON，没有删除端点）和 `ai_pipeline_runs`（定义 revision 快照、与 `ai_agent_sessions` 同构的 principal / scope 列族、状态、步骤明细 JSON、最终产出）。运行面没有 pipeline 级 SSE，调用方拿 runId 轮询 `GET /api/ai/pipeline-runs/{runId}`；要看步骤内部的流式输出，用步骤 runId 订阅 Run 自己的 SSE。每步受单个 Run 的总时长上限（默认 120 秒）约束，步骤最多 8 个。
+
+## 9. 鉴权与隔离
 
 运行面的身份有两种，落到同一个 `RuntimeAccessContext`：
 
@@ -330,7 +367,7 @@ Session 查询条件按身份分两套：Starter 用户按 `principalKind` + `ow
 
 secret 只能由 `infra/ai` 的凭据存储解密。这些位置禁止出现 secret：Agent config、Run 快照、Session DTO、transcript、HarnessEvent、审计记录、日志和错误响应。应用凭据只存 sha256 哈希和前 12 位前缀，认证时按前缀查候选再做定长比较。
 
-## 9. 设计约束
+## 10. 设计约束
 
 不要在这些地方开第二套实现：
 
@@ -341,7 +378,7 @@ secret 只能由 `infra/ai` 的凭据存储解密。这些位置禁止出现 sec
 - 不在前端用 localStorage 或本地缓存恢复业务状态。
 - 不提前加分布式队列、跨节点活跃登记和多进程共享的 Run 注册表。当前活跃登记是单进程的。
 
-## 10. 继续读
+## 11. 继续读
 
 | 需求                                     | 去哪                                                         |
 | ---------------------------------------- | ------------------------------------------------------------ |

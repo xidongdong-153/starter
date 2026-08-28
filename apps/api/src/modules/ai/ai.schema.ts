@@ -724,6 +724,120 @@ export const aiToolExecutions = sqliteTable(
   ],
 );
 
+export const aiPipelineDefinitions = sqliteTable(
+  "ai_pipeline_definitions",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull().unique(),
+    description: text("description").notNull().default(""),
+    status: text("status").notNull().default("draft"),
+    revision: integer("revision").notNull().default(1),
+    stepsJson: text("steps_json").notNull(),
+    createdBy: text("created_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    updatedBy: text("updated_by").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    createdAt: timestamp("created_at").notNull(),
+    updatedAt: timestamp("updated_at").notNull(),
+  },
+  (table) => [
+    index("ai_pipeline_definitions_status_updated_idx").on(
+      table.status,
+      table.updatedAt,
+      table.id,
+    ),
+    check(
+      "ai_pipeline_definitions_status_check",
+      sql`${table.status} IN ('draft', 'enabled', 'disabled')`,
+    ),
+    check(
+      "ai_pipeline_definitions_revision_check",
+      sql`${table.revision} >= 1`,
+    ),
+    check(
+      "ai_pipeline_definitions_steps_json_check",
+      sql`json_valid(${table.stepsJson})`,
+    ),
+  ],
+);
+
+export const aiPipelineRuns = sqliteTable(
+  "ai_pipeline_runs",
+  {
+    id: text("id").primaryKey(),
+    pipelineId: text("pipeline_id")
+      .notNull()
+      .references(() => aiPipelineDefinitions.id, { onDelete: "restrict" }),
+    pipelineRevision: integer("pipeline_revision").notNull(),
+    principalKind: text("principal_kind").notNull().default("starter_user"),
+    ownerId: text("owner_id").references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    tenantId: text("tenant_id").notNull().default("starter"),
+    projectId: text("project_id").notNull().default("starter"),
+    externalUserId: text("external_user_id").notNull().default("starter"),
+    appId: text("app_id").references(() => aiAppCredentials.id, {
+      onDelete: "restrict",
+    }),
+    subjectType: text("subject_type"),
+    subjectId: text("subject_id"),
+    sessionId: text("session_id")
+      .notNull()
+      .references(() => aiAgentSessions.id, { onDelete: "cascade" }),
+    input: text("input").notNull(),
+    status: text("status").notNull(),
+    stepsStateJson: text("steps_state_json").notNull(),
+    finalOutput: text("final_output"),
+    errorCode: text("error_code"),
+    requestId: text("request_id").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+    startedAt: timestamp("started_at"),
+    finishedAt: timestamp("finished_at"),
+  },
+  (table) => [
+    index("ai_pipeline_runs_pipeline_created_idx").on(
+      table.pipelineId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_pipeline_runs_status_created_idx").on(
+      table.status,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_pipeline_runs_scope_user_created_idx").on(
+      table.tenantId,
+      table.projectId,
+      table.externalUserId,
+      table.createdAt,
+      table.id,
+    ),
+    index("ai_pipeline_runs_app_idx").on(table.appId),
+    check(
+      "ai_pipeline_runs_status_check",
+      sql`${table.status} IN ('pending', 'running', 'completed', 'failed', 'aborted')`,
+    ),
+    check(
+      "ai_pipeline_runs_revision_check",
+      sql`${table.pipelineRevision} >= 1`,
+    ),
+    check(
+      "ai_pipeline_runs_steps_state_json_check",
+      sql`json_valid(${table.stepsStateJson})`,
+    ),
+    check(
+      "ai_pipeline_runs_principal_check",
+      sql`(${table.principalKind} = 'starter_user' AND ${table.ownerId} IS NOT NULL AND ${table.appId} IS NULL) OR (${table.principalKind} = 'product_app' AND ${table.ownerId} IS NULL AND ${table.appId} IS NOT NULL)`,
+    ),
+    check(
+      "ai_pipeline_runs_subject_pair_check",
+      sql`(${table.subjectType} IS NULL AND ${table.subjectId} IS NULL) OR (${table.subjectType} IS NOT NULL AND ${table.subjectId} IS NOT NULL)`,
+    ),
+  ],
+);
+
 export const aiAgentDefinitionsRelations = relations(
   aiAgentDefinitions,
   ({ one, many }) => ({
@@ -843,3 +957,31 @@ export const aiToolExecutionsRelations = relations(
     }),
   }),
 );
+
+export const aiPipelineDefinitionsRelations = relations(
+  aiPipelineDefinitions,
+  ({ one, many }) => ({
+    creator: one(user, {
+      fields: [aiPipelineDefinitions.createdBy],
+      references: [user.id],
+      relationName: "pipeline_definition_creator",
+    }),
+    updater: one(user, {
+      fields: [aiPipelineDefinitions.updatedBy],
+      references: [user.id],
+      relationName: "pipeline_definition_updater",
+    }),
+    runs: many(aiPipelineRuns),
+  }),
+);
+
+export const aiPipelineRunsRelations = relations(aiPipelineRuns, ({ one }) => ({
+  pipeline: one(aiPipelineDefinitions, {
+    fields: [aiPipelineRuns.pipelineId],
+    references: [aiPipelineDefinitions.id],
+  }),
+  session: one(aiAgentSessions, {
+    fields: [aiPipelineRuns.sessionId],
+    references: [aiAgentSessions.id],
+  }),
+}));
