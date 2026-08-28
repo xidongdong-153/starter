@@ -89,6 +89,12 @@ export interface AiAgentRunService {
     sessionId: string,
     runId: string,
   ) => AgentRun;
+  /** 返回该 session 指定 lane 上仍在跑的 Run；没有就是 null。 */
+  activeRun: (
+    access: RuntimeAccessContext,
+    sessionId: string,
+    lane: string,
+  ) => AgentRun | null;
   abort: (
     access: RuntimeAccessContext,
     sessionId: string,
@@ -597,6 +603,23 @@ export function createAiAgentRunService(input: {
   }
 
   /**
+   * 刷新页面后找回 runId 的入口。
+   *
+   * 只看主库 Run 行的 starting / running，不看 registry：进程重启后
+   * `recoverInterrupted` 已经把非终态 Run 落成 interrupted，这里就返回 null。
+   */
+  function activeRun(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    lane: string,
+  ): AgentRun | null {
+    requireActiveSession(access, sessionId);
+    const record = repository.findActiveInScope(sessionId, lane, access);
+    if (!record) return null;
+    return toAgentRun(record, readLiveSnapshot(record));
+  }
+
+  /**
    * 活跃快照只在 Run 非终态时返回，终态后为 null，客户端回落 transcript。
    *
    * 判据用 Run row 状态而不是 registry handle：finalizeRun 先更新主库终态、
@@ -964,6 +987,7 @@ export function createAiAgentRunService(input: {
   return {
     startRun,
     get,
+    activeRun,
     trace,
     timeline,
     sequenceForEvent,

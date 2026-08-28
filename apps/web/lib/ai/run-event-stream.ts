@@ -15,6 +15,14 @@ export interface StartRunStreamInput {
   signal: AbortSignal
 }
 
+export interface ResumeRunStreamInput {
+  /** 只要比这个 sequence 更大的事件；传 0 就是从 run.started 开始全量回放。 */
+  afterSequence: number
+  runId: string
+  sessionId: string
+  signal: AbortSignal
+}
+
 /**
  * 启动 Agent Run 并按顺序产出 RunEvent。
  *
@@ -25,7 +33,22 @@ export interface StartRunStreamInput {
  * 单帧 JSON 或 schema 解析失败只丢这一帧，不中断整个流。
  */
 export async function* startRunStream(request: StartRunStreamInput): AsyncGenerator<RunEvent> {
-  const response = await openRunStream(request)
+  yield* readRunEvents(await openRunStream(request))
+}
+
+/**
+ * 接回一条已经存在的 Run 的事件流，不创建新的 Run。
+ *
+ * `afterSequence: 0` 会先回放这条 Run 的全部持久事件，再接上实时增量，
+ * 所以刷新页面后走的是和首次发送同一条折叠路径。Run 已经进终态时回放里就带着终态事件。
+ * 断开和坏帧的处理与 `startRunStream` 相同。
+ */
+export async function* resumeRunStream(request: ResumeRunStreamInput): AsyncGenerator<RunEvent> {
+  yield* readRunEvents(await openResumeStream(request))
+}
+
+/** 读 SSE 响应体并按帧产出 RunEvent；启动流和恢复流共用这一段。 */
+async function* readRunEvents(response: Response): AsyncGenerator<RunEvent> {
   const body = response.body
   if (!body) {
     throw new ApiRequestError(response.status, 'API 没有返回事件流。')
@@ -85,16 +108,44 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
   }
 
   if (!response.ok) {
-    const body = await readJson(response)
-    const failure = isApiFailureBody(body) ? body.error : null
-    throw new ApiRequestError(
-      response.status,
-      failure?.message ?? `启动 Agent Run 失败：${response.status}`,
-      failure?.code ?? null,
-    )
+    throw await toStreamError(response, `启动 Agent Run 失败：${response.status}`)
   }
 
   return response
+}
+
+/**
+ * 发起恢复请求。
+ *
+ * 用 GET `/events/stream`，不能再 POST 一次 `/runs`，那样会创建第二个 Run。
+ * `afterSequence` 走 query，`accept` 同样要覆盖 `apiRpc` 默认的 `application/json`。
+ */
+async function openResumeStream(request: ResumeRunStreamInput): Promise<Response> {
+  const { afterSequence, runId, sessionId, signal } = request
+  let response: Response
+
+  try {
+    response = await apiRpc.api.ai.sessions[':sessionId'].runs[':runId'].events.stream.$get(
+      { param: { runId, sessionId }, query: { afterSequence: String(afterSequence) } },
+      { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
+    )
+  } catch (error) {
+    if (signal.aborted) throw error
+    throw new ApiRequestError(0, 'API 服务连不上，请确认服务已经启动。')
+  }
+
+  if (!response.ok) {
+    throw await toStreamError(response, `恢复 Agent Run 事件流失败：${response.status}`)
+  }
+
+  return response
+}
+
+/** 把非 2xx 的 SSE 响应转成带 status 和 error code 的错误。 */
+async function toStreamError(response: Response, fallbackMessage: string): Promise<ApiRequestError> {
+  const body = await readJson(response)
+  const failure = isApiFailureBody(body) ? body.error : null
+  return new ApiRequestError(response.status, failure?.message ?? fallbackMessage, failure?.code ?? null)
 }
 
 /**

@@ -1,4 +1,4 @@
-import { and, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { runEventSchema, type RunEvent } from "@starter/contracts";
 import { generateId } from "@api/shared/id.js";
 import type { RunEventDraft } from "./run-event.repository.js";
@@ -38,6 +38,11 @@ export interface AiAgentRunRepository {
   findInScope: (
     runId: string,
     sessionId: string,
+    access: RuntimeAccessContext,
+  ) => AiAgentRunRecord | undefined;
+  findActiveInScope: (
+    sessionId: string,
+    lane: string,
     access: RuntimeAccessContext,
   ) => AiAgentRunRecord | undefined;
   findById: (id: string) => AiAgentRunRecord | undefined;
@@ -89,6 +94,32 @@ export function createAiAgentRunRepository(
       )
       .get();
     return row?.run;
+  }
+
+  /** 只取 starting / running；interrupted 是进程重启后的落地状态，不算在跑。 */
+  function findActiveInScope(
+    sessionId: string,
+    lane: string,
+    access: RuntimeAccessContext,
+  ): AiAgentRunRecord | undefined {
+    if (
+      sessionRepository &&
+      !sessionRepository.findInScope(sessionId, access)
+    ) {
+      return undefined;
+    }
+    return db
+      .select()
+      .from(aiAgentRuns)
+      .where(
+        and(
+          eq(aiAgentRuns.sessionId, sessionId),
+          eq(aiAgentRuns.lane, lane),
+          sql`${aiAgentRuns.status} IN ('starting', 'running')`,
+        ),
+      )
+      .orderBy(desc(aiAgentRuns.createdAt))
+      .get();
   }
 
   function findById(id: string): AiAgentRunRecord | undefined {
@@ -162,6 +193,7 @@ export function createAiAgentRunRepository(
   return {
     create,
     findInScope,
+    findActiveInScope,
     findById,
     markRunning,
     completeWithTerminalEvent,

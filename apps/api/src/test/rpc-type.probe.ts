@@ -257,6 +257,12 @@ type _ai22 = Assert<
     "$post"
   >
 >;
+type _ai23 = Assert<
+  Eq<
+    keyof C["api"]["ai"]["sessions"][":sessionId"]["active-run"] & "$get",
+    "$get"
+  >
+>;
 
 // ---- 4. 特殊接口保持原样：不伪造 JSON schema ----
 // POST /api/files 在 AppType 中（createRoute），但 form 是 File 任意对象
@@ -327,5 +333,6 @@ export type RpcTypeProbePass = [
   _ai20,
   _ai21,
   _ai22,
+  _ai23,
   _s1,
 ];

@@ -83,6 +83,20 @@ export async function getAgentRun(sessionId: string, runId: string): Promise<Age
   return parseApiData(agentRunSchema.safeParse(data), 'Agent Run')
 }
 
+/**
+ * 查当前会话 main lane 仍在跑的 Run，刷新页面后用它拿回 runId。
+ * 返回 null 表示没有 Run 在跑（包括 API 进程重启后被标成 interrupted 的），页面保持静态历史。
+ */
+export async function getActiveAgentRun(sessionId: string): Promise<AgentRun | null> {
+  const data = await unwrapApiData<unknown>(
+    apiRpc.api.ai.sessions[':sessionId']['active-run'].$get(
+      { param: { sessionId }, query: {} },
+      { init: { cache: 'no-store' } },
+    ),
+  )
+  return parseApiData(agentRunSchema.nullable().safeParse(data), '进行中的 Agent Run')
+}
+
 /** 取消仍在运行的 Run。已经进终态的 Run 返回 409 `AI.RUN_NOT_ACTIVE`。 */
 export async function abortAgentRun(sessionId: string, runId: string): Promise<AgentRun> {
   const data = await unwrapApiData<unknown>(

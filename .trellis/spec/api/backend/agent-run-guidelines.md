@@ -19,6 +19,7 @@ interface AiAgentRunService {
     requestId: string
   }): Promise<{ runId: string; events: AsyncIterable<RunEvent> }>
   get(access: RuntimeAccessContext, sessionId: string, runId: string): AgentRun
+  activeRun(access: RuntimeAccessContext, sessionId: string, lane: string): AgentRun | null
   timeline(access: RuntimeAccessContext, sessionId: string, runId: string, afterSequence: number, pageSize: number): RunTimeline
   sequenceForEvent(access: RuntimeAccessContext, sessionId: string, runId: string, eventId: string): number
   subscribe(access: RuntimeAccessContext, sessionId: string, runId: string, afterSequence: number): AsyncIterable<RunEvent>
@@ -30,12 +31,13 @@ interface AiAgentRunService {
 }
 ```
 
-Repository 方法见 `apps/api/src/modules/ai/run/run.repository.ts`：`create`、`findOwned`（join session 校验 owner）、`findById`、`markRunning`、`updateTerminal`（条件更新）、`listNonTerminal`。
+Repository 方法见 `apps/api/src/modules/ai/run/run.repository.ts`：`create`、`findOwned`（join session 校验 owner）、`findById`、`markRunning`、`updateTerminal`（条件更新）、`listNonTerminal`、`findActiveInScope`（按 session + lane 取 `starting`/`running` 的一条）。
 
-Route 9 个 endpoint：
+Route 10 个 endpoint：
 
 ```text
 POST   /api/ai/sessions/{sessionId}/runs                              # 创建 Run + SSE
+GET    /api/ai/sessions/{sessionId}/active-run                        # 该 lane 仍在跑的 Run，没有时 data 为 null
 GET    /api/ai/sessions/{sessionId}/runs/{runId}
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/timeline              # 持久时间线
 GET    /api/ai/sessions/{sessionId}/runs/{runId}/events                # 完整 RunEvent
@@ -59,6 +61,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 快照内容是一条 `timeline`（message / tool / compaction），折叠规则必须与 Admin `stream-reducer.ts` 同构，包括 `message.completed` 不重排块、timeline 128 / blocks 64 上限丢最旧、按 sequence 去重。改任一边都要同时改另一边，否则 SSE 视图和轮询视图会错位。
 - `run.completed` 带必填 `reason`，值来自 executor 的 `completionReason`（只在 completed 时有值，缺失时当 `model_finished`）。failed / aborted 的事件形状不变。
 - 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
+- `activeRun` 的判据只有主库 Run 行的 `starting` / `running`，不查 `ActiveRunRegistry`：registry 是进程内索引，进程重启后 `recoverInterrupted` 已经把非终态 Run 落成 `interrupted`，此时应该返回 null，让客户端保持静态历史。查询参数 `lane` 默认 `main`，响应 data 与 `GET /runs/{runId}` 同源（`toAgentRun(record, readLiveSnapshot(record))`），没有在跑的 Run 时 data 是 null 而不是 404。
 - SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。
 
 ## 4. Validation & Error Matrix
@@ -104,6 +107,7 @@ POST   /api/ai/sessions/{sessionId}/runs/{runId}/follow-ups
 - 终态原因：撞 `maxTurns` 的 Run 的 `run.completed.data.reason` 为 `max_turns`，正常结束为 `model_finished`。
 - 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读取 `test-fixtures/run-event-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；产品前端自己折叠事件时使用同一份 fixture 校验。任一边漂移都会红。
 - `run-event-recovery.test.ts` 覆盖回放窗口竞态、delta/progress 游标、进程重启后的持久 Timeline 和 GET `/events/stream` 的 `Last-Event-ID`；测试通过 `createTestApp` 注入测试 Provider，不依赖真实模型。
+- 刷新恢复链路（`run-event-recovery.test.ts`，用挂住的 streamFn 把 Run 停在 running）：`GET /active-run` 返回该 Run 且 `status` 为 `running`；同一时刻 transcript 已含本轮 `user_message`、不含 `assistant_message`；断掉原来那条 SSE 后 Run 继续跑；用查到的 runId 连 `events/stream?afterSequence=0` 能收到从 sequence 1 开始的连续事件并以终态事件收尾；Run 进终态后 `GET /active-run` 的 data 为 null；他人查同一 session 的 `active-run` 返回 404。
 
 ## 7. Wrong vs Correct
 

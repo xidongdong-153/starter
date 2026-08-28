@@ -24,6 +24,13 @@ export function startRunStream(input: {
   input: string;
   signal: AbortSignal;
 }): AsyncGenerator<RunEvent>;
+export function resumeRunStream(input: {
+  sessionId: string;
+  runId: string;
+  /** 只要更大的 sequence；0 表示从 run.started 开始全量回放。 */
+  afterSequence: number;
+  signal: AbortSignal;
+}): AsyncGenerator<RunEvent>;
 ```
 
 接口归属：JSON 请求放 `lib/api/*.api.ts`，创建 Run 的 SSE 放 `lib/ai/run-event-stream.ts`，Run 编排放 `hooks/`，纯协议逻辑放 `lib/ai/`。已有 Run 的恢复流使用 API 的 `/events/stream` 入口，客户端不得重新 POST 创建 Run。
@@ -40,6 +47,7 @@ export function startRunStream(input: {
 | 改名 Session | `PATCH /api/ai/sessions/{sessionId}`                   | `AgentSession`，`title` trim 后 1-120 字符，至少传一个字段 |
 | 归档 Session | `DELETE /api/ai/sessions/{sessionId}`                  | `AgentSession`，只写 `archivedAt`，不物理删除 |
 | 历史         | `GET /api/ai/sessions/{sessionId}/transcript`          | 默认最新一页，items 时间正序 |
+| 进行中的 Run | `GET /api/ai/sessions/{sessionId}/active-run`           | `AgentRun \| null`，只报 `starting` / `running`，`lane` 默认 `main` |
 | 启动 Run     | `POST /api/ai/sessions/{sessionId}/runs`               | `text/event-stream`       |
 | 恢复 Run     | `GET /api/ai/sessions/{sessionId}/runs/{runId}/events/stream` | `text/event-stream`，支持 `afterSequence` 或 `Last-Event-ID` |
 | Run 状态     | `GET /api/ai/sessions/{sessionId}/runs/{runId}`         | `AgentRun`，含可选 `live` |
@@ -60,6 +68,10 @@ SSE 帧解析规则：
 
 | 条件                               | 页面行为                                                          |
 | ---------------------------------- | ----------------------------------------------------------------- |
+| 挂载或切回会话时 `active-run` 返回 Run | 进运行中状态，连 `events/stream?afterSequence=0` 全量回放并接实时增量；不设 `pendingUserText`，这一轮的用户提问已经在 transcript 里 |
+| `active-run` 返回 null             | 保持静态历史。进程重启后 Run 已被标 `interrupted`，这一轮只有用户提问没有回复 |
+| 恢复流一个事件都没收到             | 不按启动失败报错，Run 刚查到还在跑，转轮询 `GET /runs/{runId}`      |
+| 恢复流还没拿到响应头就被停止        | 按已中止处理并转轮询，不显示请求失败。`runId` 在查到 Run 时就已就位，这个窗口里停止按钮是可用的 |
 | 收到终态事件                       | 读 transcript 最新一页替换流式视图                                |
 | 流提前结束且收到过事件             | 不报错、不清空已有内容，转轮询 `GET /runs/{runId}`                 |
 | 流提前结束且一个事件都没收到       | 按启动失败报错                                                    |
@@ -99,6 +111,8 @@ SSE 帧解析规则：
 - 会话切换 / 归档的异步操作：目标 session id 先用 ref 更新，再读 transcript；切换前 abort 旧流、停轮询，用递增 token 作废晚到的 transcript 响应；会话操作期间用互斥位（`sessionBusy`）禁住入口，结束时 `finally` 复位。
 - 异步回调回来后先校验身份（`streamRef.current === controller`、轮询 token），不靠时序保证正确。
 - 跨渲染读的 session id 用 ref，不从 memo 闭包读。
+- 恢复入口和发送入口共用同一段事件消费逻辑，只把事件来源和「零事件怎么算」参数化。恢复走 `resumeRunStream`，发送走 `startRunStream`，两边都用 `streamRef` 存 controller，卸载、切会话、点停止的 abort 路径不分叉。
+- 恢复请求放在 transcript 之后：挂载时两个请求并行发出，切会话时先渲染历史再查 `active-run`，两处都要先过失效令牌校验，再把查到的 Run 交给恢复入口。
 
 ## 7. Tests Required
 
@@ -116,7 +130,7 @@ SSE 帧解析规则：
 >
 > 判断断言强度的方法是逐条改坏 `chat-events.ts` 的规则，确认对应用例会红。
 
-SSE 解析测试至少覆盖：心跳注释行、坏帧丢弃、`\r\n\r\n` 分隔、跨 chunk 的半帧、末帧没有结尾空行、非 2xx 错误。
+SSE 解析测试至少覆盖：心跳注释行、坏帧丢弃、`\r\n\r\n` 分隔、跨 chunk 的半帧、末帧没有结尾空行、非 2xx 错误。恢复流额外覆盖：`afterSequence` 进 query、从 sequence 1 产出到终态事件、非 2xx 抛出带 status 的错误。
 
 ## 8. Wrong vs Correct
 
@@ -169,8 +183,8 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 
 > **Warning**: 这类问题五条常规命令都抓不到。`pnpm build` 走 production 条件读 `dist`，`tsc` 和 vitest 会做 `.js` 到 `.ts` 的扩展名替换，只有 `pnpm dev` 会炸。web 第一次从共享包做值导入（而不是 `import type`）时必须起一次 dev 页面验证。
 
-## 9. 边界
+## 10. 边界
 
 - 会话列表、切换、改名、归档已支持（`lib/ai/chat-session-view.ts` 负责列表纯函数，`use-chat-run.ts` 负责状态与异步编排）。steer、follow-up、transcript 翻页、多 lane 视图仍不在范围内。
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
-- 刷新页面时如果 Run 还在跑，只能读 transcript，看不到进行中的输出。运行面没有「列出某 Session 的 Run」接口，接回需要先改 API。
+- 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。

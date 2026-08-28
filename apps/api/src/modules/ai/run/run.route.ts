@@ -9,6 +9,7 @@ import { toRuntimeAccessContext } from "@api/modules/ai/principal.js";
 import {
   abortAgentRunRoute,
   followUpAgentRunRoute,
+  getActiveAgentRunRoute,
   getAgentRunRoute,
   getAgentRunEventsRoute,
   getAgentRunEventsStreamRoute,
@@ -174,6 +175,17 @@ export function createAiAgentRunRoute(deps: {
         200,
       ),
     )
+    .openapi({ ...getActiveAgentRunRoute, middleware: requireAuth }, (c) => {
+      const params = c.req.valid("param");
+      const query = c.req.valid("query");
+      return c.json(
+        createSuccessResponse(
+          service.activeRun(access(c), params.sessionId, query.lane),
+          c.var.requestId,
+        ),
+        200,
+      );
+    })
     .openapi({ ...getAgentRunTimelineRoute, middleware: requireAuth }, (c) => {
       const params = c.req.valid("param");
       const query = c.req.valid("query");

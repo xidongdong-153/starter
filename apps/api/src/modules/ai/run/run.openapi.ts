@@ -1,4 +1,5 @@
 import {
+  activeAgentRunQuerySchema,
   agentRunSchema,
   followUpAgentRunSchema,
   runTimelineQuerySchema,
@@ -153,6 +154,26 @@ export const getAgentRunRoute = createRoute({
   request: { params: runParams },
   responses: {
     200: runResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+  },
+});
+
+export const getActiveAgentRunRoute = createRoute({
+  method: "get",
+  path: "/api/ai/sessions/{sessionId}/active-run",
+  tags,
+  security,
+  description:
+    "查该 Session 指定 lane 上仍在跑的 Run，用于刷新页面后找回 runId。只返回 starting 和 running 的 Run，没有时 data 为 null。",
+  request: { params: sessionParams, query: activeAgentRunQuerySchema },
+  responses: {
+    200: apiSuccessResponse(
+      agentRunSchema.nullable(),
+      "Session 进行中的 Agent Run",
+      "ActiveAgentRunResponse",
+    ),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,

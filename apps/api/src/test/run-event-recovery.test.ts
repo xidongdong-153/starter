@@ -142,6 +142,114 @@ it("查询与订阅之间产生新事件时不丢不重", async () => {
   }
 });
 
+it("按 session 查到进行中的 Run 后可以从 sequence 1 恢复事件流", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "starter-recovery-active-"));
+  let release!: () => void;
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, "恢复流正文"),
+  });
+  try {
+    seedEnabledModel(test.runtime);
+    const agentId = seedAgent(test.runtime, []);
+    const user = await register(test.app, "recovery-active@example.com");
+    const sessionId = await createSession(test.app, user.cookie);
+    const response = await test.app.request(
+      `/api/ai/sessions/${sessionId}/runs`,
+      {
+        method: "POST",
+        headers: { cookie: user.cookie, "Content-Type": "application/json" },
+        body: JSON.stringify({ agentId, input: "刷新前的提问" }),
+      },
+    );
+    // 等到第一帧（run.started），说明主库 Run 已经是 running。
+    const { prefix, reader } = await readFirstSseFrame(response);
+    const startedRunId = parseSseEvents(prefix)[0]?.runId;
+    expect(startedRunId).toBeTruthy();
+    // 刷新页面就是原来那条 SSE 断开：断开只结束订阅，Run 继续跑。
+    await reader.cancel();
+
+    const active = await test.app.request(
+      `/api/ai/sessions/${sessionId}/active-run`,
+      { headers: { cookie: user.cookie } },
+    );
+    const activeBody = await readSuccess<{ id: string; status: string } | null>(
+      active,
+    );
+    expect(activeBody.data?.id).toBe(startedRunId);
+    expect(activeBody.data?.status).toBe("running");
+
+    // 他人查同一个 session 的进行中 Run 不暴露存在性。
+    const other = await register(test.app, "recovery-active-other@example.com");
+    const foreign = await test.app.request(
+      `/api/ai/sessions/${sessionId}/active-run`,
+      { headers: { cookie: other.cookie } },
+    );
+    expect(foreign.status).toBe(404);
+
+    // 这一轮的用户提问已经在 transcript 里，assistant 消息要等终态才落盘。
+    const transcript = await test.app.request(
+      `/api/ai/sessions/${sessionId}/transcript`,
+      { headers: { cookie: user.cookie } },
+    );
+    const transcriptBody = await readSuccess<{
+      items: Array<{ content?: string; type: string }>;
+    }>(transcript);
+    expect(
+      transcriptBody.data.items.some(
+        (item) =>
+          item.type === "user_message" && item.content === "刷新前的提问",
+      ),
+    ).toBe(true);
+    expect(
+      transcriptBody.data.items.some(
+        (item) => item.type === "assistant_message",
+      ),
+    ).toBe(false);
+
+    const resumed = await test.app.request(
+      `/api/ai/sessions/${sessionId}/runs/${startedRunId}/events/stream?afterSequence=0`,
+      { headers: { cookie: user.cookie } },
+    );
+    expect(resumed.status).toBe(200);
+    const resumedBody = readSseBody(resumed);
+    release();
+    const resumedEvents = parseSseEvents(await resumedBody);
+    const sequences = resumedEvents.map((event) => event.sequence);
+    expect(sequences).toEqual(
+      Array.from({ length: sequences.length }, (_, index) => index + 1),
+    );
+    expect(resumedEvents[0]?.type).toBe("run.started");
+    expect(
+      resumedEvents.some(
+        (event) =>
+          event.type === "message.delta" && event.data.delta === "恢复流正文",
+      ),
+    ).toBe(true);
+    expect(resumedEvents.at(-1)?.type).toBe("run.completed");
+
+    const afterTerminal = await test.app.request(
+      `/api/ai/sessions/${sessionId}/active-run`,
+      { headers: { cookie: user.cookie } },
+    );
+    const afterTerminalBody = await readSuccess<{ id: string } | null>(
+      afterTerminal,
+    );
+    expect(afterTerminalBody.data).toBeNull();
+  } finally {
+    test.cleanup();
+    await store.close();
+  }
+});
+
 it("从最后一个 message.delta 和 tool.progress 之后继续到 terminal", async () => {
   const directory = await mkdtemp(join(tmpdir(), "starter-recovery-cursor-"));
   const store = createPiSessionStore({

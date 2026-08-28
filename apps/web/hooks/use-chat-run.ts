@@ -2,10 +2,12 @@
 
 import type {
   AgentDefinitionSummary,
+  AgentRun,
   AgentRunStatus,
   AgentSession,
   AgentTranscriptItem,
   ApiErrorCode,
+  RunEvent,
 } from '@starter/contracts'
 import { ApiErrorCodes } from '@starter/contracts'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -15,11 +17,12 @@ import type { ChatRunState } from '@web/lib/ai/chat-events'
 import { applyRunEvent, createChatRunState } from '@web/lib/ai/chat-events'
 import type { ChatNotice } from '@web/lib/ai/chat-run-view'
 import { applyLiveSnapshot, describeError, terminalNotice } from '@web/lib/ai/chat-run-view'
-import { startRunStream } from '@web/lib/ai/run-event-stream'
+import { resumeRunStream, startRunStream } from '@web/lib/ai/run-event-stream'
 import {
   abortAgentRun,
   archiveAgentSession,
   createAgentSession,
+  getActiveAgentRun,
   getAgentRun,
   getAgentSessions,
   getAgentTranscript,
@@ -37,6 +40,7 @@ const TITLE_MAX_LENGTH = 40
  * Chat 页面的数据与 Run 生命周期。
  *
  * 挂载时读 Agent 列表和 Session 列表，有未归档 Session 就复用最近一个并读 transcript。
+ * 刷新页面时这一轮可能还在跑：按 session 查到进行中的 Run 就接回它的事件流，继续渲染。
  * 发送时先消费 SSE 折叠出流式视图，Run 进终态后用 transcript 替换。
  * 流提前结束不算失败：已经收到过事件就轮询 `GET /runs/{runId}`，用 API 的 `live` 快照覆盖本地 timeline；
  * 一个事件都没收到才按启动失败报错。
@@ -92,43 +96,6 @@ export function useChatRun(userId: string | null) {
       if (pollRef.current !== null) clearTimeout(pollRef.current)
     }
   }, [])
-
-  useEffect(() => {
-    if (!userId) return
-    let active = true
-    setBoot('loading')
-
-    void (async () => {
-      try {
-        const [agentList, sessionList] = await Promise.all([getRuntimeAgents(), getAgentSessions()])
-        if (!active) return
-        setAgents(agentList.items)
-        setAgentId(agentList.items[0]?.id ?? '')
-
-        // 列表按更新时间倒序，第一条是最近使用的未归档 Session；没有就等首次发送时再创建。
-        // 整个列表本地维护，切换会话用；只有最近 20 条，超过时用 total 提示。
-        setSessions(sessionList.items)
-        setSessionTotal(sessionList.total)
-
-        const latest = sessionList.items[0]
-        if (latest) {
-          const transcript = await getAgentTranscript(latest.id)
-          if (!active) return
-          rememberSession(latest.id)
-          setHistory(transcript.items)
-        }
-        setBoot('ready')
-      } catch (error) {
-        if (!active) return
-        setNotice({ kind: isApiRequestError(error, 401) ? 'auth' : 'error', message: describeError(error) })
-        setBoot('failed')
-      }
-    })()
-
-    return () => {
-      active = false
-    }
-  }, [userId, bootAttempt, rememberSession])
 
   const handleRequestError = useCallback(
     (error: unknown, retryText?: string) => {
@@ -231,18 +198,18 @@ export function useChatRun(userId: string | null) {
     [finishRun, handleRequestError, stopPolling],
   )
 
-  const consumeRunStream = useCallback(
-    async (currentSessionId: string, value: string, controller: AbortController) => {
+  const consumeRunEvents = useCallback(
+    async (
+      currentSessionId: string,
+      events: AsyncIterable<RunEvent>,
+      controller: AbortController,
+      mode: 'resume' | 'start',
+    ) => {
       let state = createChatRunState()
       let received = 0
       let terminal = false
 
-      for await (const event of startRunStream({
-        agentId,
-        input: value,
-        sessionId: currentSessionId,
-        signal: controller.signal,
-      })) {
+      for await (const event of events) {
         received += 1
         if (runIdRef.current !== event.runId) {
           runIdRef.current = event.runId
@@ -266,7 +233,8 @@ export function useChatRun(userId: string | null) {
       }
 
       const runId = runIdRef.current
-      if (received > 0 && runId) {
+      // 恢复流一个事件都没收到只说明流没建起来，Run 本身刚查到还在跑，照样转轮询。
+      if (runId && (received > 0 || mode === 'resume')) {
         // 用户点停止时是本地主动 abort，不是断流，不能给错的归因提示。
         if (!controller.signal.aborted) setNotice({ kind: 'info', message: '事件流已断开，正在查询运行状态。' })
         beginRunPolling(currentSessionId, runId)
@@ -282,8 +250,98 @@ export function useChatRun(userId: string | null) {
 
       throw new Error('Agent Run 没有产生任何事件，请稍后重试。')
     },
-    [agentId, beginRunPolling, finishRun],
+    [beginRunPolling, finishRun],
   )
+
+  /**
+   * 接回一条已经在跑的 Run：进运行中状态，从 sequence 1 全量回放并继续消费实时增量。
+   *
+   * 不设 `pendingUserText`：这一轮的用户提问 Run 开始时就已经在 transcript 里，再设一份会出现两个相同的气泡。
+   * 调用方要先用失效令牌确认 `sessionId` 还是当前会话，再把查到的 Run 交给它。
+   */
+  const resumeActiveRun = useCallback(
+    async (currentSessionId: string, active: AgentRun) => {
+      stopPolling()
+      streamRef.current?.abort()
+      runIdRef.current = active.id
+      setRunId(active.id)
+      setRunState(createChatRunState())
+      setRunning(true)
+      setStopping(false)
+
+      const controller = new AbortController()
+      streamRef.current = controller
+
+      try {
+        await consumeRunEvents(
+          currentSessionId,
+          resumeRunStream({
+            afterSequence: 0,
+            runId: active.id,
+            sessionId: currentSessionId,
+            signal: controller.signal,
+          }),
+          controller,
+          'resume',
+        )
+      } catch (error) {
+        if (!mountedRef.current || streamRef.current !== controller) return
+        // 建流阶段被停止：Run 已经在服务端跑着，runId 也已知，转轮询等它的终态提示，不按请求失败报错。
+        if (controller.signal.aborted) {
+          beginRunPolling(currentSessionId, active.id)
+          return
+        }
+        setRunning(false)
+        setStopping(false)
+        setRunState(null)
+        handleRequestError(error)
+      }
+    },
+    [beginRunPolling, consumeRunEvents, handleRequestError, stopPolling],
+  )
+
+  useEffect(() => {
+    if (!userId) return
+    let active = true
+    setBoot('loading')
+
+    void (async () => {
+      try {
+        const [agentList, sessionList] = await Promise.all([getRuntimeAgents(), getAgentSessions()])
+        if (!active) return
+        setAgents(agentList.items)
+        setAgentId(agentList.items[0]?.id ?? '')
+
+        // 列表按更新时间倒序，第一条是最近使用的未归档 Session；没有就等首次发送时再创建。
+        // 整个列表本地维护，切换会话用；只有最近 20 条，超过时用 total 提示。
+        setSessions(sessionList.items)
+        setSessionTotal(sessionList.total)
+
+        const latest = sessionList.items[0]
+        if (latest) {
+          // transcript 和 active-run 并行请求，刷新页面时少一个往返。
+          const [transcript, activeRun] = await Promise.all([
+            getAgentTranscript(latest.id),
+            getActiveAgentRun(latest.id),
+          ])
+          if (!active) return
+          rememberSession(latest.id)
+          setHistory(transcript.items)
+          // 恢复流要一直读到 Run 终态，不能阻住首屏。
+          if (activeRun) void resumeActiveRun(latest.id, activeRun)
+        }
+        setBoot('ready')
+      } catch (error) {
+        if (!active) return
+        setNotice({ kind: isApiRequestError(error, 401) ? 'auth' : 'error', message: describeError(error) })
+        setBoot('failed')
+      }
+    })()
+
+    return () => {
+      active = false
+    }
+  }, [userId, bootAttempt, rememberSession, resumeActiveRun])
 
   const send = useCallback(
     async (value: string) => {
@@ -311,7 +369,17 @@ export function useChatRun(userId: string | null) {
           rememberSession(created.id)
           setSessions((items) => upsertSession(items, created))
         }
-        await consumeRunStream(activeSessionId, value, controller)
+        await consumeRunEvents(
+          activeSessionId,
+          startRunStream({
+            agentId,
+            input: value,
+            sessionId: activeSessionId,
+            signal: controller.signal,
+          }),
+          controller,
+          'start',
+        )
       } catch (error) {
         if (!mountedRef.current) return
         setRunning(false)
@@ -321,7 +389,7 @@ export function useChatRun(userId: string | null) {
         handleRequestError(error, value)
       }
     },
-    [agentId, consumeRunStream, handleRequestError, rememberSession, running, sessionId, stopPolling],
+    [agentId, consumeRunEvents, handleRequestError, rememberSession, running, sessionId, stopPolling],
   )
 
   const stop = useCallback(async () => {
@@ -361,6 +429,10 @@ export function useChatRun(userId: string | null) {
         setHistory(transcript.items)
         setRunState(null)
         setPendingUserText(null)
+        // 切回的会话可能还有 Run 在跑，查到就接回它的事件流。
+        const activeRun = await getActiveAgentRun(targetSessionId)
+        if (!mountedRef.current || token !== selectTokenRef.current) return
+        if (activeRun) void resumeActiveRun(targetSessionId, activeRun)
       } catch (error) {
         if (!mountedRef.current || token !== selectTokenRef.current) return
         handleRequestError(error)
@@ -368,7 +440,7 @@ export function useChatRun(userId: string | null) {
         if (mountedRef.current && token === selectTokenRef.current) setSessionBusy(false)
       }
     },
-    [handleRequestError, rememberSession, stopPolling],
+    [handleRequestError, rememberSession, resumeActiveRun, stopPolling],
   )
 
   /** 新建对话：只清空本地引用和时间线，等首次发送时再 POST 创建。 */

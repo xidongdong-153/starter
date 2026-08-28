@@ -1314,6 +1314,12 @@ export const runTimelineQuerySchema = z.strictObject({
 })
 export type RunTimelineQuery = z.infer<typeof runTimelineQuerySchema>
 
+/** 按 session 查进行中 Run 的查询参数；一个 session 的一个 lane 同时只会有一条 Run 在跑。 */
+export const activeAgentRunQuerySchema = z.strictObject({
+  lane: agentLaneSchema.default('main'),
+})
+export type ActiveAgentRunQuery = z.infer<typeof activeAgentRunQuerySchema>
+
 export const runTimelineSchema = z.strictObject({
   items: z.array(runEventSchema),
   afterSequence: z.number().int().min(0),

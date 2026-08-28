@@ -528,7 +528,7 @@ event: <RunEvent.type>
 data: <完整 RunEvent JSON>
 ```
 
-`sequence` 在单个 Run 内递增；SSE 连接断开不触发 abort。POST `/api/ai/sessions/{sessionId}/runs` 只创建 Run 并打开实时流；已有 Run 的断线恢复使用 GET `/api/ai/sessions/{sessionId}/runs/{runId}/events/stream`，支持 `afterSequence` 或 `Last-Event-ID`，不会创建第二个 Run。客户端在进程内流结束时可查询 Run 的 live snapshot，Run 进入终态后读取 Timeline 和 Transcript。live 只表示当前进程内的 starting/running 视图，`ai_run_events`、主库 Run 状态、Pi terminal entry 和 Transcript 分别保存持久事实。
+`sequence` 在单个 Run 内递增；SSE 连接断开不触发 abort。POST `/api/ai/sessions/{sessionId}/runs` 只创建 Run 并打开实时流；已有 Run 的断线恢复使用 GET `/api/ai/sessions/{sessionId}/runs/{runId}/events/stream`，支持 `afterSequence` 或 `Last-Event-ID`，不会创建第二个 Run。刷新页面后客户端手上没有 runId，先用 GET `/api/ai/sessions/{sessionId}/active-run` 按 session 找回仍在跑的 Run，再用它恢复事件流。客户端在进程内流结束时可查询 Run 的 live snapshot，Run 进入终态后读取 Timeline 和 Transcript。live 只表示当前进程内的 starting/running 视图，`ai_run_events`、主库 Run 状态、Pi terminal entry 和 Transcript 分别保存持久事实。
 
 `packages/contracts/src/ai.ts` 是 Runtime DTO、Transcript、Run snapshot 和 RunEvent 的唯一公共 schema 来源。Admin/Web 不得本地复制事件联合或把 Provider secret、`ownerId`、Pi 类型和 UI reducer 字段加入运行协议。
 

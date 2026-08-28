@@ -2,8 +2,21 @@ import { expect, it, vi } from 'vitest'
 import type { RunEvent } from '@starter/contracts'
 
 const post = vi.fn()
-vi.mock('@web/lib/rpc', () => ({ apiRpc: { api: { ai: { sessions: { ':sessionId': { runs: { $post: post } } } } } } }))
-const { startRunStream } = await import('@web/lib/ai/run-event-stream')
+const streamGet = vi.fn()
+vi.mock('@web/lib/rpc', () => ({
+  apiRpc: {
+    api: {
+      ai: {
+        sessions: {
+          ':sessionId': {
+            runs: { $post: post, ':runId': { events: { stream: { $get: streamGet } } } },
+          },
+        },
+      },
+    },
+  },
+}))
+const { resumeRunStream, startRunStream } = await import('@web/lib/ai/run-event-stream')
 
 const ids = {
   sessionId: '01958c80-8df7-7ce2-8f90-1234567890a1',
@@ -94,4 +107,63 @@ it('非 2xx 抛出带 status 的错误', async () => {
       signal: new AbortController().signal,
     }).next(),
   ).rejects.toThrow('找不到 Session')
+})
+
+it('恢复流按 afterSequence 请求，从 sequence 1 产出到终态事件', async () => {
+  const events = [
+    event(
+      'run.started',
+      {
+        agentId: ids.agentId,
+        agentRevision: 1,
+        model: { providerId: 'openai', modelId: 'gpt-test' },
+        outputContract: null,
+      },
+      1,
+    ),
+    event('message.started', { role: 'assistant', partPolicy: 'text_and_thinking' }, 2, { messageId: ids.messageId }),
+    event('message.delta', { partId: 'text-0', delta: '恢复' }, 3, { messageId: ids.messageId }),
+    event('run.completed', { finalEntryId: null, reason: 'model_finished' }, 4),
+  ]
+  streamGet.mockResolvedValue(
+    sseResponse(
+      `: heartbeat\n\n${events.map((item) => `id: ${item.eventId}\nevent: ${item.type}\r\ndata: ${JSON.stringify(item)}\n\n`).join('')}`,
+    ),
+  )
+  const received: RunEvent[] = []
+  for await (const item of resumeRunStream({
+    afterSequence: 0,
+    runId: ids.runId,
+    sessionId: ids.sessionId,
+    signal: new AbortController().signal,
+  }))
+    received.push(item)
+  expect(received.map((item) => item.sequence)).toEqual([1, 2, 3, 4])
+  expect(received.at(-1)?.type).toBe('run.completed')
+  expect(streamGet.mock.calls[0]?.[0]).toEqual({
+    param: { runId: ids.runId, sessionId: ids.sessionId },
+    query: { afterSequence: '0' },
+  })
+  expect(streamGet).toHaveBeenCalledTimes(1)
+})
+
+it('恢复流非 2xx 抛出带 status 的错误', async () => {
+  streamGet.mockResolvedValue(
+    new Response(
+      JSON.stringify({
+        ok: false,
+        error: { code: 'COMMON.NOT_FOUND', message: '找不到 Run' },
+        meta: { requestId: 'r', timestamp: new Date().toISOString() },
+      }),
+      { status: 404, headers: { 'content-type': 'application/json' } },
+    ),
+  )
+  await expect(
+    resumeRunStream({
+      afterSequence: 0,
+      runId: ids.runId,
+      sessionId: ids.sessionId,
+      signal: new AbortController().signal,
+    }).next(),
+  ).rejects.toThrow('找不到 Run')
 })
