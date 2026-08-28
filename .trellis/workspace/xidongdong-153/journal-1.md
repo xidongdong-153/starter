@@ -660,3 +660,25 @@ Web 用公开 AI Runtime API 做出最小 Chat：单 Session、单 lane、文本
 - 浏览器实测通过：会话栏渲染、切换会话、新建对话、改名完整流（改后已恢复原标题）；归档（DELETE 不可逆）和运行中禁用未在真实数据上执行
 - spec 已同步：ai-runtime-consumer.md 补 PATCH/DELETE 契约、会话操作 404、去掉「Session 列表切换」边界
 - 遗留：08-24-agent-transcript-custom-entry-noise 仍 in_progress（改动已在 2ecd495 提交，疑似未归档）
+
+
+## Session 8: Web Chat 左右布局改造与美化及滚动修复
+
+**Date**: 2026-08-28
+**Task**: Web Chat 左右布局改造与美化及滚动修复
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+完成 Web 端 Chat UI 左右双栏布局改造，左侧为独立滚动的会话侧边栏（支持新建、切换、改名、归档与移动端折叠抽屉），右侧为主对话区（顶部信息栏、中部消息流独立滚动及自动触底、底部固定输入框）。修复聚焦输入框和消息流滚动导致外层页面向下位移的缺陷。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `4750344` | (see git log) |
+
+### Status
+
+[OK] **Completed**

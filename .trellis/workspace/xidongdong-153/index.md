@@ -8,8 +8,8 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 7
-- **Last Active**: 2026-08-18
+- **Total Sessions**: 8
+- **Last Active**: 2026-08-28
 <!-- @@@/auto:current-status -->
 
 ---
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~549 | Active |
+| `journal-1.md` | ~684 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 8 | 2026-08-28 | Web Chat 左右布局改造与美化及滚动修复 | `4750344` | `main` |
 | 7 | 2026-08-18 | 拆分 Pi Agent Harness 父子任务 | `4486d9c` | `main` |
 | 6 | 2026-08-16 | 优化AI会话admin页面UI交互与显示设计 | `d7a5c89` | `main` |
 | 5 | 2026-08-10 | 完成授权审计与 RBAC 治理工作树 | `580910c`, `2b5f8de` | `main` |
