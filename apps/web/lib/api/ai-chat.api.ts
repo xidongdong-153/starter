@@ -5,6 +5,7 @@ import type {
   AgentSessionList,
   AgentTranscript,
   CreateAgentSessionInput,
+  StructuredOutputList,
 } from '@starter/contracts'
 import {
   agentDefinitionSummaryListSchema,
@@ -12,6 +13,7 @@ import {
   agentSessionListSchema,
   agentSessionSchema,
   agentTranscriptSchema,
+  structuredOutputListSchema,
 } from '@starter/contracts'
 import { apiRpc, unwrapApiData } from '@web/lib/rpc'
 
@@ -70,6 +72,33 @@ export async function getAgentTranscript(sessionId: string): Promise<AgentTransc
     ),
   )
   return parseApiData(agentTranscriptSchema.safeParse(data), 'Session 历史')
+}
+
+/**
+ * 读指定 lane 最新一页 transcript；Flow 用它取 `flow-<序号>` lane 的节点产出。
+ */
+export async function getAgentLaneTranscript(sessionId: string, lane: string): Promise<AgentTranscript> {
+  const data = await unwrapApiData<unknown>(
+    apiRpc.api.ai.sessions[':sessionId'].transcript.$get(
+      { param: { sessionId }, query: { lane } },
+      { init: { cache: 'no-store' } },
+    ),
+  )
+  return parseApiData(agentTranscriptSchema.safeParse(data), 'Session 历史')
+}
+
+/**
+ * 读 Run 的结构化输出列表；Flow 产出提取优先用它。
+ * `value` 按 contract 可见性可能为 null（admin 可见性对运行面主体无值）。
+ */
+export async function listRunStructuredOutputs(sessionId: string, runId: string): Promise<StructuredOutputList> {
+  const data = await unwrapApiData<unknown>(
+    apiRpc.api.ai.sessions[':sessionId'].runs[':runId']['structured-outputs'].$get(
+      { param: { runId, sessionId } },
+      { init: { cache: 'no-store' } },
+    ),
+  )
+  return parseApiData(structuredOutputListSchema.safeParse(data), 'Run 结构化输出')
 }
 
 /** 断流后用它轮询 Run 状态；Run 仍在进行时 `live` 是 API 折叠好的快照。 */

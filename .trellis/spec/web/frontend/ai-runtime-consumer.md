@@ -84,7 +84,7 @@ SSE 帧解析规则：
 | 404（读历史 / 发送）               | 当作 Session 失效，清本地 session 引用，重新发送会新建            |
 | 404（改名 / 归档）                 | 会话已不存在或被归档，从本地列表移除该条目，提示「这个对话已经不存在」 |
 | 409 `AI.SESSION_BUSY`              | 换成产品文案。API 原文带「Session lane」这类内部概念              |
-| `run.failed`                       | 透传 `data.error.message` 当主文案，错误码作为附注                |
+| `run.failed`                       | `runEventErrorSchema` 只有 `code`/`category`/`retryable`，无 message 字段：主文案用错误码组装，`terminalNotice` 支持的 `errorMessage` 参数当前恒为 null                |
 
 错误分支按 `ApiRequestError.status` 和 contracts error code 判断，不按中文 message。需要 error code 时用 `lib/http.ts` 的 `ApiRequestError.code`。
 
@@ -122,7 +122,7 @@ SSE 帧解析规则：
 
 - fixture 同构：`run-event-timeline-isomorphism.json` 的完整 RunEvent 序列 apply 后与 fixture 中的 `liveSnapshot` 深度相等。
 - 重复和更小的 sequence 被丢弃。
-- 终态事件不进 timeline，`run.failed` 的 message 被保留。
+- 终态事件不进 timeline，`run.failed` 的错误码被保留（事件错误对象没有 message 字段）。
 - timeline 128 上限、单条 message 64 块上限。
 - fixture 覆盖不到的规则自己构造事件：`content` 与 delta 累积不一致时以 content 为准、一条 message 内两个 `blockIndex` 的 thinking 块各自累积、无 text 块时追加、`tool.progress` 写进同一个 tool。
 
@@ -188,3 +188,4 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 - 会话列表、切换、改名、归档已支持（`lib/ai/chat-session-view.ts` 负责列表纯函数，`use-chat-run.ts` 负责状态与异步编排）。steer、follow-up、transcript 翻页、多 lane 视图仍不在范围内。
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。
+- 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。Run 级 API 消费沿用本规范；画布运行态不持久化，服务端 Session/transcript 是持久事实。

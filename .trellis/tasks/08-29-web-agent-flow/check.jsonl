@@ -1,0 +1,5 @@
+{"file": ".trellis/tasks/08-29-web-agent-flow/prd.md", "reason": "对照验收标准逐条检查"}
+{"file": ".trellis/tasks/08-29-web-agent-flow/design.md", "reason": "对照设计核对实现与取舍"}
+{"file": ".trellis/spec/web/frontend/quality-guidelines.md", "reason": "质量检查项"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "Run API 消费契约回归检查"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "验收命令"}

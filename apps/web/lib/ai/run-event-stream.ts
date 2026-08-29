@@ -9,8 +9,12 @@ const LINE_SEPARATOR = /\r?\n/
 
 export interface StartRunStreamInput {
   agentId: string
+  /** 可选幂等键：同 key 的重复启动返回既有 Run；失败 Run 重试时必须换新 key。 */
+  idempotencyKey?: string
   /** 用户输入的文本，服务端会去掉首尾空白后校验长度。 */
   input: string
+  /** 可选 lane；不传走 main。Flow 用 flow-<序号> 隔离每个节点的 transcript。 */
+  lane?: string
   sessionId: string
   signal: AbortSignal
 }
@@ -93,13 +97,22 @@ async function* readRunEvents(response: Response): AsyncGenerator<RunEvent> {
  * `accept` 需要覆盖 `apiRpc` 默认的 `application/json`。
  */
 async function openRunStream(request: StartRunStreamInput): Promise<Response> {
-  const { agentId, input, sessionId, signal } = request
+  const { agentId, idempotencyKey, input, lane, sessionId, signal } = request
   let response: Response
 
   try {
     response = await apiRpc.api.ai.sessions[':sessionId'].runs.$post(
-      // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空。
-      { param: { sessionId }, json: { agentId, input } },
+      // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空；
+      // lane 和 idempotencyKey 不传时走服务端默认（main lane、不幂等），保持 chat 调用不变。
+      {
+        param: { sessionId },
+        json: {
+          agentId,
+          input,
+          ...(lane !== undefined ? { lane } : {}),
+          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        },
+      },
       { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
     )
   } catch (error) {

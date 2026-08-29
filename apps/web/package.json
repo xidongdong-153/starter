@@ -21,6 +21,7 @@
     "@radix-ui/react-slot": "catalog:",
     "@starter/contracts": "workspace:*",
     "@starter/theme": "workspace:*",
+    "@xyflow/react": "catalog:",
     "better-auth": "catalog:",
     "class-variance-authority": "catalog:",
     "clsx": "catalog:",
@@ -29,7 +30,8 @@
     "next": "catalog:",
     "react": "catalog:",
     "react-dom": "catalog:",
-    "tailwind-merge": "catalog:"
+    "tailwind-merge": "catalog:",
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@starter/api": "workspace:*",

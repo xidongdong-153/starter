@@ -44,6 +44,7 @@ catalog:
   "@types/react": ^19.2.14
   "@types/react-dom": ^19.2.3
   "@vitejs/plugin-react": ^6.0.1
+  "@xyflow/react": ^12.11.5
   antd: ^6.3.5
   better-auth: 1.6.16
   better-sqlite3: ^13.0.3
