@@ -714,3 +714,32 @@ Web 用公开 AI Runtime API 做出最小 Chat：单 Session、单 lane、文本
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: Web Agent Flow 可视化编排
+
+**Date**: 2026-08-29
+**Task**: 08-29-web-agent-flow
+**Package**: web
+**Branch**: `main`
+
+### Summary
+
+Web 端新增 /flow 页面：React Flow（@xyflow/react v12）画布 + 客户端编排执行引擎。输入/Agent 两类节点拖放连线，模板变量 {{input}}/{{steps.N.output}}，逐节点调原子 Run API（lane flow-<i>、幂等键 per step、重试换新 key），fail fast + 从失败节点续跑，localStorage 多文档 + JSON 导入导出。后端零改动。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `de56e5d` | feat(web): add agent flow canvas with react flow |
+| `3c87b53` | chore(task): archive 08-29-web-agent-flow |
+
+### Notes
+
+- check 阶段修了 3 个实质 bug：React Flow 受控模式 selected 恒 false 导致删除键失效、断流轮询异常未收口（链卡 running）、双击运行/切文档的竞态（plan guard）
+- 发现并修正 spec 脱节：ai-runtime-consumer.md 写 run.failed 透传 message，但 runEventErrorSchema 根本没有 message 字段
+- 手动验收项（两节点链端到端、失败重试续跑、运行中停止）依赖真实 Agent/凭据环境，代码路径已实证，实机操作留给用户
+
+### Status
+
+[OK] **Completed**
