@@ -282,6 +282,107 @@ it("已知 starter.run entry 静默过滤，未知 entry 仍回调跳过原因",
   });
 });
 
+it("带图 user message 投影 images 引用，base64 不出边界", () => {
+  const runId = generateId();
+  const attachmentA = generateId();
+  const attachmentB = generateId();
+  const entries = [
+    {
+      type: "message",
+      id: "user-image-entry",
+      seq: 1,
+      timestamp: Date.now(),
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "看这两张图" },
+          { type: "image", data: "aGVsbG8=", mimeType: "image/png" },
+          { type: "image", data: "d29ybGQ=", mimeType: "image/jpeg" },
+        ],
+        timestamp: Date.now(),
+        runId,
+        attachmentIds: [attachmentA, attachmentB],
+      },
+    },
+    {
+      type: "message",
+      id: "user-plain-entry",
+      seq: 2,
+      timestamp: Date.now(),
+      message: {
+        role: "user",
+        content: "纯文本消息",
+        timestamp: Date.now(),
+        runId,
+      },
+    },
+    {
+      // 防御分支：image 块多于顶层 attachmentIds 时以 attachmentIds 为准截断
+      type: "message",
+      id: "user-truncate-entry",
+      seq: 3,
+      timestamp: Date.now(),
+      message: {
+        role: "user",
+        content: [
+          { type: "text", text: "多图截断" },
+          { type: "image", data: "QQ==", mimeType: "image/png" },
+          { type: "image", data: "Qg==", mimeType: "image/webp" },
+        ],
+        timestamp: Date.now(),
+        runId,
+        attachmentIds: [attachmentA],
+      },
+    },
+  ] as unknown as Parameters<typeof projectTranscript>[0];
+
+  const items = projectTranscript(entries, "main", vi.fn());
+  expect(items).toHaveLength(3);
+
+  const withImages = items[0] as {
+    content: string;
+    images: Array<{ attachmentId: string; mimeType: string; url: string }>;
+  };
+  // content 仍然只拼 text 块，image 块不进正文
+  expect(withImages.content).toBe("看这两张图");
+  expect(withImages.images).toEqual([
+    {
+      attachmentId: attachmentA,
+      mimeType: "image/png",
+      url: `/api/ai/attachments/${attachmentA}/content`,
+    },
+    {
+      attachmentId: attachmentB,
+      mimeType: "image/jpeg",
+      url: `/api/ai/attachments/${attachmentB}/content`,
+    },
+  ]);
+
+  // 纯文本消息不输出 images 字段
+  const plain = items[1] as { content: string; images?: unknown };
+  expect(plain.content).toBe("纯文本消息");
+  expect("images" in plain).toBe(false);
+
+  // 数量不一致时以 attachmentIds 为准截断，mimeType 取第一个 image 块
+  const truncated = items[2] as {
+    images: Array<{ attachmentId: string; mimeType: string }>;
+  };
+  expect(truncated.images).toEqual([
+    {
+      attachmentId: attachmentA,
+      mimeType: "image/png",
+      url: `/api/ai/attachments/${attachmentA}/content`,
+    },
+  ]);
+
+  // base64 数据不出投影
+  const raw = JSON.stringify(items);
+  expect(raw).not.toContain("aGVsbG8=");
+  expect(raw).not.toContain("d29ybGQ=");
+  expect(raw).not.toContain("QQ==");
+  expect(raw).not.toContain("Qg==");
+});
+
 it("transcript 投影、过滤、内部字段与 cursor/limit", async () => {
   const { app, cleanup, runtime } = createTestApp();
   try {

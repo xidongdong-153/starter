@@ -51,6 +51,8 @@ export interface AppRuntime {
   env: AppEnv;
   logger: Logger;
   storage: StorageDriver;
+  /** AI 图片附件专用存储，与 FILES_DIR 的通用文件存储分离。 */
+  attachmentStorage: StorageDriver;
   close: () => Promise<void>;
 }
 
@@ -91,6 +93,7 @@ export function createRuntime(
     createDrizzleLogger(env, logger),
   );
   const storage = new LocalStorage(env.FILES_DIR);
+  const attachmentStorage = new LocalStorage(env.AI_ATTACHMENTS_DIR);
   const agentSessionStore =
     deps.agentSessionStore ??
     createPiSessionStore({
@@ -147,6 +150,7 @@ export function createRuntime(
     env,
     logger,
     storage,
+    attachmentStorage,
     close,
   };
 

@@ -808,6 +808,44 @@ export const aiWebhookDeliveries = sqliteTable(
   ],
 );
 
+export const aiAttachments = sqliteTable(
+  "ai_attachments",
+  {
+    id: text("id").primaryKey(),
+    /** starter_user 时的归属用户；product_app 时为 NULL。 */
+    ownerUserId: text("owner_user_id").references(() => user.id, {
+      onDelete: "cascade",
+    }),
+    /** product_app 时的归属应用；starter_user 时为 NULL。 */
+    appId: text("app_id").references(() => aiAppCredentials.id, {
+      onDelete: "cascade",
+    }),
+    principalKind: text("principal_kind").notNull(),
+    /** 可选的 Agent Session 归属，session 硬删除时级联删除附件行。 */
+    sessionId: text("session_id").references(() => aiAgentSessions.id, {
+      onDelete: "cascade",
+    }),
+    mimeType: text("mime_type").notNull(),
+    size: integer("size").notNull(),
+    /** 附件存储目录内的相对路径。 */
+    storagePath: text("storage_path").notNull(),
+    createdAt: timestamp("created_at").notNull(),
+  },
+  (table) => [
+    index("ai_attachments_owner_idx").on(table.ownerUserId),
+    index("ai_attachments_app_idx").on(table.appId),
+    index("ai_attachments_session_idx").on(table.sessionId),
+    check(
+      "ai_attachments_principal_check",
+      sql`(${table.principalKind} = 'starter_user' AND ${table.ownerUserId} IS NOT NULL AND ${table.appId} IS NULL) OR (${table.principalKind} = 'product_app' AND ${table.ownerUserId} IS NULL AND ${table.appId} IS NOT NULL)`,
+    ),
+    check(
+      "ai_attachments_mime_check",
+      sql`${table.mimeType} IN ('image/jpeg', 'image/png', 'image/webp', 'image/gif')`,
+    ),
+  ],
+);
+
 export const aiAgentDefinitionsRelations = relations(
   aiAgentDefinitions,
   ({ one, many }) => ({
@@ -917,6 +955,21 @@ export const aiModelCallsRelations = relations(
     toolExecutions: many(aiToolExecutions),
   }),
 );
+
+export const aiAttachmentsRelations = relations(aiAttachments, ({ one }) => ({
+  owner: one(user, {
+    fields: [aiAttachments.ownerUserId],
+    references: [user.id],
+  }),
+  app: one(aiAppCredentials, {
+    fields: [aiAttachments.appId],
+    references: [aiAppCredentials.id],
+  }),
+  session: one(aiAgentSessions, {
+    fields: [aiAttachments.sessionId],
+    references: [aiAgentSessions.id],
+  }),
+}));
 
 export const aiToolExecutionsRelations = relations(
   aiToolExecutions,

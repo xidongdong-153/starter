@@ -61,8 +61,9 @@ function parseAiTestStream(body: string): AiTestStreamEvent[] {
 const fakeGateway: AiGateway = {
   async *stream(input) {
     const firstMessage = input.messages[0];
-    const prompt =
-      firstMessage?.role === "user" ? firstMessage.content[0]?.text : undefined;
+    const firstBlock =
+      firstMessage?.role === "user" ? firstMessage.content[0] : undefined;
+    const prompt = firstBlock?.type === "text" ? firstBlock.text : undefined;
     if (prompt === "timeout") throw new AiGatewayError("timeout");
     if (prompt === "auth") throw new AiGatewayError("auth");
     if (prompt === "upstream") throw new AiGatewayError("upstream");

@@ -71,7 +71,11 @@ import type {
 } from "@api/infra/ai/pi-native-stream.js";
 import { generateId } from "@api/shared/id.js";
 
-import type { AttachableActiveRunControls } from "./active-run-registry.js";
+import type {
+  AgentControlImage,
+  AgentControlMessage,
+  AttachableActiveRunControls,
+} from "./active-run-registry.js";
 import type {
   AgentSessionHandle,
   AgentSessionStore,
@@ -97,6 +101,8 @@ export interface AgentExecutorInput {
   /** Run Service 创建的关联上下文；Run、Session、lane、principal 和 scope 都从它读。 */
   execution: RunExecutionContext;
   input: string;
+  /** 首条 user message 附带的图片块（base64）；无附件时省略，纯文本路径不变。 */
+  images?: readonly AgentControlImage[];
   signal?: AbortSignal;
   /** Run span 作用域；Turn、Step、Model Call 和 Tool span 都挂在它下面。 */
   telemetry?: AiTelemetryTarget;
@@ -243,8 +249,8 @@ export class PiAgentExecutor {
         // 兜底关闭失败不能改写 Run 终态，留给启动恢复处理。
       }
     };
-    const pendingSteers: string[] = [];
-    const pendingFollowUps: string[] = [];
+    const pendingSteers: AgentMessage[] = [];
+    const pendingFollowUps: AgentMessage[] = [];
     const transcript: Entry[] = [];
     let resolveResult!: (result: ExecutorTerminalResult) => void;
     const result = new Promise<ExecutorTerminalResult>((resolve) => {
@@ -263,13 +269,15 @@ export class PiAgentExecutor {
         abortRequested = true;
         agent?.abort();
       },
-      steer(text) {
-        if (agent) agent.steer(userMessage(text));
-        else pendingSteers.push(text);
+      steer(message: AgentControlMessage) {
+        const userMsg = userMessageWithImages(message);
+        if (agent) agent.steer(userMsg);
+        else pendingSteers.push(userMsg);
       },
-      followUp(text) {
-        if (agent) agent.followUp(userMessage(text));
-        else pendingFollowUps.push(text);
+      followUp(message: AgentControlMessage) {
+        const userMsg = userMessageWithImages(message);
+        if (agent) agent.followUp(userMsg);
+        else pendingFollowUps.push(userMsg);
       },
     };
 
@@ -586,8 +594,8 @@ export class PiAgentExecutor {
           Math.max(1, (deadlineAt ?? Date.now()) - Date.now()),
         );
 
-        for (const text of pendingSteers) agent.steer(userMessage(text));
-        for (const text of pendingFollowUps) agent.followUp(userMessage(text));
+        for (const message of pendingSteers) agent.steer(message);
+        for (const message of pendingFollowUps) agent.followUp(message);
         pendingSteers.length = 0;
         pendingFollowUps.length = 0;
 
@@ -600,7 +608,15 @@ export class PiAgentExecutor {
           return;
         }
 
-        const prompt = agent.prompt(input.input);
+        const prompt =
+          input.images && input.images.length > 0
+            ? agent.prompt(
+                userMessageWithImages({
+                  text: input.input,
+                  images: input.images,
+                }),
+              )
+            : agent.prompt(input.input);
         if (abortRequested) agent.abort();
         await prompt;
         const terminal = resolveTerminalResult(
@@ -730,6 +746,31 @@ function resolveModel(
 
 function userMessage(text: string): AgentMessage {
   return { role: "user", content: text, timestamp: Date.now() };
+}
+
+/**
+ * 带图片的 user message：content 为 text 块 + image 块数组；顶层 attachmentIds
+ * 与 runId 挂载同模式附加，Pi 原样持久化，transcript 回放时反查。
+ */
+function userMessageWithImages(input: AgentControlMessage): AgentMessage {
+  const { text, images } = input;
+  if (!images || images.length === 0) return userMessage(text);
+  const attachmentIds = images.every((image) => image.attachmentId)
+    ? images.map((image) => image.attachmentId as string)
+    : undefined;
+  return {
+    role: "user",
+    content: [
+      { type: "text", text },
+      ...images.map((image) => ({
+        type: "image",
+        data: image.data,
+        mimeType: image.mimeType,
+      })),
+    ],
+    timestamp: Date.now(),
+    ...(attachmentIds ? { attachmentIds } : {}),
+  } as unknown as AgentMessage;
 }
 
 function hasToolCalls(message: AssistantMessage): boolean {

@@ -55,12 +55,12 @@ describe("activeRunRegistry", () => {
     registry.attach(lease, "run-1", controls);
 
     registry.abort("run-1");
-    registry.steer("run-1", "change direction");
-    registry.followUp("run-1", "summarize");
+    registry.steer("run-1", { text: "change direction" });
+    registry.followUp("run-1", { text: "summarize" });
 
     expect(controls.abort).toHaveBeenCalledOnce();
-    expect(controls.steer).toHaveBeenCalledWith("change direction");
-    expect(controls.followUp).toHaveBeenCalledWith("summarize");
+    expect(controls.steer).toHaveBeenCalledWith({ text: "change direction" });
+    expect(controls.followUp).toHaveBeenCalledWith({ text: "summarize" });
 
     registry.release("run-1");
     registry.release("run-1");

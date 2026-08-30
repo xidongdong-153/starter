@@ -29,6 +29,7 @@ export function createTestApp(
       DATABASE_PATH: join(testDir, "app.db"),
       AGENT_SESSION_DATABASE_PATH: join(testDir, "agent-sessions.db"),
       FILES_DIR: join(testDir, "files"),
+      AI_ATTACHMENTS_DIR: join(testDir, "ai-attachments"),
       AI_CREDENTIAL_ENCRYPTION_KEY:
         "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
       AI_REQUEST_TIMEOUT_MS: "5000",

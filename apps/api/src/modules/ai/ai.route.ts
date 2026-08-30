@@ -1,6 +1,7 @@
 import type { AppRuntime } from "@api/bootstrap/create-runtime.js";
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import { PermissionKeys } from "@starter/contracts";
+import type { AiModelRef } from "@starter/contracts";
 import { OpenAPIHono } from "@hono/zod-openapi";
 
 import { createRequireAuth } from "@api/modules/auth/index.js";
@@ -23,6 +24,12 @@ import {
   createRequireProductApp,
 } from "./application/index.js";
 import { createRequireAiRuntimePrincipal } from "./principal.guard.js";
+import {
+  createAiAttachmentRepository,
+  createAiAttachmentResolver,
+  createAiAttachmentRoute,
+  createAiAttachmentService,
+} from "./attachment/index.js";
 import {
   createAiCompletionRoute,
   createAiCompletionService,
@@ -205,6 +212,21 @@ export function createAiRoute(runtime: AppRuntime) {
       logger: runtime.logger.child({ module: "ai-executor" }),
       requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
     });
+  const attachmentRepository = createAiAttachmentRepository(runtime.db);
+  const attachmentResolver = createAiAttachmentResolver({
+    repository: attachmentRepository,
+    storage: runtime.attachmentStorage,
+  });
+  /** 图片能力统一查 runtime 模型表，不区分内置 / 自定义 Provider；查不到按不支持处理。 */
+  function modelSupportsImageInput(model: AiModelRef): boolean {
+    return runtime.ai
+      .listModels(model.providerId)
+      .some(
+        (entry) =>
+          entry.modelId === model.modelId &&
+          entry.capabilities.supportsImageInput,
+      );
+  }
   const runService = createAiAgentRunService({
     repository: createAiAgentRunRepository(runtime.db, sessionRepository),
     eventRepository: createAiRunEventRepository(runtime.db),
@@ -218,12 +240,21 @@ export function createAiRoute(runtime: AppRuntime) {
     telemetry: runtime.aiTelemetry,
     structuredOutputRepository,
     outputContractRegistry,
+    resolveAttachments: attachmentResolver.resolveForRequest,
+    supportsImageInput: modelSupportsImageInput,
   });
   const completionService = createAiCompletionService({
     invocationRunner,
     requireAllowedModel: configurationService.resolveAgentModel,
+    resolveAttachments: attachmentResolver.resolveForRequest,
+    supportsImageInput: modelSupportsImageInput,
     requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
     logger: runtime.logger.child({ module: "ai-completion" }),
+  });
+  const attachmentService = createAiAttachmentService({
+    storage: runtime.attachmentStorage,
+    repository: attachmentRepository,
+    sessionRepository,
   });
   void runService
     .recoverInterrupted()
@@ -291,6 +322,13 @@ export function createAiRoute(runtime: AppRuntime) {
       "/",
       createAiCompletionRoute({
         service: completionService,
+        requireAuth: requireRuntimePrincipal,
+      }),
+    )
+    .route(
+      "/",
+      createAiAttachmentRoute({
+        service: attachmentService,
         requireAuth: requireRuntimePrincipal,
       }),
     )

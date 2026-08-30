@@ -490,3 +490,91 @@ throw new Error(upstreamResponseBody)
 ```ts
 throw new AiGatewayError("auth")
 ```
+
+## 10. AI 图片附件输入
+
+### 10.1 Scope / Trigger
+
+修改 `modules/ai/attachment/`、`AiModelImageBlock`、user message 带图路径、transcript images 投影或 `AI_ATTACHMENTS_DIR` 时按本节检查。附件是 AI 基础服务能力：上传接口独立于 files 模块，业务请求只传 `attachmentIds` 引用。
+
+### 10.2 Signatures
+
+```ts
+// 网关块（infra/ai/ai-gateway.types.ts）
+interface AiModelImageBlock extends AiModelContentMetadata {
+  type: "image"
+  data: string      // base64
+  mimeType: string
+}
+// AiModelUserMessage.content: (AiModelTextBlock | AiModelImageBlock)[]
+
+// 附件解析（modules/ai/attachment/attachment-resolver.ts）
+resolveForRequest(input: {
+  access: RuntimeAccessContext
+  sessionId: string | null   // run 类接口传当前 session，completion 传 null
+  attachmentIds: string[]
+}): Promise<{ id: string; mimeType: string; data: string }[]>
+
+// 端点
+POST /api/ai/attachments            // multipart: file + 可选 sessionId，201 返回 AiAttachment
+GET  /api/ai/attachments/{id}/content  // 归属校验后返回字节流
+```
+
+### 10.3 Contracts
+
+- 上传：MIME 白名单 `image/jpeg | image/png | image/webp | image/gif`（contracts `aiAttachmentMimeTypeSchema` 单一来源），单张 5MB，表单可带 `sessionId`
+- 引用：四个输入 schema（startRun / steer / followUp / completion）的 `attachmentIds` 可选、`z.array(uuid).max(4)`；不传时请求与纯文本现状逐字节一致
+- 存储：`ai_attachments` 表挂 principal（starter_user 比 `ownerUserId`、product_app 比 `appId`，成对 CHECK），`sessionId` 可空外键 cascade；磁盘走 `AI_ATTACHMENTS_DIR`（独立 `LocalStorage` 实例，默认 `./data/ai-attachments`），`POST /api/ai/attachments` 在 body-limit 中间件走 12MB 档
+- user message 带图：content 为 `[text 块, ...image 块]`，message 顶层写 `attachmentIds`（与 `runId` 同一顶层字段模式，投影反查用）
+- transcript 投影：user message 输出可选 `images: [{ attachmentId, mimeType, url }]`，url 为 `/api/ai/attachments/{id}/content`
+
+### 10.4 Validation & Error Matrix
+
+| 条件 | 错误 |
+| --- | --- |
+| MIME 白名单外 / 空文件 | `AI.ATTACHMENT_TYPE_NOT_ALLOWED` 400 |
+| 单张超 5MB | `AI.ATTACHMENT_TOO_LARGE` 400 |
+| 附件不存在、他人 principal、挂错 session | `AI.ATTACHMENT_NOT_FOUND` 404（不区分存在性） |
+| 带附件且模型 `supportsImageInput === false` | `AI.IMAGE_NOT_SUPPORTED` 400 |
+| attachmentIds 超 4 个 | schema 层 400（`COMMON.INVALID_REQUEST`；resolver 的 `AI.ATTACHMENT_COUNT_EXCEEDED` 是内部防御分支，HTTP 层不可达） |
+
+能力校验统一查 `runtime.listModels(providerId)` 的 `capabilities.supportsImageInput`，不区分内置与自定义 Provider，查不到按 false。startRun 的附件解析与能力校验必须发生在幂等预检查之前：失败请求不 reserve lane、不建 Run 行、不消费幂等键。
+
+### 10.5 Good / Base / Bad Cases
+
+- Good：starter_user 在自己的 session 上传带 sessionId 的图，startRun 引用，网关收到 text + image 块，transcript 投影 images 且无 base64
+- Base：不带 `attachmentIds` 的请求，全部行为与纯文本路径一致
+- Bad：product_app 引用 starter_user 的附件（404）；把 base64 写进 `snapshot_json` 或 run event payload（禁止，只存 attachmentId 引用）
+
+### 10.6 Tests Required
+
+`apps/api/src/test/ai-attachments.smoke.test.ts`（14 用例）：四种 MIME 上传、5MB/MIME/sessionId 校验、startRun 带图断言网关 image 块与顶层 attachmentIds、能力硬校验断言 Run 未建且幂等键未消费、越权（他人/跨 principal/跨 session）404、completion 带图与审计零记录、schema 层 5 张拒绝、transcript 投影无 base64、下载字节一致与越权 404、steer 第二轮 context 含 image 块、product_app Bearer 链路、session 级联删行。运行 `pnpm --filter @starter/api test`。
+
+### 10.7 Wrong vs Correct
+
+错误写法（在投影或事件里带出图片数据）：
+
+```ts
+images: blocks.map((b) => ({ attachmentId: id, mimeType: b.mimeType, data: b.data }))
+```
+
+正确写法（base64 只存在于内存与 Pi session store，API 边界只出引用）：
+
+```ts
+images: blocks.map((b) => ({ attachmentId: id, mimeType: b.mimeType, url: contentUrl(id) }))
+```
+
+错误写法（校验放在幂等预检查之后，失败请求已消费幂等键）：
+
+```ts
+const existing = repository.findByIdempotencyKey(scope, key) // 先查幂等
+const images = await resolveAttachments(...)                  // 后校验附件
+```
+
+正确写法（附件解析与能力校验在前，失败零副作用）：
+
+```ts
+const images = await resolveAttachments(...)
+assertModelSupportsImage(resolved.model, images.length)
+const existing = repository.findByIdempotencyKey(scope, key)
+```

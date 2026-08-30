@@ -25,6 +25,7 @@ const envSchema = z.object({
   DATABASE_PATH: z.string().default("./data/app.db"),
   AGENT_SESSION_DATABASE_PATH: z.string().default("./data/agent-sessions.db"),
   FILES_DIR: z.string().default("./data/files"),
+  AI_ATTACHMENTS_DIR: z.string().default("./data/ai-attachments"),
   AI_CREDENTIAL_ENCRYPTION_KEY: encryptionKeySchema,
   AI_REQUEST_TIMEOUT_MS: z.coerce
     .number()

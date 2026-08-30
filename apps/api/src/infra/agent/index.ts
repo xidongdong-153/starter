@@ -8,6 +8,8 @@ export type {
   ActiveRunControls,
   ActiveRunHandle,
   ActiveRunReserveInput,
+  AgentControlImage,
+  AgentControlMessage,
   AttachableActiveRunControls,
 } from "./active-run-registry.js";
 export {

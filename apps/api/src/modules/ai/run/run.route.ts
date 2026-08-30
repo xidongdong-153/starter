@@ -292,28 +292,28 @@ export function createAiAgentRunRoute(deps: {
         200,
       ),
     )
-    .openapi({ ...steerAgentRunRoute, middleware: requireAuth }, (c) =>
+    .openapi({ ...steerAgentRunRoute, middleware: requireAuth }, async (c) =>
       c.json(
         createSuccessResponse(
-          service.steer(
+          await service.steer(
             access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
-            c.req.valid("json").text,
+            c.req.valid("json"),
           ),
           c.var.requestId,
         ),
         200,
       ),
     )
-    .openapi({ ...followUpAgentRunRoute, middleware: requireAuth }, (c) =>
+    .openapi({ ...followUpAgentRunRoute, middleware: requireAuth }, async (c) =>
       c.json(
         createSuccessResponse(
-          service.followUp(
+          await service.followUp(
             access(c),
             c.req.valid("param").sessionId,
             c.req.valid("param").runId,
-            c.req.valid("json").text,
+            c.req.valid("json"),
           ),
           c.var.requestId,
         ),

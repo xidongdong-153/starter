@@ -3,12 +3,17 @@ import type { ImageContent, TextContent } from "@earendil-works/pi-ai";
 import type {
   AgentTranscriptItem,
   AgentToolStatus,
+  AiAttachmentMimeType,
   AiOutputContractRef,
   AiStructuredOutputValue,
   AiUsage,
   ApiErrorCode,
 } from "@starter/contracts";
-import { ApiErrorCodes, uuidSchema } from "@starter/contracts";
+import {
+  ApiErrorCodes,
+  aiAttachmentMimeTypeSchema,
+  uuidSchema,
+} from "@starter/contracts";
 
 import type { AiAgentSessionRecord } from "./session.repository.js";
 
@@ -136,6 +141,7 @@ function projectMessage(
   if (message.role === "user") {
     const runId = resolveRunId(message);
     if (!runId) return skipMessage(entry, onSkipped, "missing_run_id");
+    const images = userMessageImages(message);
     const item: UserItem = {
       type: "user_message",
       id: entry.id,
@@ -144,6 +150,7 @@ function projectMessage(
       runId,
       createdAt: new Date(entry.timestamp).toISOString(),
       content: userContentToString(message.content),
+      ...(images ? { images } : {}),
     };
     return item;
   }
@@ -250,6 +257,56 @@ export function resolveRunId(message: AgentMessage): string | null {
 function readUuid(value: unknown): string | null {
   if (typeof value !== "string") return null;
   return uuidSchema.safeParse(value).success ? value : null;
+}
+
+/** 附件内容下载端点的路由前缀；与 attachment.route.ts 的挂载路径一致。 */
+const ATTACHMENT_CONTENT_URL_PREFIX = "/api/ai/attachments";
+
+/**
+ * 从 user message 顶层 attachmentIds 与 content 的 image 块产出附件引用。
+ * image 块本身没有附件 id，attachmentId 按顶层 attachmentIds 的顺序对位；
+ * 数量不一致时以 attachmentIds 为准截断（防御，写入侧保证一致）。
+ * base64 数据不出 API 边界，前端用 url 下载字节。
+ * 无附件的纯文本消息返回 undefined，不输出 images 字段。
+ */
+function userMessageImages(
+  message: Extract<AgentMessage, { role: "user" }>,
+): NonNullable<UserItem["images"]> | undefined {
+  const attachmentIds = readAttachmentIds(message);
+  if (attachmentIds.length === 0) return undefined;
+  if (typeof message.content === "string") return undefined;
+  const imageBlocks = message.content.filter(
+    (block): block is ImageContent => block.type === "image",
+  );
+  if (imageBlocks.length === 0) return undefined;
+  const count = Math.min(attachmentIds.length, imageBlocks.length);
+  const images: NonNullable<UserItem["images"]> = [];
+  for (let index = 0; index < count; index += 1) {
+    const attachmentId = attachmentIds[index];
+    const mimeType = imageBlocks[index]?.mimeType;
+    if (!attachmentId) continue;
+    if (!isAttachmentMimeType(mimeType)) continue;
+    images.push({
+      attachmentId,
+      mimeType,
+      url: `${ATTACHMENT_CONTENT_URL_PREFIX}/${attachmentId}/content`,
+    });
+  }
+  return images.length > 0 ? images : undefined;
+}
+
+/** 读 message 顶层挂载的 attachmentIds（逐项 UUID 校验）；缺失或全非法时返回空数组。 */
+function readAttachmentIds(message: AgentMessage): string[] {
+  const value = (message as { attachmentIds?: unknown }).attachmentIds;
+  if (!Array.isArray(value)) return [];
+  return value.filter(
+    (id): id is string =>
+      typeof id === "string" && uuidSchema.safeParse(id).success,
+  );
+}
+
+function isAttachmentMimeType(value: unknown): value is AiAttachmentMimeType {
+  return aiAttachmentMimeTypeSchema.safeParse(value).success;
 }
 
 function userContentToString(

@@ -9,10 +9,18 @@ import { ApiErrorCodes } from "@starter/contracts";
 import type { Logger } from "pino";
 
 import type { AiGatewayInput } from "@api/infra/ai/index.js";
+import type {
+  AiModelImageBlock,
+  AiModelTextBlock,
+} from "@api/infra/ai/ai-gateway.types.js";
 import { AiGatewayError } from "@api/infra/ai/index.js";
 import { AppError } from "@api/shared/app-error.js";
 
 import type { RuntimeAccessContext } from "../principal.js";
+import type {
+  AiAttachmentResolver,
+  ResolvedAiImageAttachment,
+} from "../attachment/index.js";
 import type {
   AiInvocationRunner,
   AiModelCallAuditContext,
@@ -22,6 +30,12 @@ export interface AiCompletionServiceDeps {
   invocationRunner: AiInvocationRunner;
   /** 白名单校验：不在 ai_enabled_models 或 Provider 不可用时抛 AI.MODEL_NOT_ALLOWED。 */
   requireAllowedModel: (model: AiModelRef) => Promise<AiModelRef>;
+  /** 附件解析：归属校验 + 读字节转 base64；带附件的输入必需。 */
+  resolveAttachments: (
+    input: Parameters<AiAttachmentResolver["resolveForRequest"]>[0],
+  ) => Promise<ResolvedAiImageAttachment[]>;
+  /** 模型能力查询：目标模型是否支持图片输入，统一查 runtime 模型表。 */
+  supportsImageInput: (model: AiModelRef) => boolean;
   requestTimeoutMs: number;
   logger: Logger;
 }
@@ -29,8 +43,14 @@ export interface AiCompletionServiceDeps {
 export type AiCompletionService = ReturnType<typeof createAiCompletionService>;
 
 export function createAiCompletionService(deps: AiCompletionServiceDeps) {
-  const { invocationRunner, requireAllowedModel, requestTimeoutMs, logger } =
-    deps;
+  const {
+    invocationRunner,
+    requireAllowedModel,
+    resolveAttachments,
+    supportsImageInput,
+    requestTimeoutMs,
+    logger,
+  } = deps;
 
   function toAuditContext(
     access: RuntimeAccessContext,
@@ -52,31 +72,65 @@ export function createAiCompletionService(deps: AiCompletionServiceDeps) {
   function toGatewayInput(
     model: AiModelRef,
     request: CompletionRequest,
+    images: readonly ResolvedAiImageAttachment[] | undefined,
     signal: AbortSignal | undefined,
   ): AiGatewayInput {
+    const content: (AiModelTextBlock | AiModelImageBlock)[] = [
+      {
+        type: "text",
+        text: request.input,
+        turnIndex: 0,
+        contentIndex: 0,
+        blockId: "0:0",
+      },
+    ];
+    for (const [index, image] of (images ?? []).entries()) {
+      content.push({
+        type: "image",
+        data: image.data,
+        mimeType: image.mimeType,
+        turnIndex: 0,
+        contentIndex: index + 1,
+        blockId: `0:${index + 1}`,
+      });
+    }
     return {
       model,
       ...(request.systemPrompt === undefined
         ? {}
         : { systemPrompt: request.systemPrompt }),
-      messages: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text: request.input,
-              turnIndex: 0,
-              contentIndex: 0,
-              blockId: "0:0",
-            },
-          ],
-        },
-      ],
+      messages: [{ role: "user", content }],
       turnIndex: 0,
       timeoutMs: requestTimeoutMs,
       signal,
     };
+  }
+
+  /**
+   * 附件解析与能力硬校验：无 attachmentIds 时返回 undefined，纯文本路径不变；
+   * 模型不支持图片时抛 AI_IMAGE_NOT_SUPPORTED，不静默丢图。
+   */
+  async function resolveCompletionImages(
+    access: RuntimeAccessContext,
+    request: CompletionRequest,
+    model: AiModelRef,
+  ): Promise<ResolvedAiImageAttachment[] | undefined> {
+    if (!request.attachmentIds || request.attachmentIds.length === 0) {
+      return undefined;
+    }
+    const attachments = await resolveAttachments({
+      access,
+      sessionId: null,
+      attachmentIds: request.attachmentIds,
+    });
+    if (!supportsImageInput(model)) {
+      throw new AppError(
+        ApiErrorCodes.AI_IMAGE_NOT_SUPPORTED,
+        "当前模型不支持图片输入",
+        400,
+      );
+    }
+    return attachments;
   }
 
   async function* stream(
@@ -86,9 +140,10 @@ export function createAiCompletionService(deps: AiCompletionServiceDeps) {
     signal: AbortSignal | undefined,
   ): AsyncGenerator<CompletionStreamEvent> {
     const model = await requireAllowedModel(request.model);
+    const images = await resolveCompletionImages(access, request, model);
     const events = invocationRunner.stream(
       toAuditContext(access, requestId),
-      toGatewayInput(model, request, signal),
+      toGatewayInput(model, request, images, signal),
     );
     for await (const event of events) {
       if (event.type === "text_delta") {

@@ -5,6 +5,7 @@ import { createChildLogger } from "./infra/log/index.js";
 const runtime = createRuntime();
 const logger = createChildLogger(runtime.logger, "server");
 await runtime.storage.init();
+await runtime.attachmentStorage.init();
 const app = createApp(runtime);
 const server = serve({ fetch: app.fetch, port: runtime.env.PORT }, (info) => {
   const baseUrl = `http://localhost:${info.port}`;

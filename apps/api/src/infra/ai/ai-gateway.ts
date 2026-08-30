@@ -19,9 +19,9 @@ import type {
   AiGatewayInput,
   AiGatewayStopReason,
   AiModelAssistantMessage,
-  AiModelContentBlock,
   AiModelContentMetadata,
   AiModelMessage,
+  AiModelTextBlock,
   AiModelToolCall,
 } from "./ai-gateway.types.js";
 import { createSdkTool } from "./ai-tool-schema.js";
@@ -215,10 +215,15 @@ function toSdkMessage(message: AiModelMessage, model: Model<string>): Message {
   if (message.role === "user") {
     return {
       role: "user",
-      content: message.content.map((block) => ({
-        type: "text",
-        text: block.text,
-      })),
+      content: message.content.map((block) =>
+        block.type === "image"
+          ? {
+              type: "image" as const,
+              data: block.data,
+              mimeType: block.mimeType,
+            }
+          : { type: "text" as const, text: block.text },
+      ),
       timestamp,
     };
   }
@@ -244,7 +249,7 @@ function toSdkMessage(message: AiModelMessage, model: Model<string>): Message {
   };
 }
 
-function toSdkAssistantContent(block: AiModelContentBlock) {
+function toSdkAssistantContent(block: AiModelTextBlock | AiModelToolCall) {
   if (block.type === "text") return { type: "text" as const, text: block.text };
   return {
     type: "toolCall" as const,
@@ -263,7 +268,7 @@ function toModelAssistantMessage(
   message: AssistantMessage,
   turnIndex: number,
 ): AiModelAssistantMessage {
-  const blocks: AiModelContentBlock[] = [];
+  const blocks: (AiModelTextBlock | AiModelToolCall)[] = [];
   for (const [contentIndex, block] of message.content.entries()) {
     const metadata = contentMetadata(turnIndex, contentIndex);
     if (block.type === "text") {

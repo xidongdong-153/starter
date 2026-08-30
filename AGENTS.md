@@ -90,6 +90,7 @@ API 的关键变量：
 - `BETTER_AUTH_SECRET`：必须修改为 32 个字符以上的随机值
 - `DATABASE_PATH`：SQLite 文件路径
 - `FILES_DIR`：上传文件目录
+- `AI_ATTACHMENTS_DIR`：AI 附件存储目录（图片附件，独立于 FILES_DIR）
 - GitHub 和 Google OAuth 的 client ID 与 secret 必须成对填写；留空时 API 仍可启动，前端不显示对应登录按钮
 
 本地覆盖文件命名规则：

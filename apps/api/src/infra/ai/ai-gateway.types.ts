@@ -19,17 +19,25 @@ export interface AiModelToolCall extends AiModelContentMetadata {
   arguments: unknown;
 }
 
-export type AiModelContentBlock = AiModelTextBlock | AiModelToolCall;
+export interface AiModelImageBlock extends AiModelContentMetadata {
+  type: "image";
+  /** base64 编码的图片字节；只在内存与模型请求中存在，不进 starter JSON 字段。 */
+  data: string;
+  mimeType: string;
+}
+
+export type AiModelContentBlock =
+  AiModelTextBlock | AiModelToolCall | AiModelImageBlock;
 
 export interface AiModelUserMessage {
   role: "user";
-  content: AiModelTextBlock[];
+  content: (AiModelTextBlock | AiModelImageBlock)[];
   timestamp?: number;
 }
 
 export interface AiModelAssistantMessage {
   role: "assistant";
-  blocks: AiModelContentBlock[];
+  blocks: (AiModelTextBlock | AiModelToolCall)[];
   timestamp?: number;
 }
 

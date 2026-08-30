@@ -189,3 +189,63 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。
 - 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。Run 级 API 消费沿用本规范；画布运行态不持久化，服务端 Session/transcript 是持久事实。
+
+## 11. 图片附件（Chat 输入）
+
+### Signatures
+
+```ts
+// lib/api/ai-attachments.api.ts
+export async function uploadAiAttachment(file: File, sessionId?: string): Promise<AiAttachment>;
+export function attachmentContentUrl(attachmentId: string): string;
+
+// lib/ai/attachment-input.ts —— 纯逻辑，MIME 白名单读 contracts 的 aiAttachmentMimeTypeSchema.options
+export function selectUploadableImages(files: File[]): { accepted: File[]; rejected: File[] };
+
+// hooks/use-chat-attachments.ts —— 待发送附件状态：预校验 → 上传 → 缩略图，失败移除并提示
+```
+
+### Contracts
+
+- 上传走 `apiRequest`（multipart `POST /api/ai/attachments`，带当前 sessionId）；鉴权是 Cookie 会话，与 run 请求一致，`Authorization: Bearer` 不进前端
+- 预校验规则与服务端同源：MIME 白名单四种、单张 5MB、待发送最多 4 张；超限前端直接提示，不发请求
+- 发送：`startRunStream` 请求体带 `attachmentIds`（contracts schema 已有该字段）；不传时请求体与纯文本现状一致
+- 图片显示：`<img src={attachmentContentUrl(id)}>` 直连 content 端点，同站 Cookie 自动携带；transcript 的 `images[].url` 与该构造点拼出同一字符串
+- Web Chat 只调 startRun，steer / followUp 不在 Web 范围（见第 10 节）
+
+### 状态归属
+
+- 待发送附件是 composer 局部状态（hook），发送成功清空；`send` 返回 false 时回填，用户重试不用重新上传
+- 切换、新建、归档会话时显式清空待发送附件，避免跨会话越权引用（挂旧 session 的附件在新 session 的 startRun 会被 API 404）
+- `canSend` = 非 running + 无上传中 + 有文本 + 有 agent
+
+### Tests Required
+
+`apps/web/test/attachment-input.test.ts`（预校验规则）与 `apps/web/test/ai-attachments.test.ts`（上传表单组装、错误码透传、`startRunStream` 请求体含/不含 `attachmentIds`）。只测纯逻辑，不测 DOM（同第 7 节约束）。
+
+### Wrong vs Correct
+
+Wrong（前端手写白名单，与服务端漂移）：
+
+```ts
+const ALLOWED = ["image/jpeg", "image/png"] // 少了 webp/gif，服务端收得到前端却拒绝
+```
+
+Correct（单一事实源）：
+
+```ts
+import { aiAttachmentMimeTypeSchema } from "@starter/contracts";
+const allowed = aiAttachmentMimeTypeSchema.options;
+```
+
+Wrong（切会话后沿用旧附件）：
+
+```ts
+// session 切换只清空文本，附件留在待发送区，下一次 startRun 引用旧 session 的附件
+```
+
+Correct（切会话同步清空附件）：
+
+```ts
+// 切换 / 新建 / 归档会话时调用 attachments.clear()
+```

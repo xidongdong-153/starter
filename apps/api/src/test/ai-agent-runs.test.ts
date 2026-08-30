@@ -1203,6 +1203,8 @@ it("启动恢复：无 terminal entry 标记 interrupted，唯一合法 entry �
       logger,
       eventRepository: createAiRunEventRepository(runtime.db),
       outputContractRegistry: createAiOutputContractRegistry(),
+      resolveAttachments: async () => [],
+      supportsImageInput: () => false,
     });
 
     // 无 terminal entry -> interrupted
@@ -1302,6 +1304,8 @@ it("启动恢复：唯一合法 entry 投影终态；重复 entry 标记 interru
       logger,
       eventRepository: createAiRunEventRepository(runtime.db),
       outputContractRegistry: createAiOutputContractRegistry(),
+      resolveAttachments: async () => [],
+      supportsImageInput: () => false,
     });
     const report = await service.recoverInterrupted();
     expect(report.recoveredFromEntry).toBe(1);
@@ -1449,6 +1453,8 @@ it("启动恢复：schema 解析失败标记 AI.RUN_INTERRUPTED", async () => {
       logger,
       eventRepository: createAiRunEventRepository(runtime.db),
       outputContractRegistry: createAiOutputContractRegistry(),
+      resolveAttachments: async () => [],
+      supportsImageInput: () => false,
     });
     const report = await service.recoverInterrupted();
     expect(report.corrupted).toBe(1);

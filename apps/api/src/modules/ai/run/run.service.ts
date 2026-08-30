@@ -4,19 +4,27 @@ import type { TelemetryContext } from "@earendil-works/pi-telemetry";
 import type {
   AgentRun,
   AgentRunSnapshot,
+  AiModelRef,
   ApiErrorCode,
+  FollowUpAgentRunInput,
   RunEvent,
   RunTimeline,
   RunTrace,
   StartAgentRunInput,
+  SteerAgentRunInput,
   StructuredOutputItem,
   StructuredOutputList,
 } from "@starter/contracts";
-import { ApiErrorCodes, starterRunDataSchema } from "@starter/contracts";
+import {
+  agentRunSnapshotSchema,
+  ApiErrorCodes,
+  starterRunDataSchema,
+} from "@starter/contracts";
 
 import type {
   ActiveRunLease,
   ActiveRunRegistry,
+  AgentControlImage,
   AgentSessionStore,
   AttachableActiveRunControls,
   PiAgentExecutor,
@@ -43,6 +51,7 @@ import {
 import type { RuntimeAccessContext } from "@api/modules/ai/principal.js";
 
 import type { AiAgentDefinitionService } from "../agent/agent.service.js";
+import type { AiAttachmentResolver } from "../attachment/index.js";
 import type { AiOutputContractRegistry } from "../output/output-contract-registry.js";
 import { toStructuredOutputContractRef } from "../output/output-contract-registry.js";
 import type { AiStructuredOutputRepository } from "../output/structured-output.repository.js";
@@ -108,14 +117,14 @@ export interface AiAgentRunService {
     access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
-    text: string,
-  ) => AgentRun;
+    input: SteerAgentRunInput,
+  ) => Promise<AgentRun>;
   followUp: (
     access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
-    text: string,
-  ) => AgentRun;
+    input: FollowUpAgentRunInput,
+  ) => Promise<AgentRun>;
   trace: (
     access: RuntimeAccessContext,
     sessionId: string,
@@ -177,6 +186,10 @@ export function createAiAgentRunService(input: {
   structuredOutputRepository?: AiStructuredOutputRepository;
   /** contract 渲染元数据（visibility / mode）的唯一来源，读取路径必需。 */
   outputContractRegistry: AiOutputContractRegistry;
+  /** 附件解析：归属校验 + 读字节转 base64；带附件的输入必需。 */
+  resolveAttachments: AiAttachmentResolver["resolveForRequest"];
+  /** 模型能力查询：目标模型是否支持图片输入，统一查 runtime 模型表。 */
+  supportsImageInput: (model: AiModelRef) => boolean;
   /** Run span 的根上下文；默认 no-op。 */
   telemetry?: TelemetryContext;
 }): AiAgentRunService {
@@ -188,6 +201,8 @@ export function createAiAgentRunService(input: {
     registry,
     executor,
     logger,
+    resolveAttachments,
+    supportsImageInput,
   } = input;
   const structuredOutputRepository = input.structuredOutputRepository;
   const outputContractRegistry = input.outputContractRegistry;
@@ -220,6 +235,15 @@ export function createAiAgentRunService(input: {
 
     const resolved = await agentService.resolve(agentId, access);
     const lane = startInput.input.lane ?? "main";
+
+    // 附件解析与能力硬校验在幂等预检查之前：失败请求不 reserve、
+    // 不建 Run 行、不消费幂等键，也不给模型静默降级。
+    const images = await resolveInputImages({
+      access,
+      sessionId,
+      model: resolved.model,
+      attachmentIds: startInput.input.attachmentIds,
+    });
 
     // 幂等预检查在 reserve 之前：命中既有 Run 就直接返回，不占 lane 租约。
     // key 只在 Run 行创建成功后才被消费，这里的末命中不代表后续失败也不消费。
@@ -408,6 +432,7 @@ export function createAiAgentRunService(input: {
       prepared = executor.prepare({
         execution,
         input: startInput.input.input,
+        ...(images ? { images } : {}),
         telemetry: context.telemetry.span,
         config: {
           model: resolved.model,
@@ -765,29 +790,41 @@ export function createAiAgentRunService(input: {
     return toAgentRun(run);
   }
 
-  function steer(
+  async function steer(
     access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
-    text: string,
-  ): AgentRun {
+    input: SteerAgentRunInput,
+  ): Promise<AgentRun> {
     const run = requireScopedRun(access, sessionId, runId);
     const handle = registry.get(runId);
     if (!handle) throw runNotActive();
-    handle.steer(text);
+    const images = await resolveInputImages({
+      access,
+      sessionId,
+      model: runModelRef(run),
+      attachmentIds: input.attachmentIds,
+    });
+    handle.steer({ text: input.text, ...(images ? { images } : {}) });
     return toAgentRun(run);
   }
 
-  function followUp(
+  async function followUp(
     access: RuntimeAccessContext,
     sessionId: string,
     runId: string,
-    text: string,
-  ): AgentRun {
+    input: FollowUpAgentRunInput,
+  ): Promise<AgentRun> {
     const run = requireScopedRun(access, sessionId, runId);
     const handle = registry.get(runId);
     if (!handle) throw runNotActive();
-    handle.followUp(text);
+    const images = await resolveInputImages({
+      access,
+      sessionId,
+      model: runModelRef(run),
+      attachmentIds: input.attachmentIds,
+    });
+    handle.followUp({ text: input.text, ...(images ? { images } : {}) });
     return toAgentRun(run);
   }
 
@@ -1079,6 +1116,43 @@ export function createAiAgentRunService(input: {
     const record = sessionRepository.findInScope(sessionId, access);
     if (!record || record.archivedAt !== null) throw notFound();
     return record;
+  }
+
+  /**
+   * 附件输入解析：无 attachmentIds 时返回 undefined，纯文本路径零变化。
+   * 归属或能力校验失败抛 AI_ATTACHMENT_NOT_FOUND / AI_IMAGE_NOT_SUPPORTED，
+   * 调用点必须位于任何写操作之前。
+   */
+  async function resolveInputImages(input: {
+    access: RuntimeAccessContext;
+    sessionId: string | null;
+    model: AiModelRef;
+    attachmentIds: string[] | undefined;
+  }): Promise<AgentControlImage[] | undefined> {
+    const { access, sessionId, model, attachmentIds } = input;
+    if (!attachmentIds || attachmentIds.length === 0) return undefined;
+    const attachments = await resolveAttachments({
+      access,
+      sessionId,
+      attachmentIds,
+    });
+    if (!supportsImageInput(model)) {
+      throw new AppError(
+        ApiErrorCodes.AI_IMAGE_NOT_SUPPORTED,
+        "当前模型不支持图片输入",
+        400,
+      );
+    }
+    return attachments.map((attachment) => ({
+      attachmentId: attachment.attachmentId,
+      data: attachment.data,
+      mimeType: attachment.mimeType,
+    }));
+  }
+
+  /** steer / followUp 时从 Run snapshot 读启动时的模型引用；snapshot 是执行事实。 */
+  function runModelRef(run: AiAgentRunRecord): AiModelRef {
+    return agentRunSnapshotSchema.parse(JSON.parse(run.snapshotJson)).model;
   }
 
   function requireScopedRun(

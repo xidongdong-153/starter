@@ -1,7 +1,20 @@
+/** steer / followUp 控制消息携带的图片块；data 为 base64。 */
+export interface AgentControlImage {
+  attachmentId?: string;
+  data: string;
+  mimeType: string;
+}
+
+/** steer / followUp 控制消息：文本与可选图片块一起构成 user message。 */
+export interface AgentControlMessage {
+  text: string;
+  images?: readonly AgentControlImage[];
+}
+
 export interface ActiveRunControls {
   abort: () => void;
-  steer: (text: string) => void;
-  followUp: (text: string) => void;
+  steer: (message: AgentControlMessage) => void;
+  followUp: (message: AgentControlMessage) => void;
 }
 
 export interface AttachableActiveRunControls extends ActiveRunControls {
@@ -121,12 +134,12 @@ export class ActiveRunRegistry {
     this.require(runId).abort();
   }
 
-  steer(runId: string, text: string): void {
-    this.require(runId).steer(text);
+  steer(runId: string, message: AgentControlMessage): void {
+    this.require(runId).steer(message);
   }
 
-  followUp(runId: string, text: string): void {
-    this.require(runId).followUp(text);
+  followUp(runId: string, message: AgentControlMessage): void {
+    this.require(runId).followUp(message);
   }
 
   release(runId: string): void;
