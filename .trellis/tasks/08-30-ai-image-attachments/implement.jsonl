@@ -1,0 +1,10 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/ai-integration-guidelines.md", "reason": "ai 模块分层与响应包装约定，新 attachment 子模块要遵守"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "startRun/steer/followUp 幂等与 lane 约定，附件校验要插在幂等预检查之前"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "agent-executor 与 pi-agent-core 的消息构造约定，image 块要走 AgentMessage content 数组"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "session/transcript 投影约定，user message 顶层 attachmentIds 沿用 runId 模式"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Drizzle 表设计与 migration 生成流程，ai_attachments 表要按此约定"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "AI.* 错误码与 AppError 用法，新错误码按此命名"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "contracts 的 Zod schema 组织与导出约定"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "web 侧 AI API 封装与 chat 数据流约定，上传与发送接线要遵守"}
+{"file": ".trellis/spec/guides/cross-layer-thinking-guide.md", "reason": "contracts/api/web 三端同构数据的跨层思考清单"}
