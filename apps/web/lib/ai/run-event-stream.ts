@@ -9,6 +9,8 @@ const LINE_SEPARATOR = /\r?\n/
 
 export interface StartRunStreamInput {
   agentId: string
+  /** 可选图片附件引用，与 input 一起构成首条 user message；最多 4 个。 */
+  attachmentIds?: string[]
   /** 可选幂等键：同 key 的重复启动返回既有 Run；失败 Run 重试时必须换新 key。 */
   idempotencyKey?: string
   /** 用户输入的文本，服务端会去掉首尾空白后校验长度。 */
@@ -97,13 +99,14 @@ async function* readRunEvents(response: Response): AsyncGenerator<RunEvent> {
  * `accept` 需要覆盖 `apiRpc` 默认的 `application/json`。
  */
 async function openRunStream(request: StartRunStreamInput): Promise<Response> {
-  const { agentId, idempotencyKey, input, lane, sessionId, signal } = request
+  const { agentId, attachmentIds, idempotencyKey, input, lane, sessionId, signal } = request
   let response: Response
 
   try {
     response = await apiRpc.api.ai.sessions[':sessionId'].runs.$post(
       // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空；
-      // lane 和 idempotencyKey 不传时走服务端默认（main lane、不幂等），保持 chat 调用不变。
+      // lane、idempotencyKey 和 attachmentIds 不传时走服务端默认
+      // （main lane、不幂等、纯文本），保持原调用不变。
       {
         param: { sessionId },
         json: {
@@ -111,6 +114,7 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
           input,
           ...(lane !== undefined ? { lane } : {}),
           ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+          ...(attachmentIds !== undefined && attachmentIds.length > 0 ? { attachmentIds } : {}),
         },
       },
       { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },

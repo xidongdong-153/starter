@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { useEffect, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
+import { useChatAttachments } from '@web/hooks/use-chat-attachments'
 import { useChatRun } from '@web/hooks/use-chat-run'
 import { authClient } from '@web/lib/auth-client'
 import { cn } from '@web/lib/utils'
@@ -25,6 +26,7 @@ export function ChatPanel({ className }: { className?: string }) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
   const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
   const chat = useChatRun(session?.user.id ?? null)
+  const attachments = useChatAttachments(chat.sessionId)
 
   useEffect(() => {
     // API 连不上时 getSession 会 reject，这里只是触发一次同步，失败交给 useSession 的状态展示。
@@ -74,7 +76,29 @@ export function ChatPanel({ className }: { className?: string }) {
 
   function handleSend(value: string) {
     setText('')
-    void chat.send(value)
+    const pending = attachments.items
+    if (pending.length > 0) attachments.clear()
+    // 启动失败（校验、busy、网络）时把附件放回待发送区，重试不用重新上传；
+    // Run 一旦启动，附件已进 transcript，不再恢复。
+    void chat.send(value, pending).then((started) => {
+      if (!started) attachments.restore(pending)
+    })
+  }
+
+  // 切换 / 新建 / 归档会话时清空待发送附件：旧会话的附件不能在新会话里引用。
+  function handleSelectSession(id: string) {
+    attachments.clear()
+    void chat.selectSession(id)
+  }
+
+  function handleNewSession() {
+    attachments.clear()
+    chat.startNewSession()
+  }
+
+  function handleArchiveSession() {
+    attachments.clear()
+    void chat.archiveSession()
   }
 
   return (
@@ -89,10 +113,10 @@ export function ChatPanel({ className }: { className?: string }) {
         <ChatSessionSidebar
           canMutateSessions={chat.canMutateSessions}
           className="hidden md:flex"
-          onArchive={() => void chat.archiveSession()}
-          onNew={chat.startNewSession}
+          onArchive={handleArchiveSession}
+          onNew={handleNewSession}
           onRename={(title) => chat.renameSession(title)}
-          onSelect={(id) => void chat.selectSession(id)}
+          onSelect={handleSelectSession}
           onToggleCollapseDesktop={() => setIsDesktopSidebarCollapsed(true)}
           sessionBusy={chat.sessionBusy}
           sessionId={chat.sessionId}
@@ -113,11 +137,11 @@ export function ChatPanel({ className }: { className?: string }) {
             <ChatSessionSidebar
               canMutateSessions={chat.canMutateSessions}
               className="w-full border-r-0"
-              onArchive={() => void chat.archiveSession()}
+              onArchive={handleArchiveSession}
               onCloseMobile={() => setIsMobileSidebarOpen(false)}
-              onNew={chat.startNewSession}
+              onNew={handleNewSession}
               onRename={(title) => chat.renameSession(title)}
-              onSelect={(id) => void chat.selectSession(id)}
+              onSelect={handleSelectSession}
               sessionBusy={chat.sessionBusy}
               sessionId={chat.sessionId}
               sessions={chat.sessions}
@@ -187,6 +211,7 @@ export function ChatPanel({ className }: { className?: string }) {
             <ChatTimeline
               history={chat.history}
               onSelectStarterPrompt={(prompt) => setText(prompt)}
+              pendingUserImages={chat.pendingUserImages}
               pendingUserText={chat.pendingUserText}
               timeline={chat.runState?.timeline ?? []}
             />
@@ -195,7 +220,11 @@ export function ChatPanel({ className }: { className?: string }) {
             <ChatComposer
               agentId={chat.agentId}
               agents={chat.agents}
+              attachmentError={attachments.error}
+              attachments={attachments.items}
               canStop={chat.canStop}
+              onAttachFiles={attachments.addFiles}
+              onRemoveAttachment={attachments.remove}
               onSend={() => handleSend(text.trim())}
               onStop={() => void chat.stop()}
               onTextChange={setText}

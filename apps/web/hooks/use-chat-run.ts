@@ -18,6 +18,7 @@ import { applyRunEvent, createChatRunState } from '@web/lib/ai/chat-events'
 import type { ChatNotice } from '@web/lib/ai/chat-run-view'
 import { applyLiveSnapshot, describeError, terminalNotice } from '@web/lib/ai/chat-run-view'
 import { resumeRunStream, startRunStream } from '@web/lib/ai/run-event-stream'
+import type { ChatAttachmentItem } from '@web/hooks/use-chat-attachments'
 import {
   abortAgentRun,
   archiveAgentSession,
@@ -35,6 +36,12 @@ import { isApiRequestError } from '@web/lib/http'
 const POLL_INTERVAL_MS = 1500
 /** 自动生成的 Session 标题长度上限。 */
 const TITLE_MAX_LENGTH = 40
+
+/** 发送中用户气泡里展示的图片缩略图。 */
+export interface PendingChatImage {
+  attachmentId: string
+  url: string
+}
 
 /**
  * Chat 页面的数据与 Run 生命周期。
@@ -55,6 +62,7 @@ export function useChatRun(userId: string | null) {
   const [runState, setRunState] = useState<ChatRunState | null>(null)
   const [runId, setRunId] = useState<string | null>(null)
   const [pendingUserText, setPendingUserText] = useState<string | null>(null)
+  const [pendingUserImages, setPendingUserImages] = useState<PendingChatImage[] | null>(null)
   const [boot, setBoot] = useState<'failed' | 'loading' | 'ready'>('loading')
   const [bootAttempt, setBootAttempt] = useState(0)
   const [running, setRunning] = useState(false)
@@ -150,6 +158,7 @@ export function useChatRun(userId: string | null) {
         setHistory(transcript.items)
         setRunState(null)
         setPendingUserText(null)
+        setPendingUserImages(null)
       } catch (error) {
         // 读历史失败时保留流式视图，已经产生的输出不清空。
         if (!mountedRef.current) return
@@ -244,6 +253,7 @@ export function useChatRun(userId: string | null) {
       if (controller.signal.aborted) {
         setRunning(false)
         setPendingUserText(null)
+        setPendingUserImages(null)
         setRunState(null)
         return
       }
@@ -344,8 +354,16 @@ export function useChatRun(userId: string | null) {
   }, [userId, bootAttempt, rememberSession, resumeActiveRun])
 
   const send = useCallback(
-    async (value: string) => {
-      if (value.length === 0 || agentId.length === 0 || running) return
+    async (value: string, attachments: ChatAttachmentItem[] = []) => {
+      if (value.length === 0 || agentId.length === 0 || running) return true
+
+      // 只有上传完成的附件能随请求发出；待发送区在上传中时会禁用发送，这里是防御。
+      const images: PendingChatImage[] = attachments.flatMap((item) =>
+        item.status === 'ready' && item.attachmentId !== null && item.url !== null
+          ? [{ attachmentId: item.attachmentId, url: item.url }]
+          : [],
+      )
+      const attachmentIds = images.map((image) => image.attachmentId)
 
       stopPolling()
       streamRef.current?.abort()
@@ -353,6 +371,7 @@ export function useChatRun(userId: string | null) {
       setRunId(null)
       setNotice(null)
       setPendingUserText(value)
+      setPendingUserImages(images.length > 0 ? images : null)
       setRunState(createChatRunState())
       setRunning(true)
       setStopping(false)
@@ -374,19 +393,23 @@ export function useChatRun(userId: string | null) {
           startRunStream({
             agentId,
             input: value,
+            attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
             sessionId: activeSessionId,
             signal: controller.signal,
           }),
           controller,
           'start',
         )
+        return true
       } catch (error) {
-        if (!mountedRef.current) return
+        if (!mountedRef.current) return false
         setRunning(false)
         setStopping(false)
         setPendingUserText(null)
+        setPendingUserImages(null)
         setRunState(null)
         handleRequestError(error, value)
+        return false
       }
     },
     [agentId, consumeRunEvents, handleRequestError, rememberSession, running, sessionId, stopPolling],
@@ -429,6 +452,7 @@ export function useChatRun(userId: string | null) {
         setHistory(transcript.items)
         setRunState(null)
         setPendingUserText(null)
+        setPendingUserImages(null)
         // 切回的会话可能还有 Run 在跑，查到就接回它的事件流。
         const activeRun = await getActiveAgentRun(targetSessionId)
         if (!mountedRef.current || token !== selectTokenRef.current) return
@@ -454,6 +478,7 @@ export function useChatRun(userId: string | null) {
     setHistory([])
     setRunState(null)
     setPendingUserText(null)
+    setPendingUserImages(null)
     setNotice(null)
   }, [rememberSession, running, stopPolling])
 
@@ -495,6 +520,7 @@ export function useChatRun(userId: string | null) {
         setHistory([])
         setRunState(null)
         setPendingUserText(null)
+        setPendingUserImages(null)
         setNotice(null)
         return
       }
@@ -505,6 +531,7 @@ export function useChatRun(userId: string | null) {
       setHistory([])
       setRunState(null)
       setPendingUserText(null)
+      setPendingUserImages(null)
       setNotice(null)
       try {
         const transcript = await getAgentTranscript(nextId)
@@ -538,6 +565,7 @@ export function useChatRun(userId: string | null) {
     history,
     notice,
     pendingUserText,
+    pendingUserImages,
     reload,
     renameSession,
     running,

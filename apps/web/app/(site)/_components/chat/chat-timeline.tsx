@@ -7,6 +7,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
 import type { ChatTimelineItem } from '@web/lib/ai/chat-events'
+import type { PendingChatImage } from '@web/hooks/use-chat-run'
 import { cn } from '@web/lib/utils'
 
 import { ChatMarkdown } from './chat-markdown'
@@ -51,6 +52,8 @@ const STARTER_PROMPTS = [
 
 export interface ChatTimelineProps {
   history: AgentTranscriptItem[]
+  /** 发送中用户气泡里展示的图片缩略图；没有图片时为 null。 */
+  pendingUserImages: PendingChatImage[] | null
   pendingUserText: string | null
   timeline: ChatTimelineItem[]
   onSelectStarterPrompt?: (prompt: string) => void
@@ -59,10 +62,11 @@ export interface ChatTimelineProps {
 
 /**
  * 渲染已持久化的 transcript 历史，再接上当前 Run 的流式视图。
- * 支持 Markdown 渲染、代码高亮复制、置底悬浮按钮与空态用例卡片。
+ * 支持 Markdown 渲染、代码高亮复制、图片附件缩略图（点击放大）、置底悬浮按钮与空态用例卡片。
  */
 export function ChatTimeline({
   history,
+  pendingUserImages,
   pendingUserText,
   timeline,
   onSelectStarterPrompt,
@@ -154,6 +158,9 @@ export function ChatTimeline({
                     <span>我</span>
                   </div>
                   <p className="mt-1.5 whitespace-pre-wrap text-foreground">{pendingUserText}</p>
+                  {pendingUserImages !== null && pendingUserImages.length > 0 ? (
+                    <UserMessageImages images={pendingUserImages} />
+                  ) : null}
                 </div>
               </div>
             )}
@@ -200,6 +207,7 @@ function TranscriptRow({ item }: { item: AgentTranscriptItem }) {
             <CopyButton content={item.content} />
           </div>
           <p className="mt-1.5 whitespace-pre-wrap text-foreground">{item.content}</p>
+          {item.images !== undefined && item.images.length > 0 ? <UserMessageImages images={item.images} /> : null}
         </div>
       </div>
     )
@@ -329,6 +337,51 @@ function MessageBlocks({ blocks, pending }: { blocks: AgentMessageBlock[]; pendi
         ),
       )}
     </div>
+  )
+}
+
+/** 用户消息携带的图片附件：按原始顺序渲染缩略图，点击放大。 */
+function UserMessageImages({ images }: { images: ReadonlyArray<{ attachmentId: string; url: string }> }) {
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {images.map((image) => (
+        <LightboxImage key={image.attachmentId} src={image.url} />
+      ))}
+    </div>
+  )
+}
+
+/** 缩略图 + 点击后的全屏预览；点遮罩关闭，点图片本身不关闭。 */
+function LightboxImage({ src }: { src: string }) {
+  const [open, setOpen] = useState(false)
+
+  return (
+    <>
+      <button
+        aria-label="放大查看图片"
+        className="block overflow-hidden rounded border border-border transition-opacity hover:opacity-85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        onClick={() => setOpen(true)}
+        type="button"
+      >
+        <img alt="图片附件" className="size-20 object-cover" src={src} />
+      </button>
+      {open ? (
+        <div
+          aria-label="图片预览"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-background/85 p-6 backdrop-blur-sm"
+          onClick={() => setOpen(false)}
+          role="dialog"
+        >
+          <img
+            alt="图片附件"
+            className="max-h-full max-w-full object-contain shadow-xl"
+            onClick={(event) => event.stopPropagation()}
+            src={src}
+          />
+        </div>
+      ) : null}
+    </>
   )
 }
 

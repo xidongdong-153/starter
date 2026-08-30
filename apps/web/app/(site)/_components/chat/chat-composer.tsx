@@ -1,12 +1,14 @@
 'use client'
 
 import type { AgentDefinitionSummary } from '@starter/contracts'
-import { CornerDownLeft, Send, Sparkles, Square, X } from 'lucide-react'
-import type { KeyboardEvent } from 'react'
-import { useRef } from 'react'
+import { CornerDownLeft, ImagePlus, Loader2, Send, Sparkles, Square, X } from 'lucide-react'
+import type { ChangeEvent, ClipboardEvent, DragEvent, KeyboardEvent } from 'react'
+import { useRef, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
 import { Textarea } from '@web/components/ui/textarea'
+import type { ChatAttachmentItem } from '@web/hooks/use-chat-attachments'
+import { ATTACHMENT_ACCEPT } from '@web/lib/ai/attachment-input'
 import { cn } from '@web/lib/utils'
 
 const QUICK_PROMPTS = [
@@ -20,7 +22,13 @@ const QUICK_PROMPTS = [
 export interface ChatComposerProps {
   agentId: string
   agents: AgentDefinitionSummary[]
+  /** 待发送的图片附件；上传中的项只显示占位。 */
+  attachments: ChatAttachmentItem[]
+  /** 附件预校验或上传失败的提示，下一次操作时刷新。 */
+  attachmentError: string | null
   canStop: boolean
+  onAttachFiles: (files: File[]) => void
+  onRemoveAttachment: (key: string) => void
   onSend: () => void
   onStop: () => void
   onTextChange: (text: string) => void
@@ -32,12 +40,17 @@ export interface ChatComposerProps {
 
 /**
  * Chat 底部输入区：
- * 提供快捷 Prompt 标签、多行文本自适应输入、清空按钮、快捷键提示与发送/停止操作。
+ * 提供快捷 Prompt 标签、多行文本自适应输入、清空按钮、快捷键提示与发送/停止操作；
+ * 支持图片附件：文件选择、粘贴、拖拽进入后立即上传，缩略图进入待发送区。
  */
 export function ChatComposer({
   agentId,
   agents,
+  attachments,
+  attachmentError,
   canStop,
+  onAttachFiles,
+  onRemoveAttachment,
   onSend,
   onStop,
   onTextChange,
@@ -47,7 +60,10 @@ export function ChatComposer({
   className,
 }: ChatComposerProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null)
-  const canSend = !running && text.trim().length > 0 && agentId.length > 0
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const [dragActive, setDragActive] = useState(false)
+  const hasUploading = attachments.some((item) => item.status === 'uploading')
+  const canSend = !running && !hasUploading && text.trim().length > 0 && agentId.length > 0
 
   function handleKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key !== 'Enter' || event.shiftKey) return
@@ -68,8 +84,49 @@ export function ChatComposer({
     textareaRef.current?.focus()
   }
 
+  function handleFileSelect(event: ChangeEvent<HTMLInputElement>) {
+    onAttachFiles(Array.from(event.target.files ?? []))
+    // 允许再次选择同一个文件。
+    event.target.value = ''
+  }
+
+  function handlePaste(event: ClipboardEvent<HTMLTextAreaElement>) {
+    if (running) return
+    const files = Array.from(event.clipboardData.files)
+    if (files.length === 0) return
+    event.preventDefault()
+    onAttachFiles(files)
+  }
+
+  function handleDragOver(event: DragEvent<HTMLDivElement>) {
+    // 拖文本时不高亮，只有拖文件才进入附件流程。
+    if (!Array.from(event.dataTransfer.types).includes('Files')) return
+    event.preventDefault()
+    setDragActive(true)
+  }
+
+  function handleDragLeave() {
+    setDragActive(false)
+  }
+
+  function handleDrop(event: DragEvent<HTMLDivElement>) {
+    event.preventDefault()
+    setDragActive(false)
+    if (running) return
+    onAttachFiles(Array.from(event.dataTransfer.files))
+  }
+
   return (
-    <div className={cn('shrink-0 border-t border-border bg-surface/95 p-3.5 backdrop-blur-md md:p-4', className)}>
+    <div
+      className={cn(
+        'shrink-0 border-t border-border bg-surface/95 p-3.5 backdrop-blur-md transition-colors md:p-4',
+        dragActive && 'border-t-primary bg-surface-muted',
+        className,
+      )}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+    >
       <div className="mx-auto max-w-3xl space-y-2.5">
         {/* 快捷 Prompt 标签栏 */}
         {!running && agents.length > 0 ? (
@@ -101,10 +158,11 @@ export function ChatComposer({
             id="chat-composer-textarea"
             onChange={(event) => onTextChange(event.target.value)}
             onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
             placeholder={
               agents.length === 0
                 ? '暂无可用的 Agent，请先在 Admin 后台启用…'
-                : '输入消息… (Enter 发送，Shift + Enter 换行)'
+                : '输入消息… (Enter 发送，Shift + Enter 换行，可粘贴或拖入图片)'
             }
             ref={textareaRef}
             rows={3}
@@ -125,8 +183,59 @@ export function ChatComposer({
           ) : null}
         </div>
 
+        {/* 待发送附件区：上传中显示占位，完成后显示缩略图 */}
+        {attachments.length > 0 || attachmentError !== null ? (
+          <div className="flex flex-wrap items-center gap-2">
+            {attachments.map((item) =>
+              item.status === 'uploading' ? (
+                <div
+                  className="flex h-14 max-w-48 items-center gap-1.5 rounded border border-border bg-surface-muted px-2.5 text-[11px] text-muted-foreground"
+                  key={item.key}
+                >
+                  <Loader2 aria-hidden="true" className="shrink-0 animate-spin" size={12} />
+                  <span className="truncate">{item.name}</span>
+                </div>
+              ) : (
+                <div className="group relative" key={item.key}>
+                  <img
+                    alt={item.name}
+                    className="size-14 rounded border border-border bg-surface-muted object-cover"
+                    src={item.url ?? undefined}
+                  />
+                  <button
+                    aria-label={`移除图片 ${item.name}`}
+                    className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-border bg-surface text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+                    onClick={() => onRemoveAttachment(item.key)}
+                    title="移除图片"
+                    type="button"
+                  >
+                    <X aria-hidden="true" size={11} />
+                  </button>
+                </div>
+              ),
+            )}
+            {attachmentError !== null ? (
+              <p className="text-[11px] text-danger" role="alert">
+                {attachmentError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Button
+              aria-label="上传图片"
+              className="h-7 gap-1 px-2 text-[11px] text-muted-foreground"
+              disabled={running}
+              onClick={() => fileInputRef.current?.click()}
+              title="上传图片（也可粘贴或拖入）"
+              type="button"
+              variant="ghost"
+            >
+              <ImagePlus aria-hidden="true" size={13} />
+              图片
+            </Button>
             <CornerDownLeft aria-hidden="true" size={13} />
             <span>Enter 发送 / Shift + Enter 换行</span>
           </div>
@@ -153,6 +262,17 @@ export function ChatComposer({
           </div>
         </div>
       </div>
+
+      {/* 隐藏的图片选择入口 */}
+      <input
+        accept={ATTACHMENT_ACCEPT}
+        aria-label="选择图片文件"
+        className="sr-only"
+        multiple
+        onChange={handleFileSelect}
+        ref={fileInputRef}
+        type="file"
+      />
     </div>
   )
 }
