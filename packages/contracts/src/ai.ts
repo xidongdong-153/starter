@@ -809,6 +809,24 @@ export const agentSessionListSchema = z.strictObject({
 
 export type AgentSessionList = z.infer<typeof agentSessionListSchema>
 
+/** AI 图片附件的 MIME 白名单；上传校验与附件引用共用。 */
+export const aiAttachmentMimeTypeSchema = z.enum(['image/jpeg', 'image/png', 'image/webp', 'image/gif'])
+export type AiAttachmentMimeType = z.infer<typeof aiAttachmentMimeTypeSchema>
+
+/** 附件上传响应 DTO；图片字节走 `GET /ai/attachments/{attachmentId}/content` 下载。 */
+export const aiAttachmentSchema = z.strictObject({
+  id: uuidSchema,
+  mimeType: aiAttachmentMimeTypeSchema,
+  size: z.number().int().positive(),
+  /** 上传时携带的 session 归属；无 session 上传时为 null。 */
+  sessionId: uuidSchema.nullable(),
+  createdAt: isoDateTimeSchema,
+})
+export type AiAttachment = z.infer<typeof aiAttachmentSchema>
+
+/** 单次请求最多引用 4 个附件。 */
+const agentAttachmentIdsSchema = z.array(uuidSchema).max(4)
+
 export const agentTranscriptQuerySchema = z.strictObject({
   lane: agentLaneSchema.default('main'),
   cursor: z.coerce.number().int().min(0).optional(),
@@ -882,6 +900,17 @@ export const agentTranscriptUserMessageSchema = z.strictObject({
   type: z.literal('user_message'),
   runId: uuidSchema,
   content: z.string(),
+  /** 消息携带的图片附件引用，按原始顺序排列；纯文本消息缺失该字段。base64 不出 API 边界。 */
+  images: z
+    .array(
+      z.strictObject({
+        attachmentId: uuidSchema,
+        mimeType: aiAttachmentMimeTypeSchema,
+        url: z.string(),
+      }),
+    )
+    .max(4)
+    .optional(),
 })
 
 export const agentTranscriptAssistantMessageSchema = z.strictObject({
@@ -1087,6 +1116,8 @@ export const startAgentRunSchema = z.strictObject({
    * key 在 Run 行创建成功后才被消费，此前的失败（如 lane 占用）不占用 key。
    */
   idempotencyKey: agentRunIdempotencyKeySchema.optional(),
+  /** 可选图片附件引用；与 `input` 一起构成首条 user message。 */
+  attachmentIds: agentAttachmentIdsSchema.optional(),
 })
 
 export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>
@@ -1097,10 +1128,18 @@ export const startAgentRunJsonSchema = z.strictObject({
 })
 export type StartAgentRunJson = z.infer<typeof startAgentRunJsonSchema>
 
-export const steerAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
+export const steerAgentRunSchema = z.strictObject({
+  text: agentRunInputTextSchema,
+  /** 可选图片附件引用；与 `text` 一起构成中途插入的 user message。 */
+  attachmentIds: agentAttachmentIdsSchema.optional(),
+})
 export type SteerAgentRunInput = z.infer<typeof steerAgentRunSchema>
 
-export const followUpAgentRunSchema = z.strictObject({ text: agentRunInputTextSchema })
+export const followUpAgentRunSchema = z.strictObject({
+  text: agentRunInputTextSchema,
+  /** 可选图片附件引用；与 `text` 一起构成追问的 user message。 */
+  attachmentIds: agentAttachmentIdsSchema.optional(),
+})
 export type FollowUpAgentRunInput = z.infer<typeof followUpAgentRunSchema>
 
 export const runEventLaneSchema = agentLaneSchema
@@ -1610,6 +1649,8 @@ export const completionRequestSchema = z.strictObject({
   model: aiModelRefSchema,
   systemPrompt: z.string().trim().min(1).max(32_000).optional(),
   input: z.string().trim().min(1).max(100_000),
+  /** 可选图片附件引用；与 `input` 一起构成无状态 completion 的 user message。 */
+  attachmentIds: agentAttachmentIdsSchema.optional(),
 })
 
 export type CompletionRequest = z.infer<typeof completionRequestSchema>
