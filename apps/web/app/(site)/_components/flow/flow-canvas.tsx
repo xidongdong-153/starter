@@ -162,11 +162,20 @@ function FlowCanvasInner({
 }: FlowCanvasProps) {
   const { screenToFlowPosition, fitView } = useReactFlow()
   const importInputRef = useRef<HTMLInputElement>(null)
+  const nodeMeasuredRef = useRef<Map<string, { width: number; height: number }>>(new Map())
   const [nameDraft, setNameDraft] = useState<string | null>(null)
   const [selectedElementIds, setSelectedElementIds] = useState<ReadonlySet<string>>(() => new Set())
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
+      for (const change of changes) {
+        if (change.type === 'dimensions' && change.dimensions) {
+          nodeMeasuredRef.current.set(change.id, change.dimensions)
+        } else if (change.type === 'remove') {
+          nodeMeasuredRef.current.delete(change.id)
+        }
+      }
+
       const documentChanges = changes.filter((change) => change.type !== 'select' && change.type !== 'dimensions')
       if (documentChanges.length > 0) {
         onDocumentChange({ nodes: applyDocumentNodeChanges(documentChanges, document.nodes), edges: document.edges })
@@ -230,12 +239,17 @@ function FlowCanvasInner({
   const displayNodes: Node[] = useMemo(
     () =>
       document.nodes.map((node) => {
+        const measured =
+          nodeMeasuredRef.current.get(node.id) ??
+          (node.type === 'input' ? { width: 288, height: 140 } : { width: 320, height: 160 })
+
         if (node.type === 'input') {
           return {
             id: node.id,
             type: 'input' as const,
             position: node.position,
             selected: selectedElementIds.has(node.id),
+            measured,
             data: {
               inputText: node.data.inputText,
               onInputTextChange: (text: string) => onInputTextChange(node.id, text),
@@ -248,6 +262,7 @@ function FlowCanvasInner({
           type: 'agent' as const,
           position: node.position,
           selected: selectedElementIds.has(node.id),
+          measured,
           data: {
             agentId: node.data.agentId,
             promptTemplate: node.data.promptTemplate,
@@ -277,13 +292,18 @@ function FlowCanvasInner({
       document.edges.map((edge) => {
         const targetStep = stepStates[edge.target]
         const isTargetRunning = targetStep?.status === 'running'
+        const isSelected = selectedElementIds.has(edge.id)
 
         return {
           ...edge,
           type: 'smoothstep',
           animated: isTargetRunning,
-          selected: selectedElementIds.has(edge.id),
+          selected: isSelected,
           style: isTargetRunning ? { stroke: 'var(--color-primary)', strokeWidth: 2 } : undefined,
+          markerEnd: {
+            type: MarkerType.ArrowClosed,
+            color: isTargetRunning || isSelected ? 'var(--color-primary)' : 'var(--color-border)',
+          },
         }
       }),
     [document.edges, selectedElementIds, stepStates],
@@ -467,10 +487,11 @@ function FlowCanvasInner({
           onPaneClick={() => onSelectNode(null)}
         >
           <Background color="var(--color-border)" gap={24} size={1.5} variant={BackgroundVariant.Dots} />
-          <Controls className="!border-border !bg-surface !shadow-md" position="bottom-left" showInteractive={false} />
+          <Controls className="!border-border !bg-surface shadow-md" position="bottom-left" showInteractive={false} />
           <MiniMap
-            className="!hidden !border-border !bg-surface/90 !shadow-md md:!block"
+            className="!hidden !border-border !bg-surface/90 shadow-md md:!block"
             maskColor="color-mix(in srgb, var(--theme-base) 60%, transparent)"
+            maskStrokeColor="var(--color-primary)"
             nodeColor="var(--color-primary)"
             position="bottom-right"
             zoomable

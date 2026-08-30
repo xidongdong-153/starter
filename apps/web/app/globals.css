@@ -27,13 +27,22 @@ body {
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
+}
+
+option {
+  background-color: var(--color-surface);
+  color: var(--color-foreground);
 }
 
 button,
 a,
-input {
+input,
+select,
+textarea {
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -86,4 +95,121 @@ a {
     scroll-behavior: auto !important;
     transition-duration: 0.01ms !important;
   }
+}
+
+/* ==========================================================================
+   React Flow 主题色适配 (Rose Pine)
+   ========================================================================== */
+
+.react-flow {
+  --xy-controls-button-background-color: var(--color-surface);
+  --xy-controls-button-background-color-hover: var(--color-surface-muted);
+  --xy-controls-button-color: var(--color-muted-foreground);
+  --xy-controls-button-color-hover: var(--color-foreground);
+  --xy-controls-button-border-color: var(--color-border);
+  --xy-controls-box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+
+  --xy-minimap-background-color: var(--color-surface);
+  --xy-minimap-mask-background-color: color-mix(in srgb, var(--color-surface-muted) 65%, transparent);
+  --xy-minimap-mask-stroke-color: var(--color-border);
+  --xy-minimap-node-background-color: var(--color-muted-foreground);
+  --xy-minimap-node-stroke-color: transparent;
+
+  --xy-edge-stroke-default: var(--color-border);
+  --xy-edge-stroke: var(--color-border);
+  --xy-edge-stroke-selected-default: var(--color-primary);
+  --xy-edge-stroke-selected: var(--color-primary);
+  --xy-connectionline-stroke-default: var(--color-primary);
+  --xy-connectionline-stroke: var(--color-primary);
+
+  --xy-selection-background-color-default: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --xy-selection-background-color: color-mix(in srgb, var(--color-primary) 12%, transparent);
+  --xy-selection-border-default: 1px dashed var(--color-primary);
+  --xy-selection-border: 1px dashed var(--color-primary);
+
+  --xy-background-pattern-dots-color-default: var(--color-border);
+
+  --xy-attribution-background-color-default: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  --xy-attribution-background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+}
+
+.react-flow__controls {
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.react-flow__controls-button {
+  background-color: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: none;
+}
+
+.react-flow__controls-button:hover {
+  background-color: var(--color-surface-muted);
+  color: var(--color-foreground);
+}
+
+.react-flow__controls-button:active {
+  background-color: var(--color-surface-elevated);
+}
+
+.react-flow__controls-button:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+.react-flow__controls-button svg {
+  fill: currentColor;
+}
+
+.react-flow__minimap {
+  border: 1px solid var(--color-border);
+  background-color: var(--color-surface);
+  border-radius: 0.375rem;
+  overflow: hidden;
+}
+
+.react-flow__arrowhead polyline {
+  stroke: var(--xy-edge-stroke, var(--color-border));
+}
+
+.react-flow__arrowhead polyline.arrowclosed {
+  fill: var(--xy-edge-stroke, var(--color-border));
+}
+
+.react-flow__edge.selected .react-flow__arrowhead polyline,
+.react-flow__edge:focus .react-flow__arrowhead polyline,
+.react-flow__edge:focus-visible .react-flow__arrowhead polyline {
+  stroke: var(--color-primary);
+}
+
+.react-flow__edge.selected .react-flow__arrowhead polyline.arrowclosed,
+.react-flow__edge:focus .react-flow__arrowhead polyline.arrowclosed,
+.react-flow__edge:focus-visible .react-flow__arrowhead polyline.arrowclosed {
+  fill: var(--color-primary);
+}
+
+.react-flow__attribution {
+  background-color: color-mix(in srgb, var(--color-surface) 80%, transparent);
+  border-top-left-radius: 0.25rem;
+  border-top: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
+}
+
+.react-flow__attribution a {
+  color: var(--color-muted-foreground);
+  transition: color 150ms ease;
+}
+
+.react-flow__attribution a:hover {
+  color: var(--color-foreground);
 }

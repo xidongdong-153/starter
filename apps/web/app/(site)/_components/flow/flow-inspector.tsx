@@ -14,7 +14,7 @@ import { availableVariables } from '@web/lib/flow/flow-template'
 import { cn } from '@web/lib/utils'
 
 const selectClass =
-  'h-11 w-full border border-input bg-surface px-2.5 text-sm transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
+  'h-11 w-full border border-input bg-surface px-2.5 text-sm text-foreground transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
 
 export interface FlowInspectorProps {
   selectedNode: FlowNode | null
