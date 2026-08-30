@@ -1,7 +1,7 @@
 'use client'
 
 import type { AgentSession } from '@starter/contracts'
-import { Archive, Check, MessageSquare, MessageSquarePlus, Pencil, X } from 'lucide-react'
+import { Archive, Check, ChevronLeft, MessageSquare, MessageSquarePlus, Pencil, X } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 
@@ -24,11 +24,12 @@ export interface ChatSessionSidebarProps {
   sessionTotal: number
   className?: string
   onCloseMobile?: () => void
+  onToggleCollapseDesktop?: () => void
 }
 
 /**
  * 左侧会话列表侧边栏：
- * 包含新建对话操作、会话垂直独立滚动列表、选中高亮、内联改名表单与归档二次确认。
+ * 包含新建对话操作、会话垂直独立滚动列表、选中高亮、内联改名表单与归档二次确认，支持桌面端折叠收起。
  */
 export function ChatSessionSidebar({
   canMutateSessions,
@@ -42,6 +43,7 @@ export function ChatSessionSidebar({
   sessionTotal,
   className,
   onCloseMobile,
+  onToggleCollapseDesktop,
 }: ChatSessionSidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftTitle, setDraftTitle] = useState('')
@@ -112,17 +114,30 @@ export function ChatSessionSidebar({
         className,
       )}
     >
-      {/* 侧边栏头部：新建对话与关闭按钮（移动端） */}
+      {/* 侧边栏头部：新建对话与关闭/收起按钮 */}
       <div className="flex items-center justify-between gap-2 border-b border-border p-4">
         <Button
-          className="flex-1 justify-start gap-2 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
+          className="flex-1 justify-start gap-2 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 text-xs"
           disabled={!canMutateSessions}
           onClick={handleStartNew}
           type="button"
         >
-          <MessageSquarePlus aria-hidden="true" size={16} />
+          <MessageSquarePlus aria-hidden="true" size={15} />
           新建对话
         </Button>
+        {onToggleCollapseDesktop ? (
+          <Button
+            aria-label="收起会话列表"
+            className="hidden md:flex size-8 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onToggleCollapseDesktop}
+            size="icon"
+            title="收起会话列表"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronLeft aria-hidden="true" size={16} />
+          </Button>
+        ) : null}
         {onCloseMobile ? (
           <Button
             aria-label="关闭侧边栏"

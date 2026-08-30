@@ -17,6 +17,7 @@ import {
   parseFlowImport,
   serializeFlowDocument,
 } from '@web/lib/flow/flow-document'
+import { BUILTIN_FLOW_TEMPLATES } from '@web/lib/flow/flow-templates'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { validateFlowGraph, validateStepTemplates } from '@web/lib/flow/flow-validate'
 import { useFlowRun } from '@web/hooks/use-flow-run'
@@ -42,7 +43,7 @@ function touchDocument(document: FlowDocument): FlowDocument {
 
 /**
  * Flow 工作台：登录门禁 + 左侧文档列表 + 中间画布 + 右侧节点配置面板。
- * 文档状态是唯一事实来源（localStorage 持久化），运行态由 useFlowRun 持有（刷新即弃）。
+ * 支持双向面板折叠以扩大宽屏操作区，支持预置工作流模板一键载入。
  */
 export function FlowWorkspace({ className }: { className?: string }) {
   const { data: session, isPending } = authClient.useSession()
@@ -56,6 +57,8 @@ export function FlowWorkspace({ className }: { className?: string }) {
   const [agentsAttempt, setAgentsAttempt] = useState(0)
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [importError, setImportError] = useState<string | null>(null)
+  const [isLeftCollapsed, setIsLeftCollapsed] = useState(false)
+  const [isRightCollapsed, setIsRightCollapsed] = useState(false)
 
   const persistTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const documentsRef = useRef<FlowDocument[] | null>(null)
@@ -223,6 +226,23 @@ export function FlowWorkspace({ className }: { className?: string }) {
     setValidationErrors([])
     setImportError(null)
   }, [flowRun, persist])
+
+  const handleLoadTemplate = useCallback(
+    (templateId: string) => {
+      const tpl = BUILTIN_FLOW_TEMPLATES.find((t) => t.id === templateId)
+      if (!tpl) return
+      const created = tpl.createDocument()
+      const next = [created, ...(documentsRef.current ?? [])]
+      setDocuments(next)
+      persist(next)
+      flowRun.reset()
+      setActiveId(created.id)
+      setSelectedNodeId(null)
+      setValidationErrors([])
+      setImportError(null)
+    },
+    [flowRun, persist],
+  )
 
   const handleDuplicateDocument = useCallback(
     (documentId: string) => {
@@ -416,16 +436,20 @@ export function FlowWorkspace({ className }: { className?: string }) {
         className,
       )}
     >
-      <FlowSidebar
-        activeId={activeId}
-        className="hidden md:flex"
-        documents={documents}
-        onCreate={handleCreateDocument}
-        onDelete={handleDeleteDocument}
-        onDuplicate={handleDuplicateDocument}
-        onRename={handleRenameSidebarDocument}
-        onSelect={handleSelectDocument}
-      />
+      {!isLeftCollapsed ? (
+        <FlowSidebar
+          activeId={activeId}
+          className="hidden md:flex"
+          documents={documents}
+          onCreate={handleCreateDocument}
+          onDelete={handleDeleteDocument}
+          onDuplicate={handleDuplicateDocument}
+          onLoadTemplate={handleLoadTemplate}
+          onRename={handleRenameSidebarDocument}
+          onSelect={handleSelectDocument}
+          onToggleCollapse={() => setIsLeftCollapsed(true)}
+        />
+      ) : null}
 
       <div className="flex min-w-0 flex-1 flex-col bg-surface/40">
         {/* 小屏降级提示：画布交互桌面优先 */}
@@ -439,6 +463,8 @@ export function FlowWorkspace({ className }: { className?: string }) {
             canStop={canStop}
             chainIndex={chainIndex}
             document={activeDocument}
+            isLeftCollapsed={isLeftCollapsed}
+            isRightCollapsed={isRightCollapsed}
             onDocumentChange={handleDocumentChange}
             onExport={handleExport}
             onImport={handleImport}
@@ -447,6 +473,8 @@ export function FlowWorkspace({ className }: { className?: string }) {
             onRun={handleRun}
             onSelectNode={setSelectedNodeId}
             onStop={handleStop}
+            onToggleLeftCollapse={() => setIsLeftCollapsed(false)}
+            onToggleRightCollapse={() => setIsRightCollapsed((val) => !val)}
             running={running}
             selectedNodeId={selectedNodeId}
             stepStates={stepStates}
@@ -500,17 +528,20 @@ export function FlowWorkspace({ className }: { className?: string }) {
         ) : null}
       </div>
 
-      <FlowInspector
-        agents={agents}
-        chainIndex={chainIndex}
-        onAgentIdChange={handleAgentIdChange}
-        onInputTextChange={handleInputTextChange}
-        onPromptTemplateChange={handlePromptTemplateChange}
-        onRetryFrom={handleRetryFrom}
-        running={running}
-        selectedNode={selectedNode}
-        stepStates={stepStates}
-      />
+      {!isRightCollapsed ? (
+        <FlowInspector
+          agents={agents}
+          chainIndex={chainIndex}
+          onAgentIdChange={handleAgentIdChange}
+          onInputTextChange={handleInputTextChange}
+          onPromptTemplateChange={handlePromptTemplateChange}
+          onRetryFrom={handleRetryFrom}
+          onToggleCollapse={() => setIsRightCollapsed(true)}
+          running={running}
+          selectedNode={selectedNode}
+          stepStates={stepStates}
+        />
+      ) : null}
     </div>
   )
 }

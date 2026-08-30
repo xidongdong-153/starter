@@ -1,7 +1,8 @@
 'use client'
 
 import type { FlowDocument } from '@web/lib/flow/flow-document'
-import { Check, Copy, Pencil, Waypoints, X } from 'lucide-react'
+import { BUILTIN_FLOW_TEMPLATES } from '@web/lib/flow/flow-templates'
+import { Check, ChevronLeft, Copy, LayoutTemplate, Pencil, Sparkles, Waypoints, X } from 'lucide-react'
 import type { FormEvent } from 'react'
 import { useState } from 'react'
 
@@ -17,14 +18,16 @@ export interface FlowSidebarProps {
   disabled?: boolean
   onSelect: (documentId: string) => void
   onCreate: () => void
+  onLoadTemplate?: (templateId: string) => void
   onDuplicate: (documentId: string) => void
   onRename: (documentId: string, name: string) => void
   onDelete: (documentId: string) => void
+  onToggleCollapse?: () => void
   className?: string
 }
 
 /**
- * 左侧流程文档列表：新建、复制、重命名、删除，localStorage 是唯一存储。
+ * 左侧流程文档列表：新建、载入示例模板、复制、重命名、删除，支持折叠收起。
  */
 export function FlowSidebar({
   documents,
@@ -32,15 +35,18 @@ export function FlowSidebar({
   disabled = false,
   onSelect,
   onCreate,
+  onLoadTemplate,
   onDuplicate,
   onRename,
   onDelete,
+  onToggleCollapse,
   className,
 }: FlowSidebarProps) {
   const [renamingId, setRenamingId] = useState<string | null>(null)
   const [draftName, setDraftName] = useState('')
   const [nameError, setNameError] = useState<string | null>(null)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [isTemplateMenuOpen, setIsTemplateMenuOpen] = useState(false)
 
   function handleStartRename(document: FlowDocument) {
     setRenamingId(document.id)
@@ -67,22 +73,83 @@ export function FlowSidebar({
   return (
     <aside
       aria-label="流程文档侧边栏"
-      className={cn('flex h-full w-72 shrink-0 flex-col border-r border-border bg-surface-muted/40', className)}
+      className={cn(
+        'relative flex h-full w-72 shrink-0 flex-col border-r border-border bg-surface-muted/40 transition-all',
+        className,
+      )}
     >
-      <div className="border-b border-border p-4">
-        <Button
-          className="w-full justify-start gap-2 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90"
-          disabled={disabled}
-          onClick={onCreate}
-          type="button"
-        >
-          <Waypoints aria-hidden="true" size={16} />
-          新建流程
-        </Button>
+      <div className="space-y-2 border-b border-border p-3.5">
+        <div className="flex items-center gap-1.5">
+          <Button
+            className="flex-1 justify-start gap-2 bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 text-xs"
+            disabled={disabled}
+            onClick={() => {
+              setIsTemplateMenuOpen(false)
+              onCreate()
+            }}
+            type="button"
+          >
+            <Waypoints aria-hidden="true" size={15} />
+            新建流程
+          </Button>
+
+          {onToggleCollapse ? (
+            <Button
+              aria-label="收起侧边栏"
+              className="size-8 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleCollapse}
+              size="icon"
+              title="收起侧边栏"
+              type="button"
+              variant="ghost"
+            >
+              <ChevronLeft aria-hidden="true" size={16} />
+            </Button>
+          ) : null}
+        </div>
+
+        {/* 预置模板快速载入 */}
+        <div className="relative">
+          <Button
+            className="w-full justify-start gap-2 text-xs"
+            disabled={disabled}
+            onClick={() => setIsTemplateMenuOpen((open) => !open)}
+            type="button"
+            variant="outline"
+          >
+            <LayoutTemplate aria-hidden="true" size={14} className="text-primary" />
+            <span>载入示例模板…</span>
+          </Button>
+
+          {isTemplateMenuOpen ? (
+            <div className="absolute left-0 top-full z-20 mt-1 w-full rounded border border-border bg-surface p-1 shadow-lg">
+              <div className="px-2 py-1 text-[11px] font-medium text-muted-foreground">选择内置工作流</div>
+              <div className="space-y-1">
+                {BUILTIN_FLOW_TEMPLATES.map((tpl) => (
+                  <button
+                    className="flex w-full flex-col items-start rounded p-2 text-left text-xs transition-colors hover:bg-surface-muted focus-visible:bg-surface-muted"
+                    key={tpl.id}
+                    onClick={() => {
+                      setIsTemplateMenuOpen(false)
+                      onLoadTemplate?.(tpl.id)
+                    }}
+                    type="button"
+                  >
+                    <div className="flex items-center gap-1.5 font-medium text-foreground">
+                      <Sparkles aria-hidden="true" size={12} className="text-primary" />
+                      <span>{tpl.name}</span>
+                    </div>
+                    <span className="mt-0.5 line-clamp-1 text-[10px] text-muted-foreground">{tpl.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+        </div>
       </div>
 
-      <div className="border-b border-border-subtle px-4 py-2 text-xs text-muted-foreground">
-        流程文档 ({documents.length})
+      <div className="flex items-center justify-between border-b border-border-subtle px-4 py-2 text-xs text-muted-foreground">
+        <span>流程文档 ({documents.length})</span>
       </div>
 
       <nav aria-label="流程文档列表" className="flex-1 overflow-y-auto p-2">

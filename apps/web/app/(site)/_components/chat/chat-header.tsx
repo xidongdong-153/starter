@@ -1,7 +1,7 @@
 'use client'
 
 import type { AgentDefinitionSummary } from '@starter/contracts'
-import { Bot, Loader2, Menu } from 'lucide-react'
+import { Bot, Loader2, Menu, PanelLeftOpen } from 'lucide-react'
 import type { ChangeEvent } from 'react'
 
 import { Badge } from '@web/components/ui/badge'
@@ -15,6 +15,8 @@ export interface ChatHeaderProps {
   agents: AgentDefinitionSummary[]
   onAgentChange: (agentId: string) => void
   onToggleSidebarMobile?: () => void
+  onToggleSidebarDesktop?: () => void
+  isSidebarCollapsed?: boolean
   running: boolean
   sessionTitle: string
   stopping: boolean
@@ -22,13 +24,15 @@ export interface ChatHeaderProps {
 
 /**
  * 右侧对话区域顶部栏：
- * 包含移动端展开侧边栏按钮、当前会话标题、Agent 选择器以及运行状态徽章。
+ * 包含移动端与桌面端展开/收起侧边栏按钮、当前会话标题、Agent 选择器以及运行状态徽章。
  */
 export function ChatHeader({
   agentId,
   agents,
   onAgentChange,
   onToggleSidebarMobile,
+  onToggleSidebarDesktop,
+  isSidebarCollapsed = false,
   running,
   sessionTitle,
   stopping,
@@ -39,7 +43,7 @@ export function ChatHeader({
 
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur-md">
-      <div className="flex min-w-0 items-center gap-3">
+      <div className="flex min-w-0 items-center gap-2.5">
         {onToggleSidebarMobile ? (
           <Button
             aria-label="打开会话列表"
@@ -50,6 +54,20 @@ export function ChatHeader({
             variant="ghost"
           >
             <Menu aria-hidden="true" size={18} />
+          </Button>
+        ) : null}
+
+        {onToggleSidebarDesktop && isSidebarCollapsed ? (
+          <Button
+            aria-label="展开会话列表"
+            className="hidden md:flex size-8 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onToggleSidebarDesktop}
+            size="icon"
+            title="展开会话列表"
+            type="button"
+            variant="outline"
+          >
+            <PanelLeftOpen aria-hidden="true" size={15} />
           </Button>
         ) : null}
 

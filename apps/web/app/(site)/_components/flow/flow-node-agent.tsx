@@ -1,6 +1,7 @@
 'use client'
 
-import { AlertCircle, Bot, CheckCircle2, CircleStop, Loader2 } from 'lucide-react'
+import { AlertCircle, Bot, CheckCircle2, ChevronDown, ChevronUp, CircleStop, Clock, Loader2, Plus } from 'lucide-react'
+import { useState } from 'react'
 
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 
@@ -16,6 +17,7 @@ export type FlowAgentNodeData = {
   agentName: string | null
   runState: FlowStepRunState | null
   isSelected: boolean
+  onQuickAddNext?: (sourceNodeId: string) => void
 }
 
 export type FlowAgentNode = Node<FlowAgentNodeData, 'agent'>
@@ -29,72 +31,140 @@ const statusStyles: Record<string, string> = {
 }
 
 /**
- * Agent 节点：显示链上序号、所选 Agent、运行状态与产出预览。
+ * Agent 节点：显示链上序号、所选 Agent、运行状态、耗时与产出就地预览。
  * 完整配置和产出全文在选中节点后的右侧 inspector 面板里编辑。
  */
-export function FlowNodeAgent({ data }: NodeProps<FlowAgentNode>) {
+export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
+  const [isOutputExpanded, setIsOutputExpanded] = useState(false)
   const runState = data.runState
   const status = runState?.status ?? 'idle'
+
+  const durationText =
+    runState?.startedAt && runState?.finishedAt
+      ? `${((runState.finishedAt - runState.startedAt) / 1000).toFixed(1)}s`
+      : null
+
+  const hasOutput = runState?.output !== null && runState?.output !== undefined && runState.output.length > 0
 
   return (
     <div
       className={cn(
-        'w-72 border bg-surface shadow-sm transition-colors',
+        'group relative w-80 border bg-surface shadow-sm transition-colors',
         statusStyles[status] ?? 'border-border',
-        data.isSelected ? 'border-primary' : undefined,
+        data.isSelected ? 'border-primary ring-2 ring-primary/20' : undefined,
       )}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
         <div className="flex items-center gap-2 text-xs font-medium text-foreground">
           <Bot aria-hidden="true" className="text-primary" size={14} />
-          Agent{data.stepIndex !== null ? ` ${data.stepIndex + 1}` : ''}
+          <span>Agent{data.stepIndex !== null ? ` ${data.stepIndex + 1}` : ''}</span>
         </div>
-        {status === 'running' ? (
-          <Badge className="gap-1 border-primary/30 bg-primary/10 text-[10px] text-primary" variant="outline">
-            <Loader2 aria-hidden="true" className="animate-spin" size={10} />
-            运行中
-          </Badge>
-        ) : null}
-        {status === 'completed' ? (
-          <Badge className="gap-1 border-success/30 bg-success/10 text-[10px] text-success" variant="outline">
-            <CheckCircle2 aria-hidden="true" size={10} />
-            完成
-          </Badge>
-        ) : null}
-        {status === 'failed' ? (
-          <Badge className="gap-1 border-danger/30 bg-danger/10 text-[10px] text-danger" variant="outline">
-            <AlertCircle aria-hidden="true" size={10} />
-            失败
-          </Badge>
-        ) : null}
-        {status === 'aborted' ? (
-          <Badge className="gap-1 border-warning/30 bg-warning/10 text-[10px] text-warning" variant="outline">
-            <CircleStop aria-hidden="true" size={10} />
-            已停止
-          </Badge>
-        ) : null}
+
+        <div className="flex items-center gap-1.5">
+          {durationText ? (
+            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+              <Clock aria-hidden="true" size={10} />
+              {durationText}
+            </span>
+          ) : null}
+
+          {status === 'running' ? (
+            <Badge className="gap-1 border-primary/30 bg-primary/10 text-[10px] text-primary" variant="outline">
+              <Loader2 aria-hidden="true" className="animate-spin" size={10} />
+              运行中
+            </Badge>
+          ) : null}
+          {status === 'completed' ? (
+            <Badge className="gap-1 border-success/30 bg-success/10 text-[10px] text-success" variant="outline">
+              <CheckCircle2 aria-hidden="true" size={10} />
+              完成
+            </Badge>
+          ) : null}
+          {status === 'failed' ? (
+            <Badge className="gap-1 border-danger/30 bg-danger/10 text-[10px] text-danger" variant="outline">
+              <AlertCircle aria-hidden="true" size={10} />
+              失败
+            </Badge>
+          ) : null}
+          {status === 'aborted' ? (
+            <Badge className="gap-1 border-warning/30 bg-warning/10 text-[10px] text-warning" variant="outline">
+              <CircleStop aria-hidden="true" size={10} />
+              已停止
+            </Badge>
+          ) : null}
+        </div>
       </div>
 
-      <div className="space-y-1.5 px-3 py-2.5">
-        <p className="truncate text-xs text-foreground">
-          {data.agentId.length === 0 ? (
-            <span className="text-warning">未选择 Agent，点击节点后在右侧配置</span>
-          ) : (
-            (data.agentName ?? data.agentId)
-          )}
-        </p>
-        {runState?.output !== null && runState?.output !== undefined && runState.output.length > 0 ? (
-          <p className="line-clamp-2 whitespace-pre-wrap text-[11px] leading-5 text-muted-foreground">
-            {runState.output}
+      <div className="space-y-2 px-3 py-2.5">
+        <div className="flex items-center justify-between gap-1">
+          <p className="truncate text-xs font-medium text-foreground">
+            {data.agentId.length === 0 ? (
+              <span className="text-warning">未选择 Agent（点击配置）</span>
+            ) : (
+              (data.agentName ?? data.agentId)
+            )}
           </p>
+        </div>
+
+        {data.promptTemplate ? (
+          <p className="line-clamp-2 font-mono text-[10px] leading-4 text-muted-foreground/80">{data.promptTemplate}</p>
         ) : null}
+
+        {/* 产出预览与就地展开 */}
+        {hasOutput ? (
+          <div className="border-t border-border-subtle/80 pt-2">
+            <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+              <span>运行产出：</span>
+              <button
+                className="nodrag flex items-center gap-0.5 text-primary hover:underline"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setIsOutputExpanded((open) => !open)
+                }}
+                type="button"
+              >
+                <span>{isOutputExpanded ? '收起' : '展开全文'}</span>
+                {isOutputExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
+              </button>
+            </div>
+            <pre
+              className={cn(
+                'nodrag mt-1 rounded bg-surface-muted/70 p-2 font-mono text-[11px] leading-relaxed text-foreground whitespace-pre-wrap',
+                isOutputExpanded ? 'max-h-56 overflow-y-auto' : 'line-clamp-2',
+              )}
+            >
+              {runState.output}
+            </pre>
+          </div>
+        ) : null}
+
         {runState?.status === 'failed' && runState.errorMessage !== null ? (
           <p className="line-clamp-2 text-[11px] leading-5 text-danger">{runState.errorMessage}</p>
         ) : null}
       </div>
 
-      <Handle position={Position.Left} type="target" />
-      <Handle position={Position.Right} type="source" />
+      <Handle
+        className="!size-2.5 !border-2 !border-surface !bg-muted-foreground"
+        position={Position.Left}
+        type="target"
+      />
+      <Handle className="!size-2.5 !border-2 !border-surface !bg-primary" position={Position.Right} type="source" />
+
+      {/* 快捷追加下一个 Agent 节点 */}
+      {data.onQuickAddNext ? (
+        <button
+          aria-label="快速追加下一个 Agent 节点"
+          className="nodrag absolute -right-3 top-1/2 -translate-y-1/2 z-10 grid size-6 place-items-center rounded-full border border-border bg-surface text-foreground opacity-0 shadow-md transition-all hover:scale-110 hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:opacity-100 focus-visible:opacity-100"
+          onClick={(e) => {
+            e.stopPropagation()
+            data.onQuickAddNext?.(id)
+          }}
+          title="快速追加并连线下一个 Agent 节点"
+          type="button"
+        >
+          <Plus aria-hidden="true" size={13} />
+        </button>
+      ) : null}
     </div>
   )
 }

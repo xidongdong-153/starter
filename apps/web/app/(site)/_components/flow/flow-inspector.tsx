@@ -1,7 +1,7 @@
 'use client'
 
 import type { AgentDefinitionSummary } from '@starter/contracts'
-import { AlertCircle, CheckCircle2, CircleStop, RotateCcw } from 'lucide-react'
+import { AlertCircle, CheckCircle2, ChevronRight, CircleStop, RotateCcw } from 'lucide-react'
 import { useRef } from 'react'
 
 import { Badge } from '@web/components/ui/badge'
@@ -28,12 +28,13 @@ export interface FlowInspectorProps {
   onPromptTemplateChange: (nodeId: string, template: string) => void
   onInputTextChange: (nodeId: string, text: string) => void
   onRetryFrom: (nodeId: string) => void
+  onToggleCollapse?: () => void
   className?: string
 }
 
 /**
  * 右侧检查面板：选中 Agent 节点时编辑配置（Agent 选择、Prompt 模板、变量插入），
- * 并显示该节点的运行态、产出全文和错误信息；选中输入节点时编辑起点输入。
+ * 并显示该节点的运行态、产出全文和错误信息；选中输入节点时编辑起点输入；支持折叠收起。
  */
 export function FlowInspector({
   selectedNode,
@@ -45,6 +46,7 @@ export function FlowInspector({
   onPromptTemplateChange,
   onInputTextChange,
   onRetryFrom,
+  onToggleCollapse,
   className,
 }: FlowInspectorProps) {
   const templateRef = useRef<HTMLTextAreaElement>(null)
@@ -53,8 +55,27 @@ export function FlowInspector({
     return (
       <aside
         aria-label="节点配置面板"
-        className={cn('hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 lg:flex', className)}
+        className={cn(
+          'hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 transition-all lg:flex',
+          className,
+        )}
       >
+        <div className="flex items-center justify-between border-b border-border px-3.5 py-2.5">
+          <span className="text-xs font-semibold text-foreground">配置与详情</span>
+          {onToggleCollapse ? (
+            <Button
+              aria-label="收起检查面板"
+              className="size-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleCollapse}
+              size="icon"
+              title="收起检查面板"
+              type="button"
+              variant="ghost"
+            >
+              <ChevronRight aria-hidden="true" size={15} />
+            </Button>
+          ) : null}
+        </div>
         <div className="flex h-full items-center justify-center p-6 text-center">
           <p className="text-xs text-muted-foreground">点击画布上的节点，在这里配置和查看运行产出。</p>
         </div>
@@ -66,9 +87,27 @@ export function FlowInspector({
     return (
       <aside
         aria-label="输入节点配置"
-        className={cn('hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 lg:flex', className)}
+        className={cn(
+          'hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 transition-all lg:flex',
+          className,
+        )}
       >
-        <header className="border-b border-border px-4 py-3 text-sm font-semibold text-foreground">起点输入</header>
+        <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
+          <span className="text-xs font-semibold text-foreground">起点输入配置</span>
+          {onToggleCollapse ? (
+            <Button
+              aria-label="收起检查面板"
+              className="size-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleCollapse}
+              size="icon"
+              title="收起检查面板"
+              type="button"
+              variant="ghost"
+            >
+              <ChevronRight aria-hidden="true" size={15} />
+            </Button>
+          ) : null}
+        </header>
         <div className="flex-1 overflow-y-auto p-4">
           <Label className="text-xs" htmlFor="flow-input-text">
             输入内容
@@ -113,13 +152,31 @@ export function FlowInspector({
   return (
     <aside
       aria-label="Agent 节点配置"
-      className={cn('hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 lg:flex', className)}
+      className={cn(
+        'hidden w-80 shrink-0 flex-col border-l border-border bg-surface-muted/40 transition-all lg:flex',
+        className,
+      )}
     >
-      <header className="flex items-center justify-between border-b border-border px-4 py-3">
-        <h2 className="text-sm font-semibold text-foreground">
-          Agent 节点{stepIndex !== null ? ` ${stepIndex + 1}` : ''}
-        </h2>
-        {runState !== null ? <RunStateBadge status={runState.status} /> : null}
+      <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
+        <div className="flex items-center gap-2">
+          <h2 className="text-xs font-semibold text-foreground">
+            Agent 节点{stepIndex !== null ? ` ${stepIndex + 1}` : ''}
+          </h2>
+          {runState !== null ? <RunStateBadge status={runState.status} /> : null}
+        </div>
+        {onToggleCollapse ? (
+          <Button
+            aria-label="收起检查面板"
+            className="size-7 p-0 text-muted-foreground hover:text-foreground"
+            onClick={onToggleCollapse}
+            size="icon"
+            title="收起检查面板"
+            type="button"
+            variant="ghost"
+          >
+            <ChevronRight aria-hidden="true" size={15} />
+          </Button>
+        ) : null}
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">

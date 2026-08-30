@@ -23,6 +23,7 @@ export function ChatPanel({ className }: { className?: string }) {
   const { data: session, isPending } = authClient.useSession()
   const [text, setText] = useState('')
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false)
+  const [isDesktopSidebarCollapsed, setIsDesktopSidebarCollapsed] = useState(false)
   const chat = useChatRun(session?.user.id ?? null)
 
   useEffect(() => {
@@ -83,19 +84,22 @@ export function ChatPanel({ className }: { className?: string }) {
         className,
       )}
     >
-      {/* 桌面端常驻左侧边栏 */}
-      <ChatSessionSidebar
-        canMutateSessions={chat.canMutateSessions}
-        className="hidden md:flex"
-        onArchive={() => void chat.archiveSession()}
-        onNew={chat.startNewSession}
-        onRename={(title) => chat.renameSession(title)}
-        onSelect={(id) => void chat.selectSession(id)}
-        sessionBusy={chat.sessionBusy}
-        sessionId={chat.sessionId}
-        sessions={chat.sessions}
-        sessionTotal={chat.sessionTotal}
-      />
+      {/* 桌面端左侧边栏 */}
+      {!isDesktopSidebarCollapsed ? (
+        <ChatSessionSidebar
+          canMutateSessions={chat.canMutateSessions}
+          className="hidden md:flex"
+          onArchive={() => void chat.archiveSession()}
+          onNew={chat.startNewSession}
+          onRename={(title) => chat.renameSession(title)}
+          onSelect={(id) => void chat.selectSession(id)}
+          onToggleCollapseDesktop={() => setIsDesktopSidebarCollapsed(true)}
+          sessionBusy={chat.sessionBusy}
+          sessionId={chat.sessionId}
+          sessions={chat.sessions}
+          sessionTotal={chat.sessionTotal}
+        />
+      ) : null}
 
       {/* 移动端抽屉遮罩与浮动侧边栏 */}
       {isMobileSidebarOpen ? (
@@ -144,7 +148,9 @@ export function ChatPanel({ className }: { className?: string }) {
             <ChatHeader
               agentId={chat.agentId}
               agents={chat.agents}
+              isSidebarCollapsed={isDesktopSidebarCollapsed}
               onAgentChange={chat.selectAgent}
+              onToggleSidebarDesktop={() => setIsDesktopSidebarCollapsed((open) => !open)}
               onToggleSidebarMobile={() => setIsMobileSidebarOpen(true)}
               running={chat.running}
               sessionTitle={sessionTitle}
@@ -180,6 +186,7 @@ export function ChatPanel({ className }: { className?: string }) {
             {/* 消息时间线（内部滚动） */}
             <ChatTimeline
               history={chat.history}
+              onSelectStarterPrompt={(prompt) => setText(prompt)}
               pendingUserText={chat.pendingUserText}
               timeline={chat.runState?.timeline ?? []}
             />

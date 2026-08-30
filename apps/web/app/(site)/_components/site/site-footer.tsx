@@ -10,8 +10,8 @@ const currentYear = new Date().getFullYear()
 export function SiteFooter() {
   const pathname = usePathname()
 
-  // 对话页面作为全屏工作区，不渲染底部通栏以避免产生外层滚动条
-  if (pathname.startsWith('/chat')) {
+  // 对话和流程工作区作为全屏应用，不渲染底部通栏以避免产生外层滚动条
+  if (pathname.startsWith('/chat') || pathname.startsWith('/flow')) {
     return null
   }
 

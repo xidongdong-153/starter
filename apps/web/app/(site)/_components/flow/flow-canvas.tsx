@@ -5,7 +5,9 @@ import '@xyflow/react/dist/style.css'
 import {
   Background,
   BackgroundVariant,
+  Controls,
   MarkerType,
+  MiniMap,
   ReactFlow,
   ReactFlowProvider,
   useReactFlow,
@@ -16,7 +18,17 @@ import {
   type NodeChange,
   type NodeTypes,
 } from '@xyflow/react'
-import { Download, LogIn, Play, Plus, Square, Upload } from 'lucide-react'
+import {
+  Download,
+  Maximize2,
+  PanelLeftOpen,
+  PanelRightClose,
+  PanelRightOpen,
+  Play,
+  Plus,
+  Square,
+  Upload,
+} from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
@@ -82,7 +94,7 @@ const NODE_TYPES: NodeTypes = {
 }
 
 const DEFAULT_EDGE_OPTIONS = {
-  type: 'straight',
+  type: 'smoothstep',
   markerEnd: { type: MarkerType.ArrowClosed },
 } as const
 
@@ -98,6 +110,10 @@ export interface FlowCanvasProps {
   running: boolean
   stopping: boolean
   canStop: boolean
+  isLeftCollapsed?: boolean
+  isRightCollapsed?: boolean
+  onToggleLeftCollapse?: () => void
+  onToggleRightCollapse?: () => void
   onDocumentChange: (changes: { nodes: FlowNode[]; edges: FlowEdge[] }) => void
   onInputTextChange: (nodeId: string, text: string) => void
   onSelectNode: (nodeId: string | null) => void
@@ -111,8 +127,7 @@ export interface FlowCanvasProps {
 
 /**
  * React Flow 画布：受控模式，文档节点是唯一事实来源。
- * selection / dimensions 等视觉态不写回文档；结构性变化（位置、连线、删除）全量同步。
- * 选中高亮用 selectedNodeId 注入，不依赖 React Flow 内部 selection。
+ * 支持 MiniMap、Controls、一键快速追加节点、动态连线流动光效与宽屏折叠。
  */
 export function FlowCanvas(props: FlowCanvasProps) {
   return (
@@ -131,6 +146,10 @@ function FlowCanvasInner({
   running,
   stopping,
   canStop,
+  isLeftCollapsed = false,
+  isRightCollapsed = false,
+  onToggleLeftCollapse,
+  onToggleRightCollapse,
   onDocumentChange,
   onInputTextChange,
   onSelectNode,
@@ -141,15 +160,13 @@ function FlowCanvasInner({
   onRename,
   className,
 }: FlowCanvasProps) {
-  const { screenToFlowPosition } = useReactFlow()
+  const { screenToFlowPosition, fitView } = useReactFlow()
   const importInputRef = useRef<HTMLInputElement>(null)
   const [nameDraft, setNameDraft] = useState<string | null>(null)
-  /** React Flow 的元素选中态（删除键依赖它）；视觉态不落库，只存在组件 state。 */
   const [selectedElementIds, setSelectedElementIds] = useState<ReadonlySet<string>>(() => new Set())
 
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
-      // dimensions 是节点测量的通知，React Flow 内部已维护；select 落在组件 state
       const documentChanges = changes.filter((change) => change.type !== 'select' && change.type !== 'dimensions')
       if (documentChanges.length > 0) {
         onDocumentChange({ nodes: applyDocumentNodeChanges(documentChanges, document.nodes), edges: document.edges })
@@ -181,6 +198,35 @@ function FlowCanvasInner({
     [document.edges, document.nodes, onDocumentChange],
   )
 
+  /** 快捷追加下一个 Agent 节点并自动连线 */
+  const handleQuickAddNext = useCallback(
+    (sourceNodeId: string) => {
+      const sourceNode = document.nodes.find((n) => n.id === sourceNodeId)
+      const basePos = sourceNode?.position ?? { x: 100, y: 180 }
+      const newPos = { x: basePos.x + 360, y: basePos.y }
+      const newNodeId = crypto.randomUUID()
+
+      const newNode: FlowNode = {
+        id: newNodeId,
+        type: 'agent',
+        position: newPos,
+        data: { agentId: '', promptTemplate: '' },
+      }
+      const newEdge: FlowEdge = {
+        id: crypto.randomUUID(),
+        source: sourceNodeId,
+        target: newNodeId,
+      }
+
+      onDocumentChange({
+        nodes: [...document.nodes, newNode],
+        edges: [...document.edges, newEdge],
+      })
+      onSelectNode(newNodeId)
+    },
+    [document.edges, document.nodes, onDocumentChange, onSelectNode],
+  )
+
   const displayNodes: Node[] = useMemo(
     () =>
       document.nodes.map((node) => {
@@ -193,6 +239,7 @@ function FlowCanvasInner({
             data: {
               inputText: node.data.inputText,
               onInputTextChange: (text: string) => onInputTextChange(node.id, text),
+              onQuickAddNext: handleQuickAddNext,
             },
           }
         }
@@ -208,15 +255,38 @@ function FlowCanvasInner({
             agentName: node.data.agentId.length > 0 ? (agentNames.get(node.data.agentId) ?? null) : null,
             runState: stepStates[node.id] ?? null,
             isSelected: node.id === selectedNodeId,
+            onQuickAddNext: handleQuickAddNext,
           },
         }
       }),
-    [agentNames, chainIndex, document.nodes, onInputTextChange, selectedElementIds, selectedNodeId, stepStates],
+    [
+      agentNames,
+      chainIndex,
+      document.nodes,
+      handleQuickAddNext,
+      onInputTextChange,
+      selectedElementIds,
+      selectedNodeId,
+      stepStates,
+    ],
   )
 
+  /** 动态脉冲连线：当目标节点处于 running 时，连接线呈现动画流动效果 */
   const displayEdges: Edge[] = useMemo(
-    () => document.edges.map((edge) => ({ ...edge, selected: selectedElementIds.has(edge.id) })),
-    [document.edges, selectedElementIds],
+    () =>
+      document.edges.map((edge) => {
+        const targetStep = stepStates[edge.target]
+        const isTargetRunning = targetStep?.status === 'running'
+
+        return {
+          ...edge,
+          type: 'smoothstep',
+          animated: isTargetRunning,
+          selected: selectedElementIds.has(edge.id),
+          style: isTargetRunning ? { stroke: 'var(--color-primary)', strokeWidth: 2 } : undefined,
+        }
+      }),
+    [document.edges, selectedElementIds, stepStates],
   )
 
   const hasInputNode = document.nodes.some((node) => node.type === 'input')
@@ -239,7 +309,6 @@ function FlowCanvasInner({
 
   function handleImportSelect(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
-    // 允许连续导入同一个文件：先清空选择
     event.target.value = ''
     if (file !== undefined) onImport(file)
   }
@@ -253,76 +322,104 @@ function FlowCanvasInner({
   return (
     <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', className)}>
       {/* 工具栏 */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-border bg-surface/90 px-3 py-2 backdrop-blur-md">
-        {nameDraft === null ? (
-          <button
-            className="min-h-9 max-w-56 truncate px-2 text-sm font-semibold text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-            onClick={() => setNameDraft(document.name)}
-            title="编辑流程名称"
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border bg-surface/90 px-3 py-2 backdrop-blur-md">
+        <div className="flex items-center gap-2">
+          {isLeftCollapsed && onToggleLeftCollapse ? (
+            <Button
+              aria-label="展开流程列表"
+              className="size-8 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleLeftCollapse}
+              size="icon"
+              title="展开流程列表"
+              type="button"
+              variant="outline"
+            >
+              <PanelLeftOpen aria-hidden="true" size={15} />
+            </Button>
+          ) : null}
+
+          {nameDraft === null ? (
+            <button
+              className="min-h-8 max-w-56 truncate px-2 text-xs font-semibold text-foreground transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              onClick={() => setNameDraft(document.name)}
+              title="编辑流程名称"
+              type="button"
+            >
+              {document.name}
+            </button>
+          ) : (
+            <Input
+              autoFocus
+              className="h-8 w-56 text-xs"
+              onBlur={commitName}
+              onChange={(event) => setNameDraft(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') commitName()
+                if (event.key === 'Escape') setNameDraft(null)
+              }}
+              value={nameDraft}
+            />
+          )}
+
+          <div className="mx-0.5 h-5 w-px bg-border" />
+
+          <Button
+            disabled={hasInputNode}
+            onClick={() => handleAddNode('input')}
+            size="sm"
+            title={hasInputNode ? '已有一个输入节点' : '添加输入节点'}
             type="button"
+            variant="outline"
           >
-            {document.name}
-          </button>
-        ) : (
-          <Input
-            autoFocus
-            className="h-9 w-56 text-xs"
-            onBlur={commitName}
-            onChange={(event) => setNameDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter') commitName()
-              if (event.key === 'Escape') setNameDraft(null)
-            }}
-            value={nameDraft}
-          />
-        )}
-
-        <div className="mx-1 h-6 w-px bg-border" />
-
-        <Button
-          disabled={hasInputNode}
-          onClick={() => handleAddNode('input')}
-          size="sm"
-          title={hasInputNode ? '已有一个输入节点' : '添加输入节点'}
-          type="button"
-          variant="outline"
-        >
-          <LogIn aria-hidden="true" size={14} />
-          输入节点
-        </Button>
-        <Button onClick={() => handleAddNode('agent')} size="sm" type="button" variant="outline">
-          <Plus aria-hidden="true" size={14} />
-          Agent 节点
-        </Button>
-
-        <div className="mx-1 h-6 w-px bg-border" />
-
-        {running ? (
-          <Button disabled={!canStop} onClick={onStop} size="sm" type="button" variant="destructive">
-            <Square aria-hidden="true" size={14} />
-            {stopping ? '正在停止' : '停止'}
+            <Plus aria-hidden="true" size={13} />
+            输入节点
           </Button>
-        ) : (
-          <Button onClick={onRun} size="sm" type="button">
-            <Play aria-hidden="true" size={14} />
-            运行
+          <Button onClick={() => handleAddNode('agent')} size="sm" type="button" variant="outline">
+            <Plus aria-hidden="true" size={13} />
+            Agent 节点
           </Button>
-        )}
 
-        <div className="ml-auto flex items-center gap-2">
+          <div className="mx-0.5 h-5 w-px bg-border" />
+
+          {running ? (
+            <Button disabled={!canStop} onClick={onStop} size="sm" type="button" variant="destructive">
+              <Square aria-hidden="true" size={13} />
+              {stopping ? '正在停止…' : '停止'}
+            </Button>
+          ) : (
+            <Button onClick={onRun} size="sm" type="button">
+              <Play aria-hidden="true" size={13} />
+              运行
+            </Button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <Button
+            aria-label="自适应居中视角"
+            onClick={() => fitView({ duration: 300, padding: 0.2 })}
+            size="sm"
+            title="自适应居中视角"
+            type="button"
+            variant="ghost"
+          >
+            <Maximize2 aria-hidden="true" size={14} />
+            <span className="hidden sm:inline">居中</span>
+          </Button>
+
           <Button
             disabled={running}
             onClick={() => importInputRef.current?.click()}
             size="sm"
             type="button"
-            variant="outline"
+            variant="ghost"
           >
             <Upload aria-hidden="true" size={14} />
-            导入
+            <span className="hidden sm:inline">导入</span>
           </Button>
-          <Button onClick={onExport} size="sm" type="button" variant="outline">
+          <Button onClick={onExport} size="sm" type="button" variant="ghost">
             <Download aria-hidden="true" size={14} />
-            导出
+            <span className="hidden sm:inline">导出</span>
           </Button>
           <input
             accept="application/json,.json"
@@ -331,11 +428,32 @@ function FlowCanvasInner({
             ref={importInputRef}
             type="file"
           />
+
+          {onToggleRightCollapse ? (
+            <>
+              <div className="mx-0.5 h-5 w-px bg-border" />
+              <Button
+                aria-label={isRightCollapsed ? '展开检查面板' : '收起检查面板'}
+                className="size-8 p-0 text-muted-foreground hover:text-foreground"
+                onClick={onToggleRightCollapse}
+                size="icon"
+                title={isRightCollapsed ? '展开检查面板' : '收起检查面板'}
+                type="button"
+                variant="outline"
+              >
+                {isRightCollapsed ? (
+                  <PanelRightOpen aria-hidden="true" size={15} />
+                ) : (
+                  <PanelRightClose aria-hidden="true" size={15} />
+                )}
+              </Button>
+            </>
+          ) : null}
         </div>
       </div>
 
-      {/* 画布 */}
-      <div className="min-h-0 flex-1">
+      {/* 画布区域 */}
+      <div className="relative min-h-0 flex-1">
         <ReactFlow
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
           edges={displayEdges}
@@ -349,6 +467,14 @@ function FlowCanvasInner({
           onPaneClick={() => onSelectNode(null)}
         >
           <Background color="var(--color-border)" gap={24} size={1.5} variant={BackgroundVariant.Dots} />
+          <Controls className="!border-border !bg-surface !shadow-md" position="bottom-left" showInteractive={false} />
+          <MiniMap
+            className="!hidden !border-border !bg-surface/90 !shadow-md md:!block"
+            maskColor="color-mix(in srgb, var(--theme-base) 60%, transparent)"
+            nodeColor="var(--color-primary)"
+            position="bottom-right"
+            zoomable
+          />
         </ReactFlow>
       </div>
     </div>
