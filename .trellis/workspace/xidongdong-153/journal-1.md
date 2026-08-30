@@ -743,3 +743,25 @@ Web 端新增 /flow 页面：React Flow（@xyflow/react v12）画布 + 客户端
 ### Status
 
 [OK] **Completed**
+
+
+## Session 9: 优化 Web 端 Chat 与 Flow UI 交互及宽屏适配
+
+**Date**: 2026-08-30
+**Task**: 优化 Web 端 Chat 与 Flow UI 交互及宽屏适配
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+完成了 Web 端 Flow 画布与 Chat 交互体验的升级：支持宽屏与双向侧栏折叠，新增 MiniMap 与 Controls，支持快捷追加节点与连线动画，新增 3 组内置工作流模板；Chat 端支持轻量 Markdown 排版、一键复制、浮动置底、快捷 Prompt 标签与用例卡片。
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `579fa1d` | (see git log) |
+
+### Status
+
+[OK] **Completed**
