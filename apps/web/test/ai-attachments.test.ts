@@ -16,6 +16,7 @@ vi.mock('@web/lib/rpc', () => ({
   },
 }))
 const { uploadAiAttachment, attachmentContentUrl } = await import('@web/lib/api/ai-attachments.api')
+const { resolveApiUrl } = await import('@web/lib/env.client')
 const { startRunStream } = await import('@web/lib/ai/run-event-stream')
 
 const fetchMock = vi.fn()
@@ -106,6 +107,21 @@ it('响应 data 不符合附件契约时抛出格式错误', async () => {
 it('附件下载地址指向 API 的 content 端点', () => {
   const url = attachmentContentUrl('01958c80-8df7-7ce2-8f90-1234567890a1')
   expect(url).toMatch(/\/api\/ai\/attachments\/01958c80-8df7-7ce2-8f90-1234567890a1\/content$/u)
+})
+
+it('历史回放的相对路径 url 解析到 API 域名而不是 Web 域名', () => {
+  const relative = '/api/ai/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content'
+
+  const resolved = resolveApiUrl(relative)
+
+  expect(resolved).toBe('http://localhost:7788/api/ai/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content')
+  expect(resolved.startsWith('/')).toBe(false)
+})
+
+it('pending 已是绝对地址的 url 再过 resolveApiUrl 保持不变', () => {
+  const absolute = attachmentContentUrl('01958c80-8df7-7ce2-8f90-1234567890a1')
+
+  expect(resolveApiUrl(absolute)).toBe(absolute)
 })
 
 it('startRun 带 attachmentIds 时进入请求体', async () => {

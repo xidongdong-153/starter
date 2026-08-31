@@ -8,6 +8,7 @@ import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
 import type { ChatTimelineItem } from '@web/lib/ai/chat-events'
 import type { PendingChatImage } from '@web/hooks/use-chat-run'
+import { resolveApiUrl } from '@web/lib/env.client'
 import { cn } from '@web/lib/utils'
 
 import { ChatMarkdown } from './chat-markdown'
@@ -345,7 +346,8 @@ function UserMessageImages({ images }: { images: ReadonlyArray<{ attachmentId: s
   return (
     <div className="mt-2 flex flex-wrap gap-2">
       {images.map((image) => (
-        <LightboxImage key={image.attachmentId} src={image.url} />
+        // 历史回放的 url 是相对路径，pending 的 url 已是绝对地址；resolveApiUrl 两种输入都得到 API 绝对地址，不处理会请求到 Web 自己的域名上。
+        <LightboxImage key={image.attachmentId} src={resolveApiUrl(image.url)} />
       ))}
     </div>
   )
