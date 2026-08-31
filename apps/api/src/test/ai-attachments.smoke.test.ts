@@ -1188,6 +1188,9 @@ it("附件下载返回原始字节与 Content-Type，他人下载 404", async ()
     expect(content.headers.get("content-length")).toBe(
       String(PNG_BYTES.length),
     );
+    expect(content.headers.get("cross-origin-resource-policy")).toBe(
+      "cross-origin",
+    );
     expect(new Uint8Array(await content.arrayBuffer())).toEqual(PNG_BYTES);
 
     const denied = await app.request(
