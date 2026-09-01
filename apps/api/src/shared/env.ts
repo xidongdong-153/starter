@@ -31,8 +31,14 @@ const envSchema = z.object({
     .number()
     .int()
     .min(1_000)
-    .max(300_000)
+    .max(3_600_000)
     .default(60_000),
+  AI_RUN_MAX_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(3_600_000)
+    .default(120_000),
   AI_PRIVATE_CIDR_ALLOWLIST: z.string().default(""),
   AI_TEST_TOOLS_ENABLED: z.stringbool().default(false),
   AI_WEBHOOK_ENABLED: z.stringbool().default(false),

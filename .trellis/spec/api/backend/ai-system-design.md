@@ -513,7 +513,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 | Tool 参数、权限或执行失败（含工具超时） | 继续 Agent loop | Tool audit + safe tool result | Agent 根据安全结果决定下一轮 |
 | 撞到 `maxTurns` 且当轮还在调工具 | 追加一轮无工具收尾，Run completed | 多一条 `ai_model_calls` | 终态事件 `reason=max_turns` |
 | Run abort | Run aborted | Tool audit + Run terminal entry | 用户显式发起新的 Run |
-| Run 总时长耗尽 | Run failed + `AI.UPSTREAM_TIMEOUT` | 主库 Run 终态 + Pi terminal entry | 上限是 Executor 的 `maxRunMs`，默认 120000 ms，`ai.route.ts` 当前不传也不读环境变量；工具超时取 `min(工具 timeoutMs, Run 剩余时长)` |
+| Run 总时长耗尽 | Run failed + `AI.UPSTREAM_TIMEOUT` | 主库 Run 终态 + Pi terminal entry | 上限是 Executor 的 `maxRunMs`，默认 120000 ms，由 `AI_RUN_MAX_MS` 环境变量配置，`ai.services.ts` 创建 executor 时透传；工具超时取 `min(工具 timeoutMs, Run 剩余时长)` |
 | SSE 连接断开 | Run 不变，继续执行 | Pi transcript + 主库终态 | 客户端重新读取 Run/transcript |
 | 进程在终态前退出 | Run 暂存非终态 | Pi terminal entry 或无 entry | API 启动时 recovery scan |
 | 主库终态更新失败 | 不发布 terminal event | Pi terminal entry + 日志 | 下一次启动恢复 |

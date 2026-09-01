@@ -193,6 +193,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
       lifecycle: createAiRunLifecycleRepository(runtime.db),
       logger: runtime.logger.child({ module: "ai-executor" }),
       requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
+      maxRunMs: runtime.env.AI_RUN_MAX_MS,
     });
   const attachmentRepository = createAiAttachmentRepository(runtime.db);
   const attachmentResolver = createAiAttachmentResolver({
