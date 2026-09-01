@@ -1,5 +1,7 @@
 import { hc } from 'hono/client'
 import type { AppType } from '@starter/api/rpc'
+import type { ChatAppType } from '@starter/api/rpc/chat'
+import type { FlowAppType } from '@starter/api/rpc/flow'
 
 import { apiUrl } from './env.client'
 import { ApiRequestError, isApiFailureBody, isApiSuccessBody, readJson } from './http'
@@ -9,6 +11,22 @@ import { ApiRequestError, isApiFailureBody, isApiSuccessBody, readJson } from '.
  * 页面和组件不直接使用，领域 API 函数通过它发起类型化请求。
  */
 export const apiRpc = hc<AppType>(apiUrl, {
+  init: { credentials: 'include' },
+  headers: { accept: 'application/json' },
+})
+
+/**
+ * Chat 产品面的 RPC 客户端，走 `/api/chat/*`。
+ * 产品路由不并入主 `AppType`（类型体积限制，见 api 侧 routes/index.ts），单独建 client；
+ * 初始化参数与 `apiRpc` 一致。响应 data 是 unknown，由调用方用 contracts schema 校验。
+ */
+export const chatRpc = hc<ChatAppType>(apiUrl, {
+  init: { credentials: 'include' },
+  headers: { accept: 'application/json' },
+})
+
+/** Flow 产品面的 RPC 客户端，走 `/api/flow/*`，做法同 `chatRpc`。 */
+export const flowRpc = hc<FlowAppType>(apiUrl, {
   init: { credentials: 'include' },
   headers: { accept: 'application/json' },
 })

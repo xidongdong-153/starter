@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react'
 
-import { attachmentContentUrl, uploadAiAttachment } from '@web/lib/api/ai-attachments.api'
+import { attachmentContentUrl, uploadAiAttachment } from '@web/lib/api/chat-attachments.api'
 import { describeError } from '@web/lib/ai/chat-run-view'
 import { attachmentRejectionMessage, selectUploadableImages } from '@web/lib/ai/attachment-input'
 

@@ -2,14 +2,26 @@ import { expect, it, vi } from 'vitest'
 import type { RunEvent } from '@starter/contracts'
 
 const post = vi.fn()
+const flowPost = vi.fn()
 const streamGet = vi.fn()
 vi.mock('@web/lib/rpc', () => ({
-  apiRpc: {
+  chatRpc: {
     api: {
-      ai: {
+      chat: {
         sessions: {
           ':sessionId': {
             runs: { $post: post, ':runId': { events: { stream: { $get: streamGet } } } },
+          },
+        },
+      },
+    },
+  },
+  flowRpc: {
+    api: {
+      flow: {
+        sessions: {
+          ':sessionId': {
+            runs: { $post: flowPost },
           },
         },
       },
@@ -81,6 +93,7 @@ it('按 SSE 帧产出 RunEvent，跳过心跳和坏帧', async () => {
   for await (const item of startRunStream({
     agentId: ids.agentId,
     input: 'hi',
+    product: 'chat',
     sessionId: ids.sessionId,
     signal: new AbortController().signal,
   }))
@@ -103,6 +116,7 @@ it('非 2xx 抛出带 status 的错误', async () => {
     startRunStream({
       agentId: ids.agentId,
       input: 'hi',
+      product: 'chat',
       sessionId: ids.sessionId,
       signal: new AbortController().signal,
     }).next(),

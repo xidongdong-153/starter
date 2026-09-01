@@ -29,7 +29,7 @@ import {
   getAgentTranscript,
   getRuntimeAgents,
   renameAgentSession,
-} from '@web/lib/api/ai-chat.api'
+} from '@web/lib/api/chat.api'
 import { isApiRequestError } from '@web/lib/http'
 
 /** 断流后查询 Run 状态的间隔。 */
@@ -394,6 +394,7 @@ export function useChatRun(userId: string | null) {
             agentId,
             input: value,
             attachmentIds: attachmentIds.length > 0 ? attachmentIds : undefined,
+            product: 'chat',
             sessionId: activeSessionId,
             signal: controller.signal,
           }),

@@ -1,7 +1,7 @@
 import type { RunEvent } from '@starter/contracts'
 import { runEventSchema } from '@starter/contracts'
 import { ApiRequestError, isApiFailureBody, readJson } from '@web/lib/http'
-import { apiRpc } from '@web/lib/rpc'
+import { chatRpc, flowRpc } from '@web/lib/rpc'
 
 /** SSE 帧之间是一个空行，服务端换行可能是 `\n` 或 `\r\n`。 */
 const FRAME_SEPARATOR = /\r?\n\r?\n/
@@ -17,6 +17,8 @@ export interface StartRunStreamInput {
   input: string
   /** 可选 lane；不传走 main。Flow 用 flow-<序号> 隔离每个节点的 transcript。 */
   lane?: string
+  /** 走哪个产品面：chat 或 flow，决定请求打到 `/api/chat/*` 还是 `/api/flow/*`。 */
+  product: 'chat' | 'flow'
   sessionId: string
   signal: AbortSignal
 }
@@ -94,31 +96,35 @@ async function* readRunEvents(response: Response): AsyncGenerator<RunEvent> {
 /**
  * 发起启动 Run 的请求。
  *
- * 走 `apiRpc` 是为了保留路径和 body 的类型约束；这里不能用 `unwrapApiData`，
+ * 走 `chatRpc` / `flowRpc` 是为了保留路径和 body 的类型约束；这里不能用 `unwrapApiData`，
  * 因为响应是 `text/event-stream`，不是 `{ ok, data, meta }` envelope。
- * `accept` 需要覆盖 `apiRpc` 默认的 `application/json`。
+ * `accept` 需要覆盖 client 默认的 `application/json`。
  */
 async function openRunStream(request: StartRunStreamInput): Promise<Response> {
-  const { agentId, attachmentIds, idempotencyKey, input, lane, sessionId, signal } = request
+  const { agentId, attachmentIds, idempotencyKey, input, lane, product, sessionId, signal } = request
   let response: Response
 
   try {
-    response = await apiRpc.api.ai.sessions[':sessionId'].runs.$post(
-      // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空；
-      // lane、idempotencyKey 和 attachmentIds 不传时走服务端默认
-      // （main lane、不幂等、纯文本），保持原调用不变。
-      {
-        param: { sessionId },
-        json: {
-          agentId,
-          input,
-          ...(lane !== undefined ? { lane } : {}),
-          ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-          ...(attachmentIds !== undefined && attachmentIds.length > 0 ? { attachmentIds } : {}),
-        },
+    // 新建 Run 从头开始收事件，恢复用的 afterSequence 留空；
+    // lane、idempotencyKey 和 attachmentIds 不传时走服务端默认
+    // （main lane、不幂等、纯文本），保持原调用不变。
+    const args = {
+      param: { sessionId },
+      json: {
+        agentId,
+        input,
+        ...(lane !== undefined ? { lane } : {}),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+        ...(attachmentIds !== undefined && attachmentIds.length > 0 ? { attachmentIds } : {}),
       },
-      { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
-    )
+    }
+    const options = {
+      headers: { accept: 'text/event-stream' },
+      init: { cache: 'no-store' as const, signal },
+    }
+    response = await (product === 'chat'
+      ? chatRpc.api.chat.sessions[':sessionId'].runs.$post(args, options)
+      : flowRpc.api.flow.sessions[':sessionId'].runs.$post(args, options))
   } catch (error) {
     if (signal.aborted) throw error
     throw new ApiRequestError(0, 'API 服务连不上，请确认服务已经启动。')
@@ -132,17 +138,17 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
 }
 
 /**
- * 发起恢复请求。
+ * 发起恢复请求。只有 Chat 页面需要接回旧流，固定走 chat 面；Flow 的运行态刷新即弃，没有恢复路径。
  *
  * 用 GET `/events/stream`，不能再 POST 一次 `/runs`，那样会创建第二个 Run。
- * `afterSequence` 走 query，`accept` 同样要覆盖 `apiRpc` 默认的 `application/json`。
+ * `afterSequence` 走 query，`accept` 同样要覆盖 client 默认的 `application/json`。
  */
 async function openResumeStream(request: ResumeRunStreamInput): Promise<Response> {
   const { afterSequence, runId, sessionId, signal } = request
   let response: Response
 
   try {
-    response = await apiRpc.api.ai.sessions[':sessionId'].runs[':runId'].events.stream.$get(
+    response = await chatRpc.api.chat.sessions[':sessionId'].runs[':runId'].events.stream.$get(
       { param: { runId, sessionId }, query: { afterSequence: String(afterSequence) } },
       { headers: { accept: 'text/event-stream' }, init: { cache: 'no-store', signal } },
     )

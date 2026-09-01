@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
-import { getRuntimeAgents } from '@web/lib/api/ai-chat.api'
+import { getRuntimeAgents } from '@web/lib/api/flow.api'
 import { authClient } from '@web/lib/auth-client'
 import type { FlowDocument, FlowEdge, FlowNode } from '@web/lib/flow/flow-document'
 import {

@@ -12,7 +12,7 @@ import {
   getAgentLaneTranscript,
   getAgentRun,
   listRunStructuredOutputs,
-} from '@web/lib/api/ai-chat.api'
+} from '@web/lib/api/flow.api'
 import type { FlowRunState } from '@web/lib/flow/flow-run'
 import {
   abortStep,
@@ -174,6 +174,7 @@ export function useFlowRun() {
           idempotencyKey: flowStepIdempotencyKey(plan.flowRunId, index, plan.retries[index] ?? 0),
           input,
           lane: flowStepLane(index),
+          product: 'flow',
           sessionId: plan.sessionId,
           signal: controller.signal,
         })) {

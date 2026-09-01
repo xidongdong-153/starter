@@ -3,9 +3,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 const post = vi.fn()
 vi.mock('@web/lib/rpc', () => ({
-  apiRpc: {
+  chatRpc: {
     api: {
-      ai: {
+      chat: {
         sessions: {
           ':sessionId': {
             runs: { $post: post },
@@ -14,8 +14,19 @@ vi.mock('@web/lib/rpc', () => ({
       },
     },
   },
+  flowRpc: {
+    api: {
+      flow: {
+        sessions: {
+          ':sessionId': {
+            runs: { $post: vi.fn() },
+          },
+        },
+      },
+    },
+  },
 }))
-const { uploadAiAttachment, attachmentContentUrl } = await import('@web/lib/api/ai-attachments.api')
+const { uploadAiAttachment, attachmentContentUrl } = await import('@web/lib/api/chat-attachments.api')
 const { resolveApiUrl } = await import('@web/lib/env.client')
 const { startRunStream } = await import('@web/lib/ai/run-event-stream')
 
@@ -70,7 +81,7 @@ it('上传附件发送 multipart 表单并解析响应', async () => {
 
   expect(result).toEqual(attachmentFixture)
   const [url, init] = fetchMock.mock.calls[0]!
-  expect(String(url)).toContain('/api/ai/attachments')
+  expect(String(url)).toContain('/api/chat/attachments')
   expect(init.method).toBe('POST')
   const body = init.body as FormData
   expect(body).toBeInstanceOf(FormData)
@@ -106,15 +117,15 @@ it('响应 data 不符合附件契约时抛出格式错误', async () => {
 
 it('附件下载地址指向 API 的 content 端点', () => {
   const url = attachmentContentUrl('01958c80-8df7-7ce2-8f90-1234567890a1')
-  expect(url).toMatch(/\/api\/ai\/attachments\/01958c80-8df7-7ce2-8f90-1234567890a1\/content$/u)
+  expect(url).toMatch(/\/api\/chat\/attachments\/01958c80-8df7-7ce2-8f90-1234567890a1\/content$/u)
 })
 
 it('历史回放的相对路径 url 解析到 API 域名而不是 Web 域名', () => {
-  const relative = '/api/ai/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content'
+  const relative = '/api/chat/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content'
 
   const resolved = resolveApiUrl(relative)
 
-  expect(resolved).toBe('http://localhost:7788/api/ai/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content')
+  expect(resolved).toBe('http://localhost:7788/api/chat/attachments/01958c80-8df7-7ce2-8f90-1234567890a1/content')
   expect(resolved.startsWith('/')).toBe(false)
 })
 
@@ -133,6 +144,7 @@ it('startRun 带 attachmentIds 时进入请求体', async () => {
     agentId: '01958c80-8df7-7ce2-8f90-1234567890a7',
     attachmentIds,
     input: 'hi',
+    product: 'chat',
     sessionId: '01958c80-8df7-7ce2-8f90-1234567890a3',
     signal: new AbortController().signal,
   })) {
@@ -151,6 +163,7 @@ it('不带 attachmentIds 时请求体保持纯文本路径', async () => {
   for await (const event of startRunStream({
     agentId: '01958c80-8df7-7ce2-8f90-1234567890a7',
     input: 'hi',
+    product: 'chat',
     sessionId: '01958c80-8df7-7ce2-8f90-1234567890a3',
     signal: new AbortController().signal,
   })) {
