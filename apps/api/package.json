@@ -12,10 +12,18 @@
     "./rpc": {
       "types": "./dist/rpc.d.ts",
       "import": "./dist/rpc.js"
+    },
+    "./rpc/chat": {
+      "types": "./dist/rpc/chat.d.ts",
+      "import": "./dist/rpc/chat.js"
+    },
+    "./rpc/flow": {
+      "types": "./dist/rpc/flow.d.ts",
+      "import": "./dist/rpc/flow.js"
     }
   },
   "scripts": {
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup src/index.ts src/app.ts src/rpc.ts --format esm --dts --out-dir dist --clean",
+    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup src/index.ts src/app.ts src/rpc.ts src/rpc/chat.ts src/rpc/flow.ts --format esm --dts --out-dir dist --clean",
     "check": "pnpm check-types && pnpm lint && pnpm format:check",
     "check-types": "tsc --noEmit",
     "dev": "dotenv -e .env.development -- tsx watch src/index.ts",

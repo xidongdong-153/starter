@@ -45,11 +45,16 @@ export function registerBodyLimit(app: Hono<HonoEnv>): void {
     if (c.req.method === "POST") return fileLimit(c, next);
     return apiLimit(c, next);
   });
+  app.use("/api/chat/attachments", (c, next) => {
+    if (c.req.method === "POST") return fileLimit(c, next);
+    return apiLimit(c, next);
+  });
   app.use("/api/*", (c, next) => {
     if (
       c.req.path.startsWith("/api/auth/") ||
       c.req.path === "/api/files" ||
-      c.req.path === "/api/ai/attachments"
+      c.req.path === "/api/ai/attachments" ||
+      c.req.path === "/api/chat/attachments"
     ) {
       return next();
     }

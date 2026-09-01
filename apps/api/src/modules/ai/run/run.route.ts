@@ -1,11 +1,12 @@
 import type { MiddlewareHandler } from "hono";
 import { OpenAPIHono } from "@hono/zod-openapi";
-import { streamSSE } from "hono/streaming";
 
 import type { HonoEnv } from "@api/shared/hono-env.js";
 import { createSuccessResponse } from "@api/shared/response.js";
 import { toRuntimeAccessContext } from "@api/modules/ai/principal.js";
 import { startAgentRunJsonSchema } from "@starter/contracts";
+
+import { writeRunEventStream } from "./run-sse.js";
 
 import {
   abortAgentRunRoute,
@@ -68,51 +69,7 @@ export function createAiAgentRunRoute(deps: {
         runId,
         0,
       );
-      c.header("Cache-Control", "no-cache");
-      c.header("X-Accel-Buffering", "no");
-      return streamSSE(c, async (stream) => {
-        const iterator = events[Symbol.asyncIterator]();
-        const seenSequences = new Set<number>();
-        let terminal = false;
-        const heartbeat = setInterval(() => {
-          void stream.write(": heartbeat\n\n").catch(() => undefined);
-        }, 15_000);
-        let resolveAbort!: () => void;
-        const aborted = new Promise<void>((resolve) => {
-          resolveAbort = resolve;
-        });
-        stream.onAbort(() => {
-          clearInterval(heartbeat);
-          resolveAbort();
-        });
-        try {
-          while (!terminal) {
-            const next = await Promise.race([
-              iterator.next(),
-              aborted.then(() => ({ done: true, value: undefined })),
-            ]);
-            if (next.done) break;
-            const value = next.value;
-            if (!value) continue;
-            if (seenSequences.has(value.sequence)) continue;
-            seenSequences.add(value.sequence);
-            await stream.writeSSE({
-              id: value.eventId,
-              event: value.type,
-              data: JSON.stringify(value),
-            });
-            terminal =
-              value.type === "run.completed" ||
-              value.type === "run.failed" ||
-              value.type === "run.aborted";
-          }
-        } catch {
-          // transport 断开只结束当前订阅，不中止 Run。
-        } finally {
-          clearInterval(heartbeat);
-          await iterator.return?.();
-        }
-      });
+      return writeRunEventStream(c, events);
     })
     .openapi(
       { ...getAgentRunEventsStreamRoute, middleware: requireAuth },
@@ -136,50 +93,7 @@ export function createAiAgentRunRoute(deps: {
           params.runId,
           afterSequence,
         );
-        c.header("Cache-Control", "no-cache");
-        c.header("X-Accel-Buffering", "no");
-        return streamSSE(c, async (stream) => {
-          const iterator = events[Symbol.asyncIterator]();
-          const seenSequences = new Set<number>();
-          let terminal = false;
-          const heartbeat = setInterval(() => {
-            void stream.write(": heartbeat\n\n").catch(() => undefined);
-          }, 15_000);
-          let resolveAbort!: () => void;
-          const aborted = new Promise<void>((resolve) => {
-            resolveAbort = resolve;
-          });
-          stream.onAbort(() => {
-            clearInterval(heartbeat);
-            resolveAbort();
-          });
-          try {
-            while (!terminal) {
-              const next = await Promise.race([
-                iterator.next(),
-                aborted.then(() => ({ done: true, value: undefined })),
-              ]);
-              if (next.done) break;
-              const value = next.value;
-              if (!value || seenSequences.has(value.sequence)) continue;
-              seenSequences.add(value.sequence);
-              await stream.writeSSE({
-                id: value.eventId,
-                event: value.type,
-                data: JSON.stringify(value),
-              });
-              terminal =
-                value.type === "run.completed" ||
-                value.type === "run.failed" ||
-                value.type === "run.aborted";
-            }
-          } catch {
-            // transport 断开只结束当前订阅，不中止 Run。
-          } finally {
-            clearInterval(heartbeat);
-            await iterator.return?.();
-          }
-        });
+        return writeRunEventStream(c, events);
       },
     )
     .openapi({ ...getAgentRunRoute, middleware: requireAuth }, (c) =>

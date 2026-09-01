@@ -9,6 +9,7 @@ export function registerSecureHeaders(app: Hono<HonoEnv>, env: AppEnv): void {
     "/api/profiles/:userId/avatar",
     "/api/files/:fileId/content",
     "/api/ai/attachments/:attachmentId/content",
+    "/api/chat/attachments/:attachmentId/content",
   ]) {
     app.use(path, async (c, next) => {
       await next();
