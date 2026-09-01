@@ -30,7 +30,7 @@ pnpm --filter @starter/api test
 - `apps/api/src/index.ts`：创建 runtime、监听 Node server、退出时关闭 SQLite。
 - `apps/api/src/bootstrap/create-runtime.ts`：解析环境并装配基础设施。
 - `apps/api/src/bootstrap/create-app.ts`：装配 Hono 应用。
-- `apps/api/src/routes/index.ts`：注册 auth、system、profile、files 模块。
+- `apps/api/src/routes/index.ts`：注册 auth、system、profile、files、ai、chat、flow 模块（chat/flow 是产品模块，见下）。
 - `apps/api/src/shared/response.ts`：生成带 `meta.requestId` 和 `meta.timestamp` 的响应。
 
 ## 文件索引
@@ -45,5 +45,6 @@ pnpm --filter @starter/api test
 - `agent-run-guidelines.md`：AgentRun 子域的启动、SSE、终态持久化、控制接口、并发和启动恢复。
 - `pi-agent-execution-guidelines.md`：Pi Agent executor、原生 stream、Tool adapter、Session entry、compaction、active Run 和审计边界。
 - `ai-integration-guidelines.md`：AI Provider、加密凭据、模型目录、白名单、默认模型和 SSE 调用契约。
+- `product-module-guidelines.md`：chat / flow 等产品模块的薄代理约定、RPC 类型导出和主 AppType 类型上限。
 - `ai-system-design.md`：AI 系统总设计、输入到输出的数据流、事件、双库状态归属、Run 恢复和审计记录。
 - `quality-guidelines.md`：API、数据库和 smoke test 检查项。

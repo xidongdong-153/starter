@@ -2,9 +2,9 @@
 
 ## 1. Scope / Trigger
 
-Web 作为产品前端调用 AI Runtime API（Agent Session、Agent Run、RunEvent SSE、Transcript）时用本规范。控制面（Provider、模型、Prompt、Skill、Agent、凭据、用量）不在 Web，归 `apps/admin`。
+Web 作为产品前端消费 AI 运行时能力时用本规范。chat 和 flow 页面全部走产品面 `/api/chat/*`、`/api/flow/*`（独立 typed client），不直调 `/api/ai/*`；`/api/ai/*` 保留给 product_app + Bearer 和 Admin。控制面（Provider、模型、Prompt、Skill、Agent、凭据、用量）不在 Web，归 `apps/admin`。
 
-参考实现：`app/(site)/chat/`、`app/(site)/_components/chat/`、`hooks/use-chat-run.ts`、`lib/ai/`、`lib/api/ai-chat.api.ts`。
+参考实现：`app/(site)/chat/`、`app/(site)/_components/chat/`、`hooks/use-chat-run.ts`、`lib/ai/`、`lib/api/chat.api.ts`、`lib/api/flow.api.ts`。产品面服务端约定见 `.trellis/spec/api/backend/product-module-guidelines.md`。
 
 ## 2. Signatures
 
@@ -19,6 +19,7 @@ export function toLiveSnapshot(state: ChatRunState): AgentRunLiveSnapshot;
 
 // lib/ai/run-event-stream.ts
 export function startRunStream(input: {
+  product: 'chat' | 'flow'; // 决定走 chatRpc 还是 flowRpc
   sessionId: string;
   agentId: string;
   input: string;
@@ -30,10 +31,12 @@ export function resumeRunStream(input: {
   /** 只要更大的 sequence；0 表示从 run.started 开始全量回放。 */
   afterSequence: number;
   signal: AbortSignal;
-}): AsyncGenerator<RunEvent>;
+}): AsyncGenerator<RunEvent>; // 只有 Chat 页面需要接回旧流，固定走 chat 面
 ```
 
-接口归属：JSON 请求放 `lib/api/*.api.ts`，创建 Run 的 SSE 放 `lib/ai/run-event-stream.ts`，Run 编排放 `hooks/`，纯协议逻辑放 `lib/ai/`。已有 Run 的恢复流使用 API 的 `/events/stream` 入口，客户端不得重新 POST 创建 Run。
+接口归属：JSON 请求放 `lib/api/chat.api.ts`、`lib/api/flow.api.ts`（各走各的 client），创建 Run 的 SSE 放 `lib/ai/run-event-stream.ts`，Run 编排放 `hooks/`，纯协议逻辑放 `lib/ai/`。已有 Run 的恢复流使用 `/events/stream` 入口，客户端不得重新 POST 创建 Run。
+
+client 约定（`lib/rpc.ts`）：`apiRpc`（主 AppType，`@starter/api/rpc`）、`chatRpc`（`@starter/api/rpc/chat`）、`flowRpc`（`@starter/api/rpc/flow`）三个独立 client，初始化参数一致。产品面的响应 data 在类型层是 unknown，领域 API 函数用 contracts schema `safeParse` 解析（`parseApiData` 模式）；请求参数（query/param/json）有精确类型。产品路由不并入主 AppType（API 侧 TS 类型上限），所以不要用 `apiRpc` 访问 `/api/chat/*`。
 
 ## 3. Contracts
 
@@ -41,21 +44,24 @@ export function resumeRunStream(input: {
 
 | 动作         | 接口                                                   | 响应形态                  |
 | ------------ | ------------------------------------------------------ | ------------------------- |
-| 可用 Agent   | `GET /api/ai/agents`                                   | 服务端已过滤 `enabled`    |
-| Session 列表 | `GET /api/ai/sessions`                                 | 默认不含归档              |
-| 创建 Session | `POST /api/ai/sessions`                                | `AgentSession`            |
-| 改名 Session | `PATCH /api/ai/sessions/{sessionId}`                   | `AgentSession`，`title` trim 后 1-120 字符，至少传一个字段 |
-| 归档 Session | `DELETE /api/ai/sessions/{sessionId}`                  | `AgentSession`，只写 `archivedAt`，不物理删除 |
-| 历史         | `GET /api/ai/sessions/{sessionId}/transcript`          | 默认最新一页，items 时间正序 |
-| 进行中的 Run | `GET /api/ai/sessions/{sessionId}/active-run`           | `AgentRun \| null`，只报 `starting` / `running`，`lane` 默认 `main` |
-| 启动 Run     | `POST /api/ai/sessions/{sessionId}/runs`               | `text/event-stream`       |
-| 恢复 Run     | `GET /api/ai/sessions/{sessionId}/runs/{runId}/events/stream` | `text/event-stream`，支持 `afterSequence` 或 `Last-Event-ID` |
-| Run 状态     | `GET /api/ai/sessions/{sessionId}/runs/{runId}`         | `AgentRun`，含可选 `live` |
-| 停止生成     | `POST /api/ai/sessions/{sessionId}/runs/{runId}/abort`  | `AgentRun`                |
+| 可用 Agent   | `GET /api/chat/agents`（flow 页走 `/api/flow/agents`）  | 服务端已过滤 `enabled`    |
+| Session 列表 | `GET /api/chat/sessions`（flow 面不暴露）              | 默认不含归档              |
+| 创建 Session | `POST /api/chat/sessions`（flow 同）                   | `AgentSession`            |
+| 改名 Session | `PATCH /api/chat/sessions/{sessionId}`                 | `AgentSession`，`title` trim 后 1-120 字符，至少传一个字段 |
+| 归档 Session | `DELETE /api/chat/sessions/{sessionId}`                | `AgentSession`，只写 `archivedAt`，不物理删除 |
+| 历史         | `GET /api/chat/sessions/{sessionId}/transcript`（flow 带 `?lane=`） | 默认最新一页，items 时间正序 |
+| 进行中的 Run | `GET /api/chat/sessions/{sessionId}/active-run`         | `AgentRun \| null`，只报 `starting` / `running`，`lane` 默认 `main` |
+| 启动 Run     | `POST /api/chat/sessions/{sessionId}/runs`（flow 同）   | `text/event-stream`       |
+| 恢复 Run     | `GET /api/chat/sessions/{sessionId}/runs/{runId}/events/stream`（flow 面不暴露） | `text/event-stream`，支持 `afterSequence` 或 `Last-Event-ID` |
+| Run 状态     | `GET /api/chat/sessions/{sessionId}/runs/{runId}`       | `AgentRun`，含可选 `live` |
+| 停止生成     | `POST /api/chat/sessions/{sessionId}/runs/{runId}/abort` | `AgentRun`                |
+| 结构化输出   | `GET /api/flow/sessions/{sessionId}/runs/{runId}/structured-outputs`（仅 flow） | `StructuredOutputList`    |
+
+产品面与对应 `/api/ai/*` 端点同构（同一 service 产出），但鉴权只认 starter_user cookie，不支持 product_app Bearer。transcript 里 `images[].url` 由服务端 presenter 生成，仍是 `/api/ai/attachments/...` 路径——这是运行时数据不是前端字面量，同源策略下 Cookie 自动携带，不需要改写；`<img>` 的 src 拼接用 `attachmentContentUrl`（`/api/chat/attachments/...`）与之等价指向同一份内容。
 
 启动 Run 的响应不是 `{ ok, data, meta }` envelope，不能过 `unwrapApiData`，它会把整个流当 JSON 读掉。因为是 POST，`EventSource` 也用不了：拿 `Response` 后自己读 `response.body`。
 
-已有 Run 的恢复请求使用 `GET /api/ai/sessions/{sessionId}/runs/{runId}/events/stream`，可传 `afterSequence` 或 `Last-Event-ID`。恢复请求不能再次 POST 创建 Run；未知 `Last-Event-ID` 按 400 请求错误处理。
+已有 Run 的恢复请求使用 `GET /api/chat/sessions/{sessionId}/runs/{runId}/events/stream`，可传 `afterSequence` 或 `Last-Event-ID`。恢复请求不能再次 POST 创建 Run；未知 `Last-Event-ID` 按 400 请求错误处理。
 
 SSE 帧解析规则：
 
@@ -137,7 +143,7 @@ SSE 解析测试至少覆盖：心跳注释行、坏帧丢弃、`\r\n\r\n` 分�
 ### Wrong
 
 ```ts
-const data = await unwrapApiData(apiRpc.api.ai.sessions[':sessionId'].runs.$post(...))
+const data = await unwrapApiData(chatRpc.api.chat.sessions[':sessionId'].runs.$post(...))
 ```
 
 启动 Run 返回的是 SSE 流，`unwrapApiData` 会把整个流当 JSON 读掉，页面拿不到任何增量。
@@ -145,12 +151,12 @@ const data = await unwrapApiData(apiRpc.api.ai.sessions[':sessionId'].runs.$post
 ### Correct
 
 ```ts
-const response = await apiRpc.api.ai.sessions[":sessionId"].runs.$post(
+const response = await chatRpc.api.chat.sessions[":sessionId"].runs.$post(
   { param: { sessionId }, json: { agentId, input } },
   { init: { headers: { accept: "text/event-stream" }, signal } },
 );
 if (!response.ok) throw await toApiRequestError(response);
-for await (const event of startRunStream({ sessionId, agentId, input, signal })) {
+for await (const event of startRunStream({ product: "chat", sessionId, agentId, input, signal })) {
   /* 折叠 */
 }
 ```
@@ -188,14 +194,14 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 - 会话列表、切换、改名、归档已支持（`lib/ai/chat-session-view.ts` 负责列表纯函数，`use-chat-run.ts` 负责状态与异步编排）。steer、follow-up、transcript 翻页、多 lane 视图仍不在范围内。
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。
-- 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。Run 级 API 消费沿用本规范；画布运行态不持久化，服务端 Session/transcript 是持久事实。
+- 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。flow 页的 HTTP 调用全部走 `/api/flow/*`（`lib/api/flow.api.ts`，`flowRpc` client，transcript 按 lane 读取）；flow 面没有 active-run 和 events/stream 恢复入口，页面刷新即丢运行态；画布运行态不持久化，服务端 Session/transcript 是持久事实。
 
 ## 11. 图片附件（Chat 输入）
 
 ### Signatures
 
 ```ts
-// lib/api/ai-attachments.api.ts
+// lib/api/chat-attachments.api.ts
 export async function uploadAiAttachment(file: File, sessionId?: string): Promise<AiAttachment>;
 export function attachmentContentUrl(attachmentId: string): string;
 
@@ -207,7 +213,7 @@ export function selectUploadableImages(files: File[]): { accepted: File[]; rejec
 
 ### Contracts
 
-- 上传走 `apiRequest`（multipart `POST /api/ai/attachments`，带当前 sessionId）；鉴权是 Cookie 会话，与 run 请求一致，`Authorization: Bearer` 不进前端
+- 上传走 `apiRequest`（multipart `POST /api/chat/attachments`，带当前 sessionId）；鉴权是 Cookie 会话，与 run 请求一致，`Authorization: Bearer` 不进前端
 - 预校验规则与服务端同源：MIME 白名单四种、单张 5MB、待发送最多 4 张；超限前端直接提示，不发请求
 - 发送：`startRunStream` 请求体带 `attachmentIds`（contracts schema 已有该字段）；不传时请求体与纯文本现状一致
 - 图片显示：`<img src={attachmentContentUrl(id)}>` 直连 content 端点，同站 Cookie 自动携带；transcript 的 `images[].url` 与该构造点拼出同一字符串
@@ -221,7 +227,7 @@ export function selectUploadableImages(files: File[]): { accepted: File[]; rejec
 
 ### Tests Required
 
-`apps/web/test/attachment-input.test.ts`（预校验规则）与 `apps/web/test/ai-attachments.test.ts`（上传表单组装、错误码透传、`startRunStream` 请求体含/不含 `attachmentIds`）。只测纯逻辑，不测 DOM（同第 7 节约束）。
+`apps/web/test/attachment-input.test.ts`（预校验规则）与 `apps/web/test/chat-attachments.test.ts`（上传表单组装、错误码透传、`startRunStream` 请求体含/不含 `attachmentIds`）。只测纯逻辑，不测 DOM（同第 7 节约束）。
 
 ### Wrong vs Correct
 

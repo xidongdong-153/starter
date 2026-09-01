@@ -40,4 +40,4 @@ pnpm --filter @starter/web build
 - `state-management.md`：session、表单、菜单和主题状态归属。
 - `type-safety.md`：contracts、运行时 guard、props 和环境变量。
 - `quality-guidelines.md`：页面状态、可访问性、响应式和检查命令。
-- `ai-runtime-consumer.md`：AI Runtime API 调用、SSE 消费、事件归并同构和断流恢复。
+- `ai-runtime-consumer.md`：产品面（`/api/chat`、`/api/flow`）API 调用、SSE 消费、事件归并同构和断流恢复。
