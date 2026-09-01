@@ -31,6 +31,8 @@ import {
 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 
+import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { Magnet } from '@web/components/react-bits/magnet'
 import { Button } from '@web/components/ui/button'
 import { Input } from '@web/components/ui/input'
 import type { FlowDocument, FlowEdge, FlowNode } from '@web/lib/flow/flow-document'
@@ -383,34 +385,46 @@ function FlowCanvasInner({
 
           <div className="mx-0.5 h-5 w-px bg-border" />
 
-          <Button
-            disabled={hasInputNode}
-            onClick={() => handleAddNode('input')}
-            size="sm"
-            title={hasInputNode ? '已有一个输入节点' : '添加输入节点'}
-            type="button"
-            variant="outline"
-          >
-            <Plus aria-hidden="true" size={13} />
-            输入节点
-          </Button>
-          <Button onClick={() => handleAddNode('agent')} size="sm" type="button" variant="outline">
-            <Plus aria-hidden="true" size={13} />
-            Agent 节点
-          </Button>
+          <ClickSpark sparkColor="rgba(235, 111, 146, 0.7)" sparkCount={6}>
+            <Button
+              disabled={hasInputNode}
+              onClick={() => handleAddNode('input')}
+              size="sm"
+              title={hasInputNode ? '已有一个输入节点' : '添加输入节点'}
+              type="button"
+              variant="outline"
+            >
+              <Plus aria-hidden="true" size={13} />
+              输入节点
+            </Button>
+          </ClickSpark>
+          <ClickSpark sparkColor="rgba(235, 111, 146, 0.7)" sparkCount={6}>
+            <Button onClick={() => handleAddNode('agent')} size="sm" type="button" variant="outline">
+              <Plus aria-hidden="true" size={13} />
+              Agent 节点
+            </Button>
+          </ClickSpark>
 
           <div className="mx-0.5 h-5 w-px bg-border" />
 
           {running ? (
-            <Button disabled={!canStop} onClick={onStop} size="sm" type="button" variant="destructive">
-              <Square aria-hidden="true" size={13} />
-              {stopping ? '正在停止…' : '停止'}
-            </Button>
+            <Magnet disabled={!canStop} magnetStrength={0.2} padding={15}>
+              <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={8}>
+                <Button disabled={!canStop} onClick={onStop} size="sm" type="button" variant="destructive">
+                  <Square aria-hidden="true" size={13} />
+                  {stopping ? '正在停止…' : '停止'}
+                </Button>
+              </ClickSpark>
+            </Magnet>
           ) : (
-            <Button onClick={onRun} size="sm" type="button">
-              <Play aria-hidden="true" size={13} />
-              运行
-            </Button>
+            <Magnet magnetStrength={0.25} padding={18}>
+              <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={10}>
+                <Button onClick={onRun} size="sm" type="button">
+                  <Play aria-hidden="true" size={13} />
+                  运行
+                </Button>
+              </ClickSpark>
+            </Magnet>
           )}
         </div>
 

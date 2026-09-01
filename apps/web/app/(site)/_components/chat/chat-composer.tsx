@@ -7,6 +7,8 @@ import { useRef, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
 import { Textarea } from '@web/components/ui/textarea'
+import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { Magnet } from '@web/components/react-bits/magnet'
 import type { ChatAttachmentItem } from '@web/hooks/use-chat-attachments'
 import { ATTACHMENT_ACCEPT } from '@web/lib/ai/attachment-input'
 import { cn } from '@web/lib/utils'
@@ -136,14 +138,15 @@ export function ChatComposer({
               <span>快捷指令:</span>
             </span>
             {QUICK_PROMPTS.map((item, idx) => (
-              <button
-                className="rounded-full border border-border bg-surface px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
-                key={idx}
-                onClick={() => handleQuickPrompt(item.prefix)}
-                type="button"
-              >
-                {item.label}
-              </button>
+              <ClickSpark key={idx} sparkColor="rgba(235, 111, 146, 0.6)" sparkCount={6}>
+                <button
+                  className="rounded-full border border-border bg-surface px-2.5 py-0.5 text-[11px] text-muted-foreground transition-colors hover:border-primary hover:bg-surface-muted hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                  onClick={() => handleQuickPrompt(item.prefix)}
+                  type="button"
+                >
+                  {item.label}
+                </button>
+              </ClickSpark>
             ))}
           </div>
         ) : null}
@@ -242,22 +245,30 @@ export function ChatComposer({
 
           <div className="flex items-center gap-2">
             {running ? (
-              <Button
-                className="h-9 gap-1.5 px-3 text-xs"
-                disabled={stopping || !canStop}
-                onClick={onStop}
-                title={canStop ? undefined : '等待任务启动后可停止'}
-                type="button"
-                variant="destructive"
-              >
-                <Square aria-hidden="true" size={14} />
-                {stopping ? '正在停止…' : '停止生成'}
-              </Button>
+              <Magnet disabled={stopping || !canStop} magnetStrength={0.2} padding={15}>
+                <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={8}>
+                  <Button
+                    className="h-9 gap-1.5 px-3 text-xs"
+                    disabled={stopping || !canStop}
+                    onClick={onStop}
+                    title={canStop ? undefined : '等待任务启动后可停止'}
+                    type="button"
+                    variant="destructive"
+                  >
+                    <Square aria-hidden="true" size={14} />
+                    {stopping ? '正在停止…' : '停止生成'}
+                  </Button>
+                </ClickSpark>
+              </Magnet>
             ) : (
-              <Button className="h-9 gap-1.5 px-4 text-xs" disabled={!canSend} onClick={onSend} type="button">
-                <Send aria-hidden="true" size={14} />
-                发送
-              </Button>
+              <Magnet disabled={!canSend} magnetStrength={0.25} padding={18}>
+                <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={10}>
+                  <Button className="h-9 gap-1.5 px-4 text-xs" disabled={!canSend} onClick={onSend} type="button">
+                    <Send aria-hidden="true" size={14} />
+                    发送
+                  </Button>
+                </ClickSpark>
+              </Magnet>
             )}
           </div>
         </div>

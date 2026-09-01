@@ -3,6 +3,9 @@
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 import { LogIn, Plus } from 'lucide-react'
 
+import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { Magnet } from '@web/components/react-bits/magnet'
+import { SpotlightCard } from '@web/components/react-bits/spotlight-card'
 import { Textarea } from '@web/components/ui/textarea'
 import { cn } from '@web/lib/utils'
 
@@ -20,11 +23,13 @@ export type FlowInputNode = Node<FlowInputNodeData, 'input'>
  */
 export function FlowNodeInput({ id, data, selected }: NodeProps<FlowInputNode>) {
   return (
-    <div
+    <SpotlightCard
       className={cn(
-        'group relative w-72 border bg-surface shadow-sm transition-colors',
-        selected ? 'border-primary' : 'border-border',
+        'group relative w-72 border bg-surface shadow-sm transition-all duration-200',
+        selected ? 'border-primary ring-2 ring-primary/20' : 'border-border',
       )}
+      spotlightColor="rgba(235, 111, 146, 0.12)"
+      spotlightRadius={180}
     >
       <div className="flex items-center justify-between border-b border-border-subtle px-3 py-2 text-xs font-medium text-foreground">
         <div className="flex items-center gap-2">
@@ -45,19 +50,25 @@ export function FlowNodeInput({ id, data, selected }: NodeProps<FlowInputNode>) 
 
       {/* 快捷追加下一个 Agent 节点 */}
       {data.onQuickAddNext ? (
-        <button
-          aria-label="快速追加下一个 Agent 节点"
-          className="nodrag absolute -right-3 top-1/2 -translate-y-1/2 z-10 grid size-6 place-items-center rounded-full border border-border bg-surface text-foreground opacity-0 shadow-md transition-all hover:scale-110 hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            data.onQuickAddNext?.(id)
-          }}
-          title="快速追加并连线下一个 Agent 节点"
-          type="button"
-        >
-          <Plus aria-hidden="true" size={13} />
-        </button>
+        <div className="nodrag absolute -right-3 top-1/2 -translate-y-1/2 z-10">
+          <Magnet magnetStrength={0.3} padding={15}>
+            <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={8}>
+              <button
+                aria-label="快速追加下一个 Agent 节点"
+                className="grid size-6 place-items-center rounded-full border border-border bg-surface text-foreground opacity-0 shadow-md transition-all hover:scale-110 hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onQuickAddNext?.(id)
+                }}
+                title="快速追加并连线下一个 Agent 节点"
+                type="button"
+              >
+                <Plus aria-hidden="true" size={13} />
+              </button>
+            </ClickSpark>
+          </Magnet>
+        </div>
       ) : null}
-    </div>
+    </SpotlightCard>
   )
 }

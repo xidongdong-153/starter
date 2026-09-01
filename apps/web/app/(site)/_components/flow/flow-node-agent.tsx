@@ -5,6 +5,10 @@ import { useState } from 'react'
 
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 
+import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { Magnet } from '@web/components/react-bits/magnet'
+import { ShinyText } from '@web/components/react-bits/shiny-text'
+import { SpotlightCard } from '@web/components/react-bits/spotlight-card'
 import { Badge } from '@web/components/ui/badge'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { cn } from '@web/lib/utils'
@@ -25,7 +29,7 @@ export type FlowAgentNode = Node<FlowAgentNodeData, 'agent'>
 const statusStyles: Record<string, string> = {
   completed: 'border-success/70',
   failed: 'border-danger/70',
-  running: 'border-primary animate-pulse',
+  running: 'border-primary ring-2 ring-primary/30 shadow-[0_0_15px_rgba(235,111,146,0.3)]',
   aborted: 'border-warning/70',
   idle: 'border-border',
 }
@@ -47,12 +51,14 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
   const hasOutput = runState?.output !== null && runState?.output !== undefined && runState.output.length > 0
 
   return (
-    <div
+    <SpotlightCard
       className={cn(
-        'group relative w-80 border bg-surface shadow-sm transition-colors',
+        'group relative w-80 border bg-surface shadow-sm transition-all duration-200',
         statusStyles[status] ?? 'border-border',
         data.isSelected ? 'border-primary ring-2 ring-primary/20' : undefined,
       )}
+      spotlightColor="rgba(235, 111, 146, 0.12)"
+      spotlightRadius={200}
     >
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
         <div className="flex items-center gap-2 text-xs font-medium text-foreground">
@@ -69,9 +75,9 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
           ) : null}
 
           {status === 'running' ? (
-            <Badge className="gap-1 border-primary/30 bg-primary/10 text-[10px] text-primary" variant="outline">
+            <Badge className="gap-1 border-primary/40 bg-primary/10 text-[10px] text-primary" variant="outline">
               <Loader2 aria-hidden="true" className="animate-spin" size={10} />
-              运行中
+              <ShinyText shimmerWidth={120} speed={2} text="运行中" />
             </Badge>
           ) : null}
           {status === 'completed' ? (
@@ -152,19 +158,25 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
 
       {/* 快捷追加下一个 Agent 节点 */}
       {data.onQuickAddNext ? (
-        <button
-          aria-label="快速追加下一个 Agent 节点"
-          className="nodrag absolute -right-3 top-1/2 -translate-y-1/2 z-10 grid size-6 place-items-center rounded-full border border-border bg-surface text-foreground opacity-0 shadow-md transition-all hover:scale-110 hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:opacity-100 focus-visible:opacity-100"
-          onClick={(e) => {
-            e.stopPropagation()
-            data.onQuickAddNext?.(id)
-          }}
-          title="快速追加并连线下一个 Agent 节点"
-          type="button"
-        >
-          <Plus aria-hidden="true" size={13} />
-        </button>
+        <div className="nodrag absolute -right-3 top-1/2 -translate-y-1/2 z-10">
+          <Magnet magnetStrength={0.3} padding={15}>
+            <ClickSpark sparkColor="rgba(235, 111, 146, 0.9)" sparkCount={8}>
+              <button
+                aria-label="快速追加下一个 Agent 节点"
+                className="grid size-6 place-items-center rounded-full border border-border bg-surface text-foreground opacity-0 shadow-md transition-all hover:scale-110 hover:border-primary hover:bg-primary hover:text-primary-foreground group-hover:opacity-100 focus-visible:opacity-100"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  data.onQuickAddNext?.(id)
+                }}
+                title="快速追加并连线下一个 Agent 节点"
+                type="button"
+              >
+                <Plus aria-hidden="true" size={13} />
+              </button>
+            </ClickSpark>
+          </Magnet>
+        </div>
       ) : null}
-    </div>
+    </SpotlightCard>
   )
 }

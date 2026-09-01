@@ -4,6 +4,10 @@ import type { AgentMessageBlock, AgentToolStatus, AgentTranscriptItem } from '@s
 import { ArrowDown, Bot, Check, ChevronDown, Copy, Sparkles, User, Wrench } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { Magnet } from '@web/components/react-bits/magnet'
+import { ShinyText } from '@web/components/react-bits/shiny-text'
+import { SpotlightCard } from '@web/components/react-bits/spotlight-card'
 import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
 import type { ChatTimelineItem } from '@web/lib/ai/chat-events'
@@ -132,15 +136,26 @@ export function ChatTimeline({
             {onSelectStarterPrompt ? (
               <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
                 {STARTER_PROMPTS.map((item, idx) => (
-                  <button
-                    className="group flex flex-col items-start rounded border border-border bg-surface/80 p-3.5 text-left transition-all hover:border-primary hover:bg-surface-muted/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                    key={idx}
-                    onClick={() => onSelectStarterPrompt(item.prompt)}
-                    type="button"
-                  >
-                    <span className="text-xs font-semibold text-foreground group-hover:text-primary">{item.title}</span>
-                    <span className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">{item.desc}</span>
-                  </button>
+                  <ClickSpark key={idx} sparkColor="rgba(235, 111, 146, 0.6)" sparkCount={8}>
+                    <button
+                      className="group block w-full text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                      onClick={() => onSelectStarterPrompt(item.prompt)}
+                      type="button"
+                    >
+                      <SpotlightCard
+                        className="flex h-full flex-col items-start rounded border border-border bg-surface/80 p-3.5 transition-all hover:border-primary hover:bg-surface-muted/80"
+                        spotlightColor="rgba(235, 111, 146, 0.14)"
+                        spotlightRadius={180}
+                      >
+                        <span className="text-xs font-semibold text-foreground group-hover:text-primary">
+                          {item.title}
+                        </span>
+                        <span className="mt-1 line-clamp-2 text-[11px] leading-4 text-muted-foreground">
+                          {item.desc}
+                        </span>
+                      </SpotlightCard>
+                    </button>
+                  </ClickSpark>
                 ))}
               </div>
             ) : null}
@@ -178,17 +193,21 @@ export function ChatTimeline({
       {/* 悬浮置底按钮 */}
       {showScrollBottom ? (
         <div className="pointer-events-none absolute bottom-4 right-6 z-20">
-          <Button
-            aria-label="滚动到底部"
-            className="pointer-events-auto shadow-md gap-1.5 text-xs"
-            onClick={scrollToBottom}
-            size="sm"
-            type="button"
-            variant="outline"
-          >
-            <ArrowDown aria-hidden="true" size={13} />
-            <span>回到底部</span>
-          </Button>
+          <Magnet magnetStrength={0.3} padding={20}>
+            <ClickSpark sparkColor="rgba(235, 111, 146, 0.8)">
+              <Button
+                aria-label="滚动到底部"
+                className="pointer-events-auto shadow-md gap-1.5 text-xs"
+                onClick={scrollToBottom}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <ArrowDown aria-hidden="true" size={13} />
+                <span>回到底部</span>
+              </Button>
+            </ClickSpark>
+          </Magnet>
         </div>
       ) : null}
     </div>
@@ -272,8 +291,8 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
           <div className="flex items-center gap-2">
             <span className="font-medium text-foreground">助手</span>
             {item.completed ? null : (
-              <Badge className="animate-pulse text-[10px]" variant="outline">
-                生成中
+              <Badge className="text-[10px]" variant="outline">
+                <ShinyText shimmerWidth={150} speed={3} text="生成中…" />
               </Badge>
             )}
           </div>
@@ -294,11 +313,13 @@ function PendingAssistantRow() {
       <div className="min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">助手</span>
-          <Badge className="animate-pulse text-[10px]" variant="outline">
-            生成中
+          <Badge className="text-[10px]" variant="outline">
+            <ShinyText shimmerWidth={150} speed={3} text="生成中…" />
           </Badge>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground">等待模型输出…</p>
+        <div className="mt-2 text-xs text-muted-foreground">
+          <ShinyText shimmerWidth={100} speed={4} text="等待模型输出…" />
+        </div>
       </div>
     </div>
   )
