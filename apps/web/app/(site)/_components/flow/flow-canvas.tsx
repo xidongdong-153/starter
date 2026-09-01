@@ -14,6 +14,7 @@ import {
   type Connection,
   type Edge,
   type EdgeChange,
+  type EdgeTypes,
   type Node,
   type NodeChange,
   type NodeTypes,
@@ -31,6 +32,7 @@ import {
 } from 'lucide-react'
 import { useCallback, useMemo, useRef, useState } from 'react'
 
+import { AnimatedPulseEdge } from '@web/components/react-bits/animated-edge'
 import { ClickSpark } from '@web/components/react-bits/click-spark'
 import { Magnet } from '@web/components/react-bits/magnet'
 import { Button } from '@web/components/ui/button'
@@ -93,6 +95,10 @@ function applySelectionChanges(
 const NODE_TYPES: NodeTypes = {
   agent: FlowNodeAgent,
   input: FlowNodeInput,
+}
+
+const EDGE_TYPES: EdgeTypes = {
+  pulse: AnimatedPulseEdge,
 }
 
 const DEFAULT_EDGE_OPTIONS = {
@@ -288,7 +294,7 @@ function FlowCanvasInner({
     ],
   )
 
-  /** 动态脉冲连线：当目标节点处于 running 时，连接线呈现动画流动效果 */
+  /** 动态脉冲连线：当目标节点处于 running 时，连接线呈现发光能量粒子流动效果 */
   const displayEdges: Edge[] = useMemo(
     () =>
       document.edges.map((edge) => {
@@ -298,9 +304,13 @@ function FlowCanvasInner({
 
         return {
           ...edge,
-          type: 'smoothstep',
+          type: isTargetRunning ? 'pulse' : 'smoothstep',
           animated: isTargetRunning,
           selected: isSelected,
+          data: {
+            isAnimated: isTargetRunning,
+            pulseColor: 'var(--color-primary, #eb6f92)',
+          },
           style: isTargetRunning ? { stroke: 'var(--color-primary)', strokeWidth: 2 } : undefined,
           markerEnd: {
             type: MarkerType.ArrowClosed,
@@ -490,6 +500,7 @@ function FlowCanvasInner({
       <div className="relative min-h-0 flex-1">
         <ReactFlow
           defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
+          edgeTypes={EDGE_TYPES}
           edges={displayEdges}
           fitView
           nodes={displayNodes}

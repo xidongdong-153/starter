@@ -5,7 +5,9 @@ import { useState } from 'react'
 
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
 
+import { BorderBeam } from '@web/components/react-bits/border-beam'
 import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { DecryptedText } from '@web/components/react-bits/decrypted-text'
 import { Magnet } from '@web/components/react-bits/magnet'
 import { ShinyText } from '@web/components/react-bits/shiny-text'
 import { SpotlightCard } from '@web/components/react-bits/spotlight-card'
@@ -60,6 +62,8 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
       spotlightColor="rgba(235, 111, 146, 0.12)"
       spotlightRadius={200}
     >
+      {status === 'running' ? <BorderBeam colorFrom="#eb6f92" colorTo="#c4a7e7" duration={3.5} /> : null}
+
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
         <div className="flex items-center gap-2 text-xs font-medium text-foreground">
           <Bot aria-hidden="true" className="text-primary" size={14} />
@@ -70,14 +74,14 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
           {durationText ? (
             <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
               <Clock aria-hidden="true" size={10} />
-              {durationText}
+              <DecryptedText maxIterations={5} sequential speed={20} text={durationText} />
             </span>
           ) : null}
 
           {status === 'running' ? (
             <Badge className="gap-1 border-primary/40 bg-primary/10 text-[10px] text-primary" variant="outline">
               <Loader2 aria-hidden="true" className="animate-spin" size={10} />
-              <ShinyText shimmerWidth={120} speed={2} text="运行中" />
+              <ShinyText shimmerWidth={160} speed={3.5} text="运行中" />
             </Badge>
           ) : null}
           {status === 'completed' ? (

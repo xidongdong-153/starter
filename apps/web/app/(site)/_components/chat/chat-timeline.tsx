@@ -4,8 +4,11 @@ import type { AgentMessageBlock, AgentToolStatus, AgentTranscriptItem } from '@s
 import { ArrowDown, Bot, Check, ChevronDown, Copy, Sparkles, User, Wrench } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 
+import { BorderBeam } from '@web/components/react-bits/border-beam'
 import { ClickSpark } from '@web/components/react-bits/click-spark'
+import { DecryptedText } from '@web/components/react-bits/decrypted-text'
 import { Magnet } from '@web/components/react-bits/magnet'
+import { Particles } from '@web/components/react-bits/particles'
 import { ShinyText } from '@web/components/react-bits/shiny-text'
 import { SpotlightCard } from '@web/components/react-bits/spotlight-card'
 import { Badge } from '@web/components/ui/badge'
@@ -123,18 +126,19 @@ export function ChatTimeline({
         ref={containerRef}
       >
         {empty ? (
-          <div className="flex h-full min-h-[360px] flex-col items-center justify-center p-4 text-center md:p-8">
-            <div className="grid size-12 place-items-center border border-border bg-surface-muted/60 text-primary shadow-sm">
+          <div className="relative flex h-full min-h-[360px] flex-col items-center justify-center overflow-hidden p-4 text-center md:p-8">
+            <Particles className="opacity-60" particleCount={28} speed={0.25} />
+            <div className="relative z-10 grid size-12 place-items-center border border-border bg-surface-muted/60 text-primary shadow-sm">
               <Sparkles aria-hidden="true" size={24} />
             </div>
-            <h3 className="mt-4 text-base font-semibold text-foreground">开始与 Agent 对话</h3>
-            <p className="mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
+            <h3 className="relative z-10 mt-4 text-base font-semibold text-foreground">开始与 Agent 对话</h3>
+            <p className="relative z-10 mt-1.5 max-w-sm text-xs leading-5 text-muted-foreground">
               在下方输入框中键入你的任务，或选择下方开箱即用的示例快速开启对话。
             </p>
 
             {/* 开箱即用用例卡片 */}
             {onSelectStarterPrompt ? (
-              <div className="mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
+              <div className="relative z-10 mt-6 grid w-full max-w-2xl grid-cols-1 gap-3 sm:grid-cols-3">
                 {STARTER_PROMPTS.map((item, idx) => (
                   <ClickSpark key={idx} sparkColor="rgba(235, 111, 146, 0.6)" sparkCount={8}>
                     <button
@@ -287,12 +291,13 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
         <Bot aria-hidden="true" size={16} />
       </div>
       <div className="group relative min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+        {!item.completed ? <BorderBeam colorFrom="#eb6f92" colorTo="#c4a7e7" duration={5} /> : null}
         <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
           <div className="flex items-center gap-2">
             <span className="font-medium text-foreground">助手</span>
             {item.completed ? null : (
               <Badge className="text-[10px]" variant="outline">
-                <ShinyText shimmerWidth={150} speed={3} text="生成中…" />
+                <ShinyText shimmerWidth={180} speed={4} text="生成中…" />
               </Badge>
             )}
           </div>
@@ -310,15 +315,16 @@ function PendingAssistantRow() {
       <div className="grid size-8 shrink-0 place-items-center border border-border bg-surface text-primary shadow-sm">
         <Bot aria-hidden="true" size={16} />
       </div>
-      <div className="min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+      <div className="group relative min-w-0 flex-1 border border-border-subtle bg-surface px-4 py-3.5 text-sm leading-6 shadow-sm">
+        <BorderBeam colorFrom="#eb6f92" colorTo="#9ccfd8" duration={4} />
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">助手</span>
           <Badge className="text-[10px]" variant="outline">
-            <ShinyText shimmerWidth={150} speed={3} text="生成中…" />
+            <ShinyText shimmerWidth={180} speed={4} text="生成中…" />
           </Badge>
         </div>
         <div className="mt-2 text-xs text-muted-foreground">
-          <ShinyText shimmerWidth={100} speed={4} text="等待模型输出…" />
+          <ShinyText shimmerWidth={160} speed={4.5} text="等待模型输出…" />
         </div>
       </div>
     </div>
@@ -460,7 +466,9 @@ function ToolRow({
     <div className="flex items-center justify-between gap-3 border border-border-subtle bg-surface-muted/40 px-3.5 py-2 text-xs shadow-xs">
       <div className="flex min-w-0 items-center gap-2 text-muted-foreground">
         <Wrench aria-hidden="true" className="shrink-0 text-foreground" size={14} />
-        <span className="font-medium text-foreground">{name}</span>
+        <span className="font-medium text-foreground">
+          <DecryptedText maxIterations={6} sequential speed={25} text={name} />
+        </span>
         {safeSummary === null ? null : <span className="truncate text-muted-foreground">— {safeSummary}</span>}
       </div>
       <Badge className="shrink-0 text-[10px]" variant={isRunning ? 'outline' : isFailed ? 'destructive' : 'secondary'}>
