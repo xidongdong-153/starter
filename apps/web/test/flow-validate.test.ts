@@ -5,7 +5,10 @@ import { validateFlowGraph, validateStepTemplates } from '@web/lib/flow/flow-val
 
 let sequence = 0
 
-function makeNode(type: 'agent' | 'input', overrides: Partial<Extract<FlowNode, { type: 'agent' }>> = {}): FlowNode {
+function makeNode(
+  type: 'agent' | 'input',
+  overrides: { data?: Partial<Extract<FlowNode, { type: 'agent' }>['data']> } = {},
+): FlowNode {
   sequence += 1
   if (type === 'input') {
     return { id: `node-${sequence}`, type: 'input', position: { x: 0, y: 0 }, data: { inputText: '' } }
@@ -14,7 +17,7 @@ function makeNode(type: 'agent' | 'input', overrides: Partial<Extract<FlowNode, 
     id: `node-${sequence}`,
     type: 'agent',
     position: { x: 0, y: 0 },
-    data: { agentId: `agent-${sequence}`, promptTemplate: '{{input}}', ...overrides.data },
+    data: { name: '', agentId: `agent-${sequence}`, promptTemplate: '{{input}}', ...overrides.data },
   }
 }
 
@@ -179,6 +182,45 @@ it('单条链上 Agent 断开（中间缺失）报错', () => {
   expect(result.ok).toBe(false)
   if (result.ok) return
   expect(result.errors.some((message) => message.includes('没有连进流程'))).toBe(true)
+})
+
+it('有名称的节点报错消息用名称定位', () => {
+  const input = makeNode('input')
+  const a = makeNode('agent')
+  const orphan = makeNode('agent', { data: { name: '提炼要点' } })
+  const result = validateFlowGraph(makeDocument([input, a, orphan], [[input.id, a.id]]))
+  expect(result.ok).toBe(false)
+  if (result.ok) return
+  expect(result.errors.some((message) => message.includes('节点“提炼要点”没有连进流程'))).toBe(true)
+})
+
+it('无名称的节点报错消息维持链上序号表述', () => {
+  const input = makeNode('input')
+  const a = makeNode('agent')
+  const orphan = makeNode('agent')
+  const result = validateFlowGraph(makeDocument([input, a, orphan], [[input.id, a.id]]))
+  expect(result.ok).toBe(false)
+  if (result.ok) return
+  expect(result.errors.some((message) => message.includes('第 2 个 Agent 节点没有连进流程'))).toBe(true)
+})
+
+it('多上游连线报错带节点名称', () => {
+  const input = makeNode('input')
+  const a = makeNode('agent')
+  const b = makeNode('agent', { data: { name: '英文简报' } })
+  const result = validateFlowGraph(
+    makeDocument(
+      [input, a, b],
+      [
+        [input.id, b.id],
+        [a.id, b.id],
+        [input.id, a.id],
+      ],
+    ),
+  )
+  expect(result.ok).toBe(false)
+  if (result.ok) return
+  expect(result.errors.some((message) => message.includes('节点“英文简报”有多条上游连线'))).toBe(true)
 })
 
 it('validateStepTemplates 引用更早步骤通过', () => {

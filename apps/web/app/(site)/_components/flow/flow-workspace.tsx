@@ -196,6 +196,18 @@ export function FlowWorkspace({ className }: { className?: string }) {
     [updateActiveDocument],
   )
 
+  const handleNameChange = useCallback(
+    (nodeId: string, name: string) => {
+      updateActiveDocument((document) => ({
+        ...document,
+        nodes: document.nodes.map((node) =>
+          node.id === nodeId && node.type === 'agent' ? { ...node, data: { ...node.data, name } } : node,
+        ),
+      }))
+    },
+    [updateActiveDocument],
+  )
+
   const handleAgentIdChange = useCallback(
     (nodeId: string, agentId: string) => {
       updateActiveDocument((document) => ({
@@ -620,6 +632,7 @@ export function FlowWorkspace({ className }: { className?: string }) {
           onDeleteNode={handleDeleteNode}
           onInputTextChange={handleInputTextChange}
           onModeChange={handleModeChange}
+          onNameChange={handleNameChange}
           onPromptTemplateChange={handlePromptTemplateChange}
           onRetryFrom={handleRetryFrom}
           onRun={handleRun}

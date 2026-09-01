@@ -259,7 +259,7 @@ function FlowCanvasInner({
         id: newNodeId,
         type: 'agent',
         position: newPos,
-        data: { agentId: '', promptTemplate: '' },
+        data: { name: '', agentId: '', promptTemplate: '' },
       }
       const newEdge: FlowEdge = {
         id: crypto.randomUUID(),
@@ -305,6 +305,7 @@ function FlowCanvasInner({
           selected: selectedElementIds.has(node.id) || node.id === selectedNodeId,
           measured,
           data: {
+            name: node.data.name,
             agentId: node.data.agentId,
             promptTemplate: node.data.promptTemplate,
             stepIndex: chainIndex.get(node.id) ?? null,
@@ -372,7 +373,7 @@ function FlowCanvasInner({
             id: crypto.randomUUID(),
             type: 'agent',
             position: { x: position.x + 40, y: position.y + 40 },
-            data: { agentId: '', promptTemplate: '' },
+            data: { name: '', agentId: '', promptTemplate: '' },
           }
     onDocumentChange({ nodes: [...document.nodes, node], edges: document.edges })
     onSelectNode(node.id)

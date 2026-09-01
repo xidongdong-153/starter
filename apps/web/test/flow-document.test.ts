@@ -52,6 +52,72 @@ it('createFlowDocument 自带一个输入节点和一个已连线的 Agent 节�
   expect(document.createdAt).toBe(document.updatedAt)
 })
 
+it('createFlowDocument 自带的 Agent 节点 name 为空串', () => {
+  const document = createFlowDocument()
+  const agentNode = document.nodes.find((node) => node.type === 'agent')
+  if (agentNode?.type !== 'agent') throw new Error('fixture 缺少 agent 节点')
+  expect(agentNode.data.name).toBe('')
+})
+
+it('repository load 丢弃 name 缺失的旧文档', () => {
+  const storage = memoryStorage()
+  const document = makeDocument()
+  // 旧格式：agent 节点没有 name 字段，schema 校验失败后整份列表丢弃
+  const legacy = {
+    ...document,
+    nodes: document.nodes.map((node) =>
+      node.type === 'agent'
+        ? {
+            id: node.id,
+            type: 'agent' as const,
+            position: node.position,
+            data: { agentId: node.data.agentId, promptTemplate: node.data.promptTemplate },
+          }
+        : node,
+    ),
+  }
+  storage.setItem(FLOW_STORAGE_KEY, JSON.stringify([legacy]))
+  expect(createFlowDocumentRepository(storage).load()).toEqual([])
+})
+
+/** 把文档里第一个 agent 节点改成指定名称，方便各用例复用。 */
+function withAgentName(document: FlowDocument, name: string): FlowDocument {
+  return {
+    ...document,
+    nodes: document.nodes.map((node) => (node.type === 'agent' ? { ...node, data: { ...node.data, name } } : node)),
+  }
+}
+
+it('带名称的文档 load 和导入都保留 name', () => {
+  const named = withAgentName(makeDocument(), '提炼要点')
+  const storage = memoryStorage()
+  const repository = createFlowDocumentRepository(storage)
+  repository.save([named])
+  expect(repository.load()).toEqual([named])
+  const imported = parseFlowImport(serializeFlowDocument(named))
+  const importedAgent = imported.nodes.find((node) => node.type === 'agent')
+  if (importedAgent?.type !== 'agent') throw new Error('导入结果缺少 agent 节点')
+  expect(importedAgent.data.name).toBe('提炼要点')
+})
+
+it('name 超过 60 字符的导入被拒绝，60 字符正好通过', () => {
+  expect(() => parseFlowImport(serializeFlowDocument(withAgentName(makeDocument(), '长'.repeat(61))))).toThrow(
+    '文件内容不符合流程文档格式。',
+  )
+  const imported = parseFlowImport(serializeFlowDocument(withAgentName(makeDocument(), '长'.repeat(60))))
+  const importedAgent = imported.nodes.find((node) => node.type === 'agent')
+  if (importedAgent?.type !== 'agent') throw new Error('导入结果缺少 agent 节点')
+  expect(importedAgent.data.name).toBe('长'.repeat(60))
+})
+
+it('duplicateFlowDocument 复制保留节点名称', () => {
+  const named = withAgentName(makeDocument({ name: '主线流程' }), '提炼要点')
+  const copy = duplicateFlowDocument(named)
+  const agentNode = copy.nodes.find((node) => node.type === 'agent')
+  if (agentNode?.type !== 'agent') throw new Error('副本缺少 agent 节点')
+  expect(agentNode.data.name).toBe('提炼要点')
+})
+
 it('removeNodeFromDocument 删除指定节点并级联清理所有关联的边', () => {
   const document = createFlowDocument()
   const agentNode = document.nodes.find((node) => node.type === 'agent')!

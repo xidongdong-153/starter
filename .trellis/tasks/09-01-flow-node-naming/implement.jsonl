@@ -1,0 +1,5 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 前端规范入口：开发前检查项和文件索引"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "FlowAgentNodeData 两模式（agentId/config）的现行约定，name 字段要落进同一份数据结构"}
+{"file": ".trellis/spec/web/frontend/type-safety.md", "reason": "zod schema 与 localStorage 仓库校验的写法约束（strictObject、损坏数据丢弃）"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Inspector 输入框与画布节点的组件约定（use client、可访问性）"}

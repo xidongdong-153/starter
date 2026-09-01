@@ -195,7 +195,8 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。
 - 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。flow 页的 HTTP 调用全部走 `/api/flow/*`（`lib/api/flow.api.ts`，`flowRpc` client，transcript 按 lane 读取）；flow 面没有 active-run 和 events/stream 恢复入口，页面刷新即丢运行态；画布运行态不持久化，服务端 Session/transcript 是持久事实。模型/工具/技能清单例外，走 `apiRpc`（见第 1 节）。
-- flow 画布的 Agent 节点有两种模式（`flow-document.ts` 的 `FlowAgentNodeData`）：预设模式存 `agentId`，自定义模式存 `config`（`FlowAgentInlineConfig`，字段对齐契约 `InlineAgentRunConfig`）。`config` 字段存在即自定义模式，旧文档没有该字段则按预设模式解析，无迁移。运行时 `use-flow-run.ts` 的 `FlowChainStep.target` 二选一：`{ agentId }` 或 `{ config }`，透传给 `startRunStream`；两者都缺时由 `flow-workspace.tsx` 运行前校验拦截（自定义节点必须有 model 和非空 systemPrompt）。
+- flow 画布的 Agent 节点有两种模式（`flow-document.ts` 的 `FlowAgentNodeData`）：预设模式存 `agentId`，自定义模式存 `config`（`FlowAgentInlineConfig`，字段对齐契约 `InlineAgentRunConfig`）。`config` 字段存在即自定义模式。运行时 `use-flow-run.ts` 的 `FlowChainStep.target` 二选一：`{ agentId }` 或 `{ config }`，透传给 `startRunStream`；两者都缺时由 `flow-workspace.tsx` 运行前校验拦截（自定义节点必须有 model 和非空 systemPrompt）。
+- Agent 节点有必填展示名 `name`（trim 后最长 60，空串合法）：非空时画布节点标题和 Inspector 标题显示名称，空串回落 `Agent <链上序号>`；`flow-validate.ts` 报错用 `节点"XXX"` 定位。`name` 纯展示，不进 `startRunStream` 请求体。schema 是 `strictObject`，节点缺 `name` 的旧 localStorage 文档整体丢弃（`load()` 返回空列表），与 `config` 的 optional 软兼容不同，这是 09-01 任务确认的破坏性改造，无迁移。新增 agent 节点的构造点共三处：`createFlowDocument`、`flow-canvas.tsx` 快捷追加与工具栏新增、`flow-templates.ts` 模板节点（模板节点带语义名）。
 
 ## 11. 图片附件（Chat 输入）
 

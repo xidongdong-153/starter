@@ -28,6 +28,8 @@ import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { cn } from '@web/lib/utils'
 
 export type FlowAgentNodeData = {
+  /** 自定义名称：非空时作为标题，空串回落链上序号。 */
+  name: string
   agentId: string
   promptTemplate: string
   /** 链上序号（从 0 计）；没连进链时为 null。 */
@@ -82,7 +84,11 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
       <div className="flex items-center justify-between gap-2 border-b border-border-subtle px-3 py-2">
         <div className="flex items-center gap-2 text-xs font-medium text-foreground">
           <Bot aria-hidden="true" className="text-primary" size={14} />
-          <span>Agent{data.stepIndex !== null ? ` ${data.stepIndex + 1}` : ''}</span>
+          <span>
+            {data.name.trim().length > 0
+              ? data.name
+              : `Agent${data.stepIndex !== null ? ` ${data.stepIndex + 1}` : ''}`}
+          </span>
         </div>
 
         <div className="flex items-center gap-1.5">

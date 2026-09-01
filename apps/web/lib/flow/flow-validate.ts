@@ -38,7 +38,13 @@ export function validateFlowGraph(document: FlowDocument): FlowValidationResult 
   if (!inputNode) return { ok: false, errors }
 
   const nodeIds = new Set(document.nodes.map((node) => node.id))
-  const agentLabel = new Map(agentNodes.map((node, index) => [node.id, `第 ${index + 1} 个 Agent 节点`]))
+  // 有名称的节点用「节点“XXX”」定位，无名称维持链上序号表述
+  const agentLabel = new Map(
+    agentNodes.map((node, index) => [
+      node.id,
+      node.data.name.trim().length > 0 ? `节点“${node.data.name}”` : `第 ${index + 1} 个 Agent 节点`,
+    ]),
+  )
 
   const outEdges = new Map<string, FlowEdge[]>()
   const inEdges = new Map<string, FlowEdge[]>()

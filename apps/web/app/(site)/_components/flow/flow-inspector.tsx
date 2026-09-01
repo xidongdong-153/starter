@@ -27,6 +27,7 @@ import { Label } from '@web/components/ui/label'
 import { ModelSelect } from '@web/components/ui/model-select'
 import { Textarea } from '@web/components/ui/textarea'
 import type { FlowAgentInlineConfig, FlowNode } from '@web/lib/flow/flow-document'
+import { FLOW_AGENT_NAME_MAX_LENGTH } from '@web/lib/flow/flow-document'
 import { FLOW_INPUT_SAMPLES } from '@web/lib/flow/flow-presets'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { cn } from '@web/lib/utils'
@@ -45,6 +46,7 @@ export interface FlowInspectorProps {
   /** 运行态，nodeId → 步骤状态。 */
   stepStates: Record<string, FlowStepRunState>
   running: boolean
+  onNameChange: (nodeId: string, name: string) => void
   onAgentIdChange: (nodeId: string, agentId: string) => void
   /** 切换预设/自定义模式：custom 为 true 时写入默认内联配置，false 时删掉 config 字段。 */
   onModeChange: (nodeId: string, custom: boolean) => void
@@ -71,6 +73,7 @@ export function FlowInspector({
   chainIndex,
   stepStates,
   running,
+  onNameChange,
   onAgentIdChange,
   onModeChange,
   onConfigChange,
@@ -210,6 +213,9 @@ export function FlowInspector({
   const stepIndex = chainIndex.get(selectedNode.id) ?? null
   const runState = stepStates[selectedNode.id] ?? null
   const canRetry = !running && (runState?.status === 'failed' || runState?.status === 'aborted')
+  // 节点自定义名称：非空时作为面板标题，空串回落链上序号
+  const nodeName =
+    selectedNode.type === 'agent' && selectedNode.data.name.trim().length > 0 ? selectedNode.data.name : null
 
   return (
     <aside
@@ -222,7 +228,7 @@ export function FlowInspector({
       <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
           <h2 className="text-xs font-semibold text-foreground">
-            Agent 节点{stepIndex !== null ? ` ${stepIndex + 1}` : ''}
+            {nodeName ?? `Agent 节点${stepIndex !== null ? ` ${stepIndex + 1}` : ''}`}
           </h2>
           {runState !== null ? <RunStateBadge status={runState.status} /> : null}
         </div>
@@ -272,6 +278,21 @@ export function FlowInspector({
 
           return (
             <>
+              <div>
+                <Label className="text-xs" htmlFor="flow-agent-name">
+                  节点名称
+                </Label>
+                <Input
+                  className="mt-1.5 h-9 text-xs"
+                  disabled={running}
+                  id="flow-agent-name"
+                  maxLength={FLOW_AGENT_NAME_MAX_LENGTH}
+                  onChange={(event) => onNameChange(node.id, event.target.value)}
+                  placeholder="留空时按 Agent 序号显示"
+                  value={node.data.name}
+                />
+              </div>
+
               <div>
                 <Label className="text-xs">配置模式</Label>
                 <div className="mt-1.5 grid grid-cols-2 gap-1 rounded border border-border bg-surface p-1">

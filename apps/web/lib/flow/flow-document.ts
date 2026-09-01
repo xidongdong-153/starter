@@ -53,8 +53,10 @@ export function createFlowAgentInlineConfig(): FlowAgentInlineConfig {
 /**
  * Agent 节点：config 字段存在时为自定义模式（忽略 agentId），
  * 不存在时为预设 Agent 模式（agentId 为空表示还没选，运行前校验会拦）。
+ * name 是节点自定义名称：空串合法，画布回落显示链上序号。
  */
 export interface FlowAgentNodeData {
+  name: string
   agentId: string
   promptTemplate: string
   config?: FlowAgentInlineConfig
@@ -98,7 +100,11 @@ const flowAgentInlineConfigSchema = z.strictObject({
   skillIds: z.array(z.string().min(1)).max(64),
 })
 
+/** 节点名称长度上限：与节点卡片的紧凑展示匹配，独立于文档名的 120 上限。 */
+export const FLOW_AGENT_NAME_MAX_LENGTH = 60
+
 const flowAgentNodeDataSchema = z.strictObject({
+  name: z.string().trim().max(FLOW_AGENT_NAME_MAX_LENGTH),
   agentId: z.string(),
   promptTemplate: z.string().max(100_000),
   config: flowAgentInlineConfigSchema.optional(),
@@ -182,7 +188,12 @@ export function createFlowDocument(now: Date = new Date()): FlowDocument {
     name: '未命名流程',
     nodes: [
       { id: inputNodeId, type: 'input', position: { x: 80, y: 200 }, data: { inputText: '' } },
-      { id: agentNodeId, type: 'agent', position: { x: 440, y: 200 }, data: { agentId: '', promptTemplate: '' } },
+      {
+        id: agentNodeId,
+        type: 'agent',
+        position: { x: 440, y: 200 },
+        data: { name: '', agentId: '', promptTemplate: '' },
+      },
     ],
     edges: [{ id: randomId(), source: inputNodeId, target: agentNodeId }],
     createdAt: timestamp,

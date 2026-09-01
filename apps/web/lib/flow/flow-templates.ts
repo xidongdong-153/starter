@@ -40,6 +40,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 420, y: 180 },
             data: {
+              name: '提炼要点',
               agentId: '',
               promptTemplate:
                 '请对以下内容进行深度提炼，提取出 3 个核心观点，并以结构化的 Markdown 列表形式输出：\n\n{{input}}',
@@ -50,6 +51,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 790, y: 180 },
             data: {
+              name: '英文简报',
               agentId: '',
               promptTemplate:
                 '请将以下提炼的核心观点翻译并整理为一份专业的英文技术简报（Executive Summary），保持专业术语的准确性：\n\n{{steps.0.output}}',
@@ -93,6 +95,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 420, y: 180 },
             data: {
+              name: '代码审查',
               agentId: '',
               promptTemplate:
                 '请作为资深 TypeScript 工程师审查以下代码，指出类型安全问题、潜在的空指针异常以及可提升的函数式编程写法：\n\n```typescript\n{{input}}\n```',
@@ -103,6 +106,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 790, y: 180 },
             data: {
+              name: '重构与测试',
               agentId: '',
               promptTemplate:
                 '基于以下代码审查结论，请给出优雅重构后的 TypeScript 代码，并编写对应的 Vitest 单元测试套件：\n\n审查报告：\n{{steps.0.output}}\n\n原始代码：\n{{input}}',
@@ -145,6 +149,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 420, y: 180 },
             data: {
+              name: '发散方案',
               agentId: '',
               promptTemplate:
                 '请针对以下产品构想进行头脑风暴，从用户痛点、核心交互创新点、技术可行性三个角度给出 3 种差异化的设计路线：\n\n{{input}}',
@@ -155,6 +160,7 @@ export const BUILTIN_FLOW_TEMPLATES: BuiltinFlowTemplate[] = [
             type: 'agent',
             position: { x: 790, y: 180 },
             data: {
+              name: '方案细化',
               agentId: '',
               promptTemplate:
                 '请综合以下头脑风暴内容，选择最务实且具有良好用户体验的方案，整理为包含目标、核心功能清单、验收标准的实施要点：\n\n{{steps.0.output}}',
