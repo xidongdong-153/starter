@@ -275,7 +275,11 @@ function FlowCanvasInner({
             agentId: node.data.agentId,
             promptTemplate: node.data.promptTemplate,
             stepIndex: chainIndex.get(node.id) ?? null,
-            agentName: node.data.agentId.length > 0 ? (agentNames.get(node.data.agentId) ?? null) : null,
+            isCustom: node.data.config !== undefined,
+            agentName:
+              node.data.config === undefined && node.data.agentId.length > 0
+                ? (agentNames.get(node.data.agentId) ?? null)
+                : null,
             runState: stepStates[node.id] ?? null,
             isSelected: node.id === selectedNodeId,
             onQuickAddNext: handleQuickAddNext,

@@ -1,6 +1,6 @@
 'use client'
 
-import type { ApiErrorCode, RunEvent } from '@starter/contracts'
+import type { ApiErrorCode, InlineAgentRunConfig, RunEvent } from '@starter/contracts'
 import { ApiErrorCodes } from '@starter/contracts'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
@@ -35,9 +35,15 @@ const POLL_INTERVAL_MS = 1500
 /** Session 标题与文档名的长度上限。 */
 const TITLE_MAX_LENGTH = 120
 
+/** 单个节点的启动配置：预设 Agent 或内联配置二选一（运行前已校验完整）。 */
+export interface FlowStepTarget {
+  agentId?: string
+  config?: InlineAgentRunConfig
+}
+
 export interface FlowChainStep {
   nodeId: string
-  agentId: string
+  target: FlowStepTarget
   promptTemplate: string
 }
 
@@ -170,7 +176,8 @@ export function useFlowRun() {
 
       try {
         for await (const event of startRunStream({
-          agentId: step.agentId,
+          ...(step.target.agentId !== undefined ? { agentId: step.target.agentId } : {}),
+          ...(step.target.config !== undefined ? { config: step.target.config } : {}),
           idempotencyKey: flowStepIdempotencyKey(plan.flowRunId, index, plan.retries[index] ?? 0),
           input,
           lane: flowStepLane(index),

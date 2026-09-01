@@ -1,16 +1,18 @@
 'use client'
 
-import type { AgentDefinitionSummary } from '@starter/contracts'
+import type { AgentDefinitionSummary, AiSkillSummary, AiToolSummary, AiUserModel } from '@starter/contracts'
 import { AlertCircle, LogIn, RefreshCw } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { Button } from '@web/components/ui/button'
+import { listEnabledSkills, listAiTools, listUserModels } from '@web/lib/api/ai-resources.api'
 import { getRuntimeAgents } from '@web/lib/api/flow.api'
 import { authClient } from '@web/lib/auth-client'
-import type { FlowDocument, FlowEdge, FlowNode } from '@web/lib/flow/flow-document'
+import type { FlowAgentInlineConfig, FlowDocument, FlowEdge, FlowNode } from '@web/lib/flow/flow-document'
 import {
+  createFlowAgentInlineConfig,
   createFlowDocument,
   createFlowDocumentRepository,
   duplicateFlowDocument,
@@ -55,6 +57,9 @@ export function FlowWorkspace({ className }: { className?: string }) {
   const [agents, setAgents] = useState<AgentDefinitionSummary[]>([])
   const [agentsFailed, setAgentsFailed] = useState(false)
   const [agentsAttempt, setAgentsAttempt] = useState(0)
+  const [models, setModels] = useState<AiUserModel[]>([])
+  const [tools, setTools] = useState<AiToolSummary[]>([])
+  const [skills, setSkills] = useState<AiSkillSummary[]>([])
   const [validationErrors, setValidationErrors] = useState<string[]>([])
   const [importError, setImportError] = useState<string | null>(null)
   const [isLeftCollapsed, setIsLeftCollapsed] = useState(false)
@@ -99,16 +104,24 @@ export function FlowWorkspace({ className }: { className?: string }) {
     }, PERSIST_DEBOUNCE_MS)
   }, [])
 
-  // Agent 列表：登录后拉取，失败显示重试
+  // Agent 列表与自定义配置数据源：登录后拉取；models/tools/skills 失败不阻断预设模式，只影响自定义表单
   useEffect(() => {
     if (userId === null) return
     let active = true
     setAgentsFailed(false)
     void (async () => {
       try {
-        const list = await getRuntimeAgents()
+        const [agentList, modelList, toolList, skillList] = await Promise.all([
+          getRuntimeAgents(),
+          listUserModels().catch(() => []),
+          listAiTools().catch(() => []),
+          listEnabledSkills().catch(() => []),
+        ])
         if (!active) return
-        setAgents(list.items)
+        setAgents(agentList.items)
+        setModels(modelList)
+        setTools(toolList)
+        setSkills(skillList)
       } catch {
         if (!active) return
         setAgentsFailed(true)
@@ -178,6 +191,36 @@ export function FlowWorkspace({ className }: { className?: string }) {
         ...document,
         nodes: document.nodes.map((node) =>
           node.id === nodeId && node.type === 'agent' ? { ...node, data: { ...node.data, agentId } } : node,
+        ),
+      }))
+    },
+    [updateActiveDocument],
+  )
+
+  /** 模式切换：自定义写入默认内联配置，预设删掉 config 字段（回到旧文档形态）。 */
+  const handleModeChange = useCallback(
+    (nodeId: string, custom: boolean) => {
+      updateActiveDocument((document) => ({
+        ...document,
+        nodes: document.nodes.map((node) => {
+          if (node.id !== nodeId || node.type !== 'agent') return node
+          const { config: _config, ...rest } = node.data
+          return {
+            ...node,
+            data: custom ? { ...rest, config: createFlowAgentInlineConfig() } : rest,
+          }
+        }),
+      }))
+    },
+    [updateActiveDocument],
+  )
+
+  const handleConfigChange = useCallback(
+    (nodeId: string, config: FlowAgentInlineConfig) => {
+      updateActiveDocument((document) => ({
+        ...document,
+        nodes: document.nodes.map((node) =>
+          node.id === nodeId && node.type === 'agent' ? { ...node, data: { ...node.data, config } } : node,
         ),
       }))
     },
@@ -351,9 +394,20 @@ export function FlowWorkspace({ className }: { className?: string }) {
       setValidationErrors(templateErrors)
       return
     }
-    const missingAgent = graphResult.chain.steps.find((step) => step.node.data.agentId.length === 0)
+    const missingAgent = graphResult.chain.steps.find(
+      (step) => step.node.data.config === undefined && step.node.data.agentId.length === 0,
+    )
     if (missingAgent !== undefined) {
       setValidationErrors(['有 Agent 节点还没有选择 Agent，请点击节点在右侧配置。'])
+      return
+    }
+    const missingInline = graphResult.chain.steps.find(
+      (step) =>
+        step.node.data.config !== undefined &&
+        (step.node.data.config.model === null || step.node.data.config.systemPrompt.trim().length === 0),
+    )
+    if (missingInline !== undefined) {
+      setValidationErrors(['有自定义节点还没有选模型或没写系统提示词，请点击节点在右侧配置。'])
       return
     }
     const inputNode = activeDocument.nodes.find((node) => node.id === graphResult.chain.inputNodeId)
@@ -369,7 +423,21 @@ export function FlowWorkspace({ className }: { className?: string }) {
       input,
       steps: graphResult.chain.steps.map((step) => ({
         nodeId: step.node.id,
-        agentId: step.node.data.agentId,
+        target:
+          step.node.data.config !== undefined
+            ? {
+                config: {
+                  model: step.node.data.config.model as { providerId: string; modelId: string },
+                  systemPrompt: step.node.data.config.systemPrompt,
+                  skillIds: step.node.data.config.skillIds,
+                  toolRefs: step.node.data.config.toolRefs,
+                  outputContract: null,
+                  outputMode: 'optional',
+                  thinkingLevel: step.node.data.config.thinkingLevel,
+                  maxTurns: step.node.data.config.maxTurns,
+                },
+              }
+            : { agentId: step.node.data.agentId },
         promptTemplate: step.node.data.promptTemplate,
       })),
     })
@@ -532,8 +600,13 @@ export function FlowWorkspace({ className }: { className?: string }) {
         <FlowInspector
           agents={agents}
           chainIndex={chainIndex}
+          models={models}
+          skills={skills}
+          tools={tools}
           onAgentIdChange={handleAgentIdChange}
+          onConfigChange={handleConfigChange}
           onInputTextChange={handleInputTextChange}
+          onModeChange={handleModeChange}
           onPromptTemplateChange={handlePromptTemplateChange}
           onRetryFrom={handleRetryFrom}
           onToggleCollapse={() => setIsRightCollapsed(true)}

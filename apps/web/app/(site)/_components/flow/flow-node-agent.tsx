@@ -1,6 +1,17 @@
 'use client'
 
-import { AlertCircle, Bot, CheckCircle2, ChevronDown, ChevronUp, CircleStop, Clock, Loader2, Plus } from 'lucide-react'
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  CircleStop,
+  Clock,
+  Loader2,
+  Plus,
+  SlidersHorizontal,
+} from 'lucide-react'
 import { useState } from 'react'
 
 import { Handle, Position, type Node, type NodeProps } from '@xyflow/react'
@@ -20,6 +31,8 @@ export type FlowAgentNodeData = {
   promptTemplate: string
   /** 链上序号（从 0 计）；没连进链时为 null。 */
   stepIndex: number | null
+  /** 自定义配置模式：true 时节点用内联配置执行，不显示 Agent 名。 */
+  isCustom: boolean
   agentName: string | null
   runState: FlowStepRunState | null
   isSelected: boolean
@@ -108,7 +121,12 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
       <div className="space-y-2 px-3 py-2.5">
         <div className="flex items-center justify-between gap-1">
           <p className="truncate text-xs font-medium text-foreground">
-            {data.agentId.length === 0 ? (
+            {data.isCustom ? (
+              <span className="flex items-center gap-1 text-primary">
+                <SlidersHorizontal aria-hidden="true" size={12} />
+                自定义配置
+              </span>
+            ) : data.agentId.length === 0 ? (
               <span className="text-warning">未选择 Agent（点击配置）</span>
             ) : (
               (data.agentName ?? data.agentId)

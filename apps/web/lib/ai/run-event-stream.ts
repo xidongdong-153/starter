@@ -1,4 +1,4 @@
-import type { RunEvent } from '@starter/contracts'
+import type { InlineAgentRunConfig, RunEvent } from '@starter/contracts'
 import { runEventSchema } from '@starter/contracts'
 import { ApiRequestError, isApiFailureBody, readJson } from '@web/lib/http'
 import { chatRpc, flowRpc } from '@web/lib/rpc'
@@ -8,7 +8,10 @@ const FRAME_SEPARATOR = /\r?\n\r?\n/
 const LINE_SEPARATOR = /\r?\n/
 
 export interface StartRunStreamInput {
-  agentId: string
+  /** 预设 Agent id；与 config 二选一，都不传时服务端回落 Session 默认 Agent。 */
+  agentId?: string
+  /** 内联 Agent 配置；与 agentId 二选一。 */
+  config?: InlineAgentRunConfig
   /** 可选图片附件引用，与 input 一起构成首条 user message；最多 4 个。 */
   attachmentIds?: string[]
   /** 可选幂等键：同 key 的重复启动返回既有 Run；失败 Run 重试时必须换新 key。 */
@@ -101,7 +104,7 @@ async function* readRunEvents(response: Response): AsyncGenerator<RunEvent> {
  * `accept` 需要覆盖 client 默认的 `application/json`。
  */
 async function openRunStream(request: StartRunStreamInput): Promise<Response> {
-  const { agentId, attachmentIds, idempotencyKey, input, lane, product, sessionId, signal } = request
+  const { agentId, config, attachmentIds, idempotencyKey, input, lane, product, sessionId, signal } = request
   let response: Response
 
   try {
@@ -111,7 +114,8 @@ async function openRunStream(request: StartRunStreamInput): Promise<Response> {
     const args = {
       param: { sessionId },
       json: {
-        agentId,
+        ...(agentId !== undefined ? { agentId } : {}),
+        ...(config !== undefined ? { config } : {}),
         input,
         ...(lane !== undefined ? { lane } : {}),
         ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),

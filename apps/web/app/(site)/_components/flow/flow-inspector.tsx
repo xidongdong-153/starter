@@ -1,15 +1,23 @@
 'use client'
 
-import type { AgentDefinitionSummary } from '@starter/contracts'
-import { AlertCircle, CheckCircle2, ChevronRight, CircleStop, RotateCcw } from 'lucide-react'
+import type {
+  AgentDefinitionSummary,
+  AgentThinkingLevel,
+  AiSkillSummary,
+  AiToolSummary,
+  AiUserModel,
+} from '@starter/contracts'
+import { AlertCircle, Bot, CheckCircle2, ChevronRight, CircleStop, RotateCcw, SlidersHorizontal } from 'lucide-react'
 import { useRef } from 'react'
 
 import { AgentSelect } from '@web/components/ui/agent-select'
 import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
+import { Input } from '@web/components/ui/input'
 import { Label } from '@web/components/ui/label'
+import { ModelSelect } from '@web/components/ui/model-select'
 import { Textarea } from '@web/components/ui/textarea'
-import type { FlowNode } from '@web/lib/flow/flow-document'
+import type { FlowAgentInlineConfig, FlowNode } from '@web/lib/flow/flow-document'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { availableVariables } from '@web/lib/flow/flow-template'
 import { cn } from '@web/lib/utils'
@@ -17,12 +25,19 @@ import { cn } from '@web/lib/utils'
 export interface FlowInspectorProps {
   selectedNode: FlowNode | null
   agents: AgentDefinitionSummary[]
+  /** 自定义模式数据源。 */
+  models: AiUserModel[]
+  tools: AiToolSummary[]
+  skills: AiSkillSummary[]
   /** 链上序号，nodeId → 从 0 计的步骤序号。 */
   chainIndex: Map<string, number>
   /** 运行态，nodeId → 步骤状态。 */
   stepStates: Record<string, FlowStepRunState>
   running: boolean
   onAgentIdChange: (nodeId: string, agentId: string) => void
+  /** 切换预设/自定义模式：custom 为 true 时写入默认内联配置，false 时删掉 config 字段。 */
+  onModeChange: (nodeId: string, custom: boolean) => void
+  onConfigChange: (nodeId: string, config: FlowAgentInlineConfig) => void
   onPromptTemplateChange: (nodeId: string, template: string) => void
   onInputTextChange: (nodeId: string, text: string) => void
   onRetryFrom: (nodeId: string) => void
@@ -31,16 +46,21 @@ export interface FlowInspectorProps {
 }
 
 /**
- * 右侧检查面板：选中 Agent 节点时编辑配置（Agent 选择、Prompt 模板、变量插入），
+ * 右侧检查面板：选中 Agent 节点时编辑配置（预设/自定义两种模式、Prompt 模板、变量插入），
  * 并显示该节点的运行态、产出全文和错误信息；选中输入节点时编辑起点输入；支持折叠收起。
  */
 export function FlowInspector({
   selectedNode,
   agents,
+  models,
+  tools,
+  skills,
   chainIndex,
   stepStates,
   running,
   onAgentIdChange,
+  onModeChange,
+  onConfigChange,
   onPromptTemplateChange,
   onInputTextChange,
   onRetryFrom,
@@ -178,27 +198,200 @@ export function FlowInspector({
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
-        <div>
-          <Label className="text-xs" htmlFor="flow-agent-select">
-            Agent
-          </Label>
-          <div className="mt-1.5">
-            <AgentSelect
-              agentId={selectedNode.data.agentId}
-              agents={agents}
-              allowEmpty
-              disabled={running}
-              emptyOptionText="未选择 Agent"
-              id="flow-agent-select"
-              onAgentChange={(agentId) => onAgentIdChange(selectedNode.id, agentId)}
-              placeholder="选择 Agent"
-              size="default"
-            />
-          </div>
-          {selectedNode.data.agentId.length === 0 ? (
-            <p className="mt-1.5 text-[11px] text-warning">尚未选择 Agent，运行前需要先选择。</p>
-          ) : null}
-        </div>
+        {(() => {
+          const node = selectedNode
+          if (node.type !== 'agent') return null
+          const customMode = node.data.config !== undefined
+          const config = node.data.config
+
+          function updateConfig(patch: Partial<FlowAgentInlineConfig>) {
+            if (config === undefined) return
+            onConfigChange(node.id, { ...config, ...patch })
+          }
+
+          const selectedModelKey = config?.model != null ? `${config.model.providerId}:${config.model.modelId}` : null
+
+          return (
+            <>
+              <div>
+                <Label className="text-xs">配置模式</Label>
+                <div className="mt-1.5 grid grid-cols-2 gap-1 rounded border border-border bg-surface p-1">
+                  <button
+                    className={cn(
+                      'flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors',
+                      !customMode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    disabled={running}
+                    onClick={() => onModeChange(node.id, false)}
+                    type="button"
+                  >
+                    <Bot aria-hidden="true" size={13} />
+                    预设 Agent
+                  </button>
+                  <button
+                    className={cn(
+                      'flex items-center justify-center gap-1.5 rounded px-2 py-1.5 text-xs font-medium transition-colors',
+                      customMode ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground',
+                    )}
+                    disabled={running}
+                    onClick={() => onModeChange(node.id, true)}
+                    type="button"
+                  >
+                    <SlidersHorizontal aria-hidden="true" size={13} />
+                    自定义配置
+                  </button>
+                </div>
+              </div>
+
+              {customMode && config !== undefined ? (
+                <div className="space-y-4">
+                  <div>
+                    <Label className="text-xs" htmlFor="flow-model-select">
+                      模型
+                    </Label>
+                    <div className="mt-1.5">
+                      <ModelSelect
+                        disabled={running}
+                        id="flow-model-select"
+                        models={models}
+                        onModelChange={(model) =>
+                          updateConfig(
+                            model === null
+                              ? { model: null }
+                              : { model: { providerId: model.providerId, modelId: model.modelId } },
+                          )
+                        }
+                        selectedKey={selectedModelKey}
+                      />
+                    </div>
+                    {config.model === null ? (
+                      <p className="mt-1.5 text-[11px] text-warning">尚未选择模型，运行前需要先选择。</p>
+                    ) : null}
+                  </div>
+
+                  <div>
+                    <Label className="text-xs" htmlFor="flow-system-prompt">
+                      系统提示词
+                    </Label>
+                    <Textarea
+                      className="mt-1.5 min-h-24 text-xs"
+                      disabled={running}
+                      id="flow-system-prompt"
+                      onChange={(event) => updateConfig({ systemPrompt: event.target.value })}
+                      placeholder="告诉这个节点扮演什么角色、按什么规则输出"
+                      value={config.systemPrompt}
+                    />
+                    {config.systemPrompt.trim().length === 0 ? (
+                      <p className="mt-1.5 text-[11px] text-warning">系统提示词为空，运行前需要先填写。</p>
+                    ) : null}
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <Label className="text-xs" htmlFor="flow-thinking-level">
+                        思考强度
+                      </Label>
+                      <select
+                        aria-label="思考强度"
+                        className="mt-1.5 h-9 w-full rounded border border-input bg-surface px-2 text-xs text-foreground outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40"
+                        disabled={running}
+                        id="flow-thinking-level"
+                        onChange={(event) => updateConfig({ thinkingLevel: event.target.value as AgentThinkingLevel })}
+                        value={config.thinkingLevel}
+                      >
+                        <option value="off">off</option>
+                        <option value="minimal">minimal</option>
+                        <option value="low">low</option>
+                        <option value="medium">medium</option>
+                        <option value="high">high</option>
+                        <option value="xhigh">xhigh</option>
+                        <option value="max">max</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label className="text-xs" htmlFor="flow-max-turns">
+                        最大轮数
+                      </Label>
+                      <Input
+                        className="mt-1.5 h-9 text-xs"
+                        id="flow-max-turns"
+                        max={32}
+                        min={1}
+                        onChange={(event) => {
+                          const value = Number(event.target.value)
+                          updateConfig({
+                            maxTurns: Number.isFinite(value) ? Math.min(32, Math.max(1, Math.trunc(value))) : 8,
+                          })
+                        }}
+                        type="number"
+                        value={config.maxTurns}
+                      />
+                    </div>
+                  </div>
+
+                  <CheckboxGroup
+                    disabled={running}
+                    emptyText="暂无可用工具"
+                    items={tools.map((tool) => ({
+                      key: `${tool.name}@${tool.version}`,
+                      label: tool.name,
+                      description: tool.description,
+                      checked: config.toolRefs.some((ref) => ref.name === tool.name && ref.version === tool.version),
+                      onToggle: (checked) => {
+                        const ref = { name: tool.name, version: tool.version }
+                        const next = checked
+                          ? [...config.toolRefs, ref]
+                          : config.toolRefs.filter((item) => !(item.name === ref.name && item.version === ref.version))
+                        updateConfig({ toolRefs: next })
+                      },
+                    }))}
+                    title="工具"
+                  />
+
+                  <CheckboxGroup
+                    disabled={running}
+                    emptyText="暂无可用技能"
+                    items={skills.map((skill) => ({
+                      key: skill.id,
+                      label: skill.name,
+                      description: skill.description,
+                      checked: config.skillIds.includes(skill.id),
+                      onToggle: (checked) => {
+                        const next = checked
+                          ? [...config.skillIds, skill.id]
+                          : config.skillIds.filter((id) => id !== skill.id)
+                        updateConfig({ skillIds: next })
+                      },
+                    }))}
+                    title="技能"
+                  />
+                </div>
+              ) : (
+                <div>
+                  <Label className="text-xs" htmlFor="flow-agent-select">
+                    Agent
+                  </Label>
+                  <div className="mt-1.5">
+                    <AgentSelect
+                      agentId={node.data.agentId}
+                      agents={agents}
+                      allowEmpty
+                      disabled={running}
+                      emptyOptionText="未选择 Agent"
+                      id="flow-agent-select"
+                      onAgentChange={(agentId) => onAgentIdChange(node.id, agentId)}
+                      placeholder="选择 Agent"
+                      size="default"
+                    />
+                  </div>
+                  {node.data.agentId.length === 0 ? (
+                    <p className="mt-1.5 text-[11px] text-warning">尚未选择 Agent，运行前需要先选择。</p>
+                  ) : null}
+                </div>
+              )}
+            </>
+          )
+        })()}
 
         <div>
           <Label className="text-xs" htmlFor="flow-prompt-template">
@@ -267,6 +460,56 @@ export function FlowInspector({
         ) : null}
       </div>
     </aside>
+  )
+}
+
+/** 勾选列表：工具/技能多选共用；条目少时比下拉多选更直观。 */
+function CheckboxGroup(props: {
+  title: string
+  disabled: boolean
+  emptyText: string
+  items: Array<{
+    key: string
+    label: string
+    description: string
+    checked: boolean
+    onToggle: (checked: boolean) => void
+  }>
+}) {
+  return (
+    <fieldset className="space-y-1.5" disabled={props.disabled}>
+      <legend className="text-xs text-foreground">{props.title}</legend>
+      {props.items.length === 0 ? (
+        <p className="text-[11px] text-muted-foreground">{props.emptyText}</p>
+      ) : (
+        <div className="max-h-44 space-y-1 overflow-y-auto rounded border border-border bg-surface p-2">
+          {props.items.map((item) => (
+            <label
+              className={cn(
+                'flex cursor-pointer items-start gap-2 rounded px-1.5 py-1 transition-colors hover:bg-surface-muted/70',
+                props.disabled && 'cursor-not-allowed opacity-60',
+              )}
+              key={item.key}
+            >
+              <input
+                checked={item.checked}
+                className="mt-0.5 size-3.5 shrink-0 accent-[rgb(var(--color-primary))]"
+                onChange={(event) => item.onToggle(event.target.checked)}
+                type="checkbox"
+              />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-xs font-medium text-foreground">{item.label}</span>
+                {item.description.length > 0 ? (
+                  <span className="mt-0.5 block line-clamp-2 text-[11px] leading-tight text-muted-foreground">
+                    {item.description}
+                  </span>
+                ) : null}
+              </span>
+            </label>
+          ))}
+        </div>
+      )}
+    </fieldset>
   )
 }
 

@@ -1,3 +1,5 @@
+import { agentThinkingLevelSchema } from '@starter/contracts'
+import type { AgentThinkingLevel, AiToolRef } from '@starter/contracts'
 import { z } from 'zod'
 
 /**
@@ -17,10 +19,45 @@ export interface FlowInputNodeData {
   inputText: string
 }
 
-/** Agent 节点：agentId 为空表示还没选，运行前校验会拦。 */
+/** 模型引用：provider + model，来自 `GET /api/ai/models`。 */
+export interface FlowModelRef {
+  providerId: string
+  modelId: string
+}
+
+/**
+ * 自定义节点的内联配置（编辑态）：model 和 systemPrompt 允许未填，
+ * 运行前校验会拦；启动时转成契约的 InlineAgentRunConfig。
+ */
+export interface FlowAgentInlineConfig {
+  model: FlowModelRef | null
+  systemPrompt: string
+  thinkingLevel: AgentThinkingLevel
+  maxTurns: number
+  toolRefs: AiToolRef[]
+  skillIds: string[]
+}
+
+/** 默认内联配置：切到自定义模式时写入。 */
+export function createFlowAgentInlineConfig(): FlowAgentInlineConfig {
+  return {
+    model: null,
+    systemPrompt: '',
+    thinkingLevel: 'off',
+    maxTurns: 8,
+    toolRefs: [],
+    skillIds: [],
+  }
+}
+
+/**
+ * Agent 节点：config 字段存在时为自定义模式（忽略 agentId），
+ * 不存在时为预设 Agent 模式（agentId 为空表示还没选，运行前校验会拦）。
+ */
 export interface FlowAgentNodeData {
   agentId: string
   promptTemplate: string
+  config?: FlowAgentInlineConfig
 }
 
 export type FlowNode =
@@ -46,9 +83,25 @@ const flowInputNodeDataSchema = z.strictObject({
   inputText: z.string().max(100_000),
 })
 
+const flowToolRefSchema = z.strictObject({
+  name: z.string().min(1).max(240),
+  version: z.string().min(1).max(240),
+})
+
+/** 旧文档没有 config 字段：optional 保持向后兼容，不迁移存量数据。 */
+const flowAgentInlineConfigSchema = z.strictObject({
+  model: z.strictObject({ providerId: z.string().min(1), modelId: z.string().min(1) }).nullable(),
+  systemPrompt: z.string().max(100_000),
+  thinkingLevel: agentThinkingLevelSchema,
+  maxTurns: z.number().int().min(1).max(32),
+  toolRefs: z.array(flowToolRefSchema).max(64),
+  skillIds: z.array(z.string().min(1)).max(64),
+})
+
 const flowAgentNodeDataSchema = z.strictObject({
   agentId: z.string(),
   promptTemplate: z.string().max(100_000),
+  config: flowAgentInlineConfigSchema.optional(),
 })
 
 export const flowNodeSchema = z.discriminatedUnion('type', [
