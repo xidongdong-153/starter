@@ -3,48 +3,43 @@
 import React from 'react'
 
 export interface ShinyTextProps {
-  baseColor?: string
   children?: React.ReactNode
   className?: string
   disabled?: boolean
   shimmerWidth?: number
-  shineColor?: string
   speed?: number
   text?: string
 }
 
 /**
  * React Bits - ShinyText 文字扫光动效
- * 保持文字底色清晰可读，高光以平稳柔和的节奏掠过，兼顾暗色/亮色主题与易读性。
+ * 采用 CSS mask-image 实现柔和流光，完全保留文字原有原生颜色与主题对比度，
+ * 绝不会出现文字底色透明或暗色模式下看不清的问题。
  */
 export function ShinyText({
-  baseColor,
   children,
   className = '',
   disabled = false,
-  shimmerWidth = 220,
-  shineColor,
+  shimmerWidth = 200,
   speed = 4.5,
   text,
 }: ShinyTextProps) {
   const content = text ?? children
-
-  // 默认底色保留足够的可见度（~70%），高光为全亮；避免暗色下底色全透明看不见字
-  const effectiveBase = baseColor ?? 'color-mix(in srgb, currentColor 68%, transparent)'
-  const effectiveShine = shineColor ?? 'currentColor'
   const animationDuration = `${speed}s`
 
   return (
     <span
-      className={`inline-block bg-clip-text text-transparent transition-opacity ${
-        disabled ? '' : 'animate-shiny-text'
-      } ${className}`}
+      className={`inline-block transition-opacity ${disabled ? '' : 'animate-shiny-text'} ${className}`}
       style={{
-        backgroundImage: `linear-gradient(120deg, ${effectiveBase} 0%, ${effectiveBase} 38%, ${effectiveShine} 50%, ${effectiveBase} 62%, ${effectiveBase} 100%)`,
-        backgroundPosition: '100% 0',
-        backgroundRepeat: 'no-repeat',
-        backgroundSize: `${shimmerWidth}% 100%`,
+        WebkitMaskImage:
+          'linear-gradient(120deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.65) 35%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.65) 65%, rgba(0,0,0,0.65) 100%)',
+        WebkitMaskRepeat: 'no-repeat',
+        WebkitMaskSize: `${shimmerWidth}% 100%`,
         animationDuration,
+        maskImage:
+          'linear-gradient(120deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.65) 35%, rgba(0,0,0,1) 50%, rgba(0,0,0,0.65) 65%, rgba(0,0,0,0.65) 100%)',
+        maskRepeat: 'no-repeat',
+        maskSize: `${shimmerWidth}% 100%`,
       }}
     >
       {content}

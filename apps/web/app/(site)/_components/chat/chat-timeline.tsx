@@ -296,7 +296,11 @@ function LiveRow({ item }: { item: ChatTimelineItem }) {
           <div className="flex items-center gap-2">
             <span className="font-medium text-foreground">助手</span>
             {item.completed ? null : (
-              <Badge className="text-[10px]" variant="outline">
+              <Badge
+                className="gap-1.5 border-primary/40 bg-primary/10 text-[10px] text-primary font-medium"
+                variant="outline"
+              >
+                <span className="size-1.5 rounded-full bg-primary animate-pulse" />
                 <ShinyText shimmerWidth={180} speed={4} text="生成中…" />
               </Badge>
             )}
@@ -319,7 +323,11 @@ function PendingAssistantRow() {
         <BorderBeam colorFrom="#eb6f92" colorTo="#9ccfd8" duration={4} />
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           <span className="font-medium text-foreground">助手</span>
-          <Badge className="text-[10px]" variant="outline">
+          <Badge
+            className="gap-1.5 border-primary/40 bg-primary/10 text-[10px] text-primary font-medium"
+            variant="outline"
+          >
+            <span className="size-1.5 rounded-full bg-primary animate-pulse" />
             <ShinyText shimmerWidth={180} speed={4} text="生成中…" />
           </Badge>
         </div>
