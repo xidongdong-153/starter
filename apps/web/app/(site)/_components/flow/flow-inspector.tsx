@@ -7,8 +7,17 @@ import type {
   AiToolSummary,
   AiUserModel,
 } from '@starter/contracts'
-import { AlertCircle, Bot, CheckCircle2, ChevronRight, CircleStop, RotateCcw, SlidersHorizontal } from 'lucide-react'
-import { useRef } from 'react'
+import {
+  AlertCircle,
+  Bot,
+  CheckCircle2,
+  ChevronRight,
+  CircleStop,
+  RotateCcw,
+  SlidersHorizontal,
+  Sparkles,
+  Trash2,
+} from 'lucide-react'
 
 import { AgentSelect } from '@web/components/ui/agent-select'
 import { Badge } from '@web/components/ui/badge'
@@ -18,9 +27,11 @@ import { Label } from '@web/components/ui/label'
 import { ModelSelect } from '@web/components/ui/model-select'
 import { Textarea } from '@web/components/ui/textarea'
 import type { FlowAgentInlineConfig, FlowNode } from '@web/lib/flow/flow-document'
+import { FLOW_INPUT_SAMPLES } from '@web/lib/flow/flow-presets'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
-import { availableVariables } from '@web/lib/flow/flow-template'
 import { cn } from '@web/lib/utils'
+
+import { FlowPromptEditor } from './flow-prompt-editor'
 
 export interface FlowInspectorProps {
   selectedNode: FlowNode | null
@@ -40,7 +51,9 @@ export interface FlowInspectorProps {
   onConfigChange: (nodeId: string, config: FlowAgentInlineConfig) => void
   onPromptTemplateChange: (nodeId: string, template: string) => void
   onInputTextChange: (nodeId: string, text: string) => void
+  onDeleteNode?: (nodeId: string) => void
   onRetryFrom: (nodeId: string) => void
+  onRun?: () => void
   onToggleCollapse?: () => void
   className?: string
 }
@@ -63,12 +76,12 @@ export function FlowInspector({
   onConfigChange,
   onPromptTemplateChange,
   onInputTextChange,
+  onDeleteNode,
   onRetryFrom,
+  onRun,
   onToggleCollapse,
   className,
 }: FlowInspectorProps) {
-  const templateRef = useRef<HTMLTextAreaElement>(null)
-
   if (selectedNode === null) {
     return (
       <aside
@@ -112,33 +125,82 @@ export function FlowInspector({
       >
         <header className="flex items-center justify-between border-b border-border px-4 py-2.5">
           <span className="text-xs font-semibold text-foreground">起点输入配置</span>
-          {onToggleCollapse ? (
-            <Button
-              aria-label="收起检查面板"
-              className="size-7 p-0 text-muted-foreground hover:text-foreground"
-              onClick={onToggleCollapse}
-              size="icon"
-              title="收起检查面板"
-              type="button"
-              variant="ghost"
-            >
-              <ChevronRight aria-hidden="true" size={15} />
-            </Button>
-          ) : null}
+          <div className="flex items-center gap-1">
+            {onDeleteNode ? (
+              <Button
+                aria-label="删除此输入节点"
+                className="size-7 p-0 text-muted-foreground hover:bg-danger/10 hover:text-danger"
+                onClick={() => onDeleteNode(selectedNode.id)}
+                size="icon"
+                title="删除此节点"
+                type="button"
+                variant="ghost"
+              >
+                <Trash2 aria-hidden="true" size={14} />
+              </Button>
+            ) : null}
+            {onToggleCollapse ? (
+              <Button
+                aria-label="收起检查面板"
+                className="size-7 p-0 text-muted-foreground hover:text-foreground"
+                onClick={onToggleCollapse}
+                size="icon"
+                title="收起检查面板"
+                type="button"
+                variant="ghost"
+              >
+                <ChevronRight aria-hidden="true" size={15} />
+              </Button>
+            ) : null}
+          </div>
         </header>
-        <div className="flex-1 overflow-y-auto p-4">
-          <Label className="text-xs" htmlFor="flow-input-text">
-            输入内容
-          </Label>
-          <Textarea
-            className="mt-1.5 min-h-40 text-xs"
-            id="flow-input-text"
-            onChange={(event) => onInputTextChange(selectedNode.id, event.target.value)}
-            placeholder="运行流程时，这里的内容作为起点输入"
-            value={selectedNode.data.inputText}
-          />
-          <p className="mt-2 text-[11px] leading-5 text-muted-foreground">
-            模板变量 <code className="text-foreground">{'{{input}}'}</code> 引用这里的内容。
+        <div className="flex-1 space-y-3 overflow-y-auto p-4">
+          <div>
+            <div className="flex items-center justify-between">
+              <Label className="text-xs" htmlFor="flow-input-text">
+                输入内容
+              </Label>
+              <span className="font-mono text-[10px] text-muted-foreground">⌘+Enter 运行</span>
+            </div>
+            <Textarea
+              className="mt-1.5 min-h-40 text-xs leading-relaxed"
+              id="flow-input-text"
+              onChange={(event) => onInputTextChange(selectedNode.id, event.target.value)}
+              onKeyDown={(e) => {
+                if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+                  e.preventDefault()
+                  onRun?.()
+                }
+              }}
+              placeholder="运行流程时，这里的内容作为起点输入..."
+              value={selectedNode.data.inputText}
+            />
+          </div>
+
+          {/* 示例预设快速载入 */}
+          <div className="space-y-1.5 rounded border border-border-subtle bg-surface p-2.5">
+            <div className="flex items-center gap-1 text-[11px] font-medium text-foreground">
+              <Sparkles aria-hidden="true" className="text-primary" size={12} />
+              <span>载入测试用例：</span>
+            </div>
+            <div className="space-y-1">
+              {FLOW_INPUT_SAMPLES.map((sample) => (
+                <button
+                  className="flex w-full flex-col items-start rounded p-1.5 text-left text-xs transition-colors hover:bg-surface-muted"
+                  key={sample.id}
+                  onClick={() => onInputTextChange(selectedNode.id, sample.content)}
+                  type="button"
+                >
+                  <span className="font-medium text-foreground">{sample.name}</span>
+                  <span className="line-clamp-1 text-[10px] text-muted-foreground">{sample.content}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <p className="text-[11px] leading-5 text-muted-foreground">
+            后续 Agent 节点可在 Prompt 模板中使用 <code className="text-foreground">{'{{input}}'}</code>{' '}
+            引用此处的起点内容。
           </p>
         </div>
       </aside>
@@ -147,25 +209,7 @@ export function FlowInspector({
 
   const stepIndex = chainIndex.get(selectedNode.id) ?? null
   const runState = stepStates[selectedNode.id] ?? null
-  const variables = stepIndex === null ? ['{{input}}'] : availableVariables(stepIndex)
   const canRetry = !running && (runState?.status === 'failed' || runState?.status === 'aborted')
-
-  function insertVariable(variable: string) {
-    const element = templateRef.current
-    const template = selectedNode !== null && selectedNode.type === 'agent' ? selectedNode.data.promptTemplate : ''
-    if (element === null || selectedNode === null || selectedNode.type !== 'agent') {
-      onPromptTemplateChange(selectedNode?.id ?? '', template + variable)
-      return
-    }
-    const start = element.selectionStart ?? template.length
-    const end = element.selectionEnd ?? template.length
-    const next = `${template.slice(0, start)}${variable}${template.slice(end)}`
-    onPromptTemplateChange(selectedNode.id, next)
-    requestAnimationFrame(() => {
-      element.focus()
-      element.setSelectionRange(start + variable.length, start + variable.length)
-    })
-  }
 
   return (
     <aside
@@ -182,19 +226,34 @@ export function FlowInspector({
           </h2>
           {runState !== null ? <RunStateBadge status={runState.status} /> : null}
         </div>
-        {onToggleCollapse ? (
-          <Button
-            aria-label="收起检查面板"
-            className="size-7 p-0 text-muted-foreground hover:text-foreground"
-            onClick={onToggleCollapse}
-            size="icon"
-            title="收起检查面板"
-            type="button"
-            variant="ghost"
-          >
-            <ChevronRight aria-hidden="true" size={15} />
-          </Button>
-        ) : null}
+        <div className="flex items-center gap-1">
+          {onDeleteNode ? (
+            <Button
+              aria-label="删除此 Agent 节点"
+              className="size-7 p-0 text-muted-foreground hover:bg-danger/10 hover:text-danger"
+              onClick={() => onDeleteNode(selectedNode.id)}
+              size="icon"
+              title="删除此节点"
+              type="button"
+              variant="ghost"
+            >
+              <Trash2 aria-hidden="true" size={14} />
+            </Button>
+          ) : null}
+          {onToggleCollapse ? (
+            <Button
+              aria-label="收起检查面板"
+              className="size-7 p-0 text-muted-foreground hover:text-foreground"
+              onClick={onToggleCollapse}
+              size="icon"
+              title="收起检查面板"
+              type="button"
+              variant="ghost"
+            >
+              <ChevronRight aria-hidden="true" size={15} />
+            </Button>
+          ) : null}
+        </div>
       </header>
 
       <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -393,37 +452,13 @@ export function FlowInspector({
           )
         })()}
 
-        <div>
-          <Label className="text-xs" htmlFor="flow-prompt-template">
-            Prompt 模板
-          </Label>
-          <Textarea
-            className="mt-1.5 min-h-48 font-mono text-xs"
-            id="flow-prompt-template"
-            onChange={(event) => onPromptTemplateChange(selectedNode.id, event.target.value)}
-            placeholder="支持 {{input}} 和 {{steps.N.output}} 变量"
-            ref={templateRef}
-            value={selectedNode.data.promptTemplate}
-          />
-          <div className="mt-2 space-y-1.5">
-            <p className="text-[11px] text-muted-foreground">可用变量（点击插入）：</p>
-            <div className="flex flex-wrap gap-1.5">
-              {variables.map((variable) => (
-                <button
-                  className="border border-border bg-surface px-2 py-1 font-mono text-[11px] text-primary transition-colors hover:bg-surface-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                  key={variable}
-                  onClick={() => insertVariable(variable)}
-                  type="button"
-                >
-                  {variable}
-                </button>
-              ))}
-            </div>
-            {stepIndex === null ? (
-              <p className="text-[11px] text-muted-foreground">节点未连进流程链，只能使用起点输入。</p>
-            ) : null}
-          </div>
-        </div>
+        <FlowPromptEditor
+          disabled={running}
+          onChange={(template) => onPromptTemplateChange(selectedNode.id, template)}
+          onRun={onRun}
+          stepIndex={stepIndex}
+          value={selectedNode.data.promptTemplate}
+        />
 
         {runState !== null ? (
           <div className="space-y-2 border-t border-border pt-3">

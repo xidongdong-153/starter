@@ -222,6 +222,15 @@ export function parseFlowImport(text: string, now: Date = new Date()): FlowDocum
   return { ...rebuildIds(result.data), createdAt: timestamp, updatedAt: timestamp }
 }
 
+/** 从文档中删除节点，并自动清理与其相连的所有边 */
+export function removeNodeFromDocument(document: FlowDocument, nodeId: string): FlowDocument {
+  return {
+    ...document,
+    nodes: document.nodes.filter((node) => node.id !== nodeId),
+    edges: document.edges.filter((edge) => edge.source !== nodeId && edge.target !== nodeId),
+  }
+}
+
 /** 重建文档的全部 id（文档、节点、边），连线关系按 id 映射还原；时间戳由调用方重置。 */
 function rebuildIds(document: FlowDocument): Omit<FlowDocument, 'createdAt' | 'updatedAt'> {
   const idMap = new Map<string, string>()

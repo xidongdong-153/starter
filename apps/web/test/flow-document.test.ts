@@ -5,6 +5,7 @@ import {
   duplicateFlowDocument,
   FLOW_STORAGE_KEY,
   parseFlowImport,
+  removeNodeFromDocument,
   serializeFlowDocument,
   type FlowDocument,
 } from '@web/lib/flow/flow-document'
@@ -49,6 +50,15 @@ it('createFlowDocument 自带一个输入节点和一个已连线的 Agent 节�
   const input = document.nodes.find((node) => node.type === 'input')
   expect(edge?.source).toBe(input?.id)
   expect(document.createdAt).toBe(document.updatedAt)
+})
+
+it('removeNodeFromDocument 删除指定节点并级联清理所有关联的边', () => {
+  const document = createFlowDocument()
+  const agentNode = document.nodes.find((node) => node.type === 'agent')!
+  const updated = removeNodeFromDocument(document, agentNode.id)
+  expect(updated.nodes).toHaveLength(1)
+  expect(updated.nodes.some((node) => node.id === agentNode.id)).toBe(false)
+  expect(updated.edges).toHaveLength(0)
 })
 
 it('repository load 空存储返回空列表', () => {

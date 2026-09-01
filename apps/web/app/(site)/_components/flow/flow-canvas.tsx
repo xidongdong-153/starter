@@ -37,25 +37,38 @@ import { ClickSpark } from '@web/components/react-bits/click-spark'
 import { Magnet } from '@web/components/react-bits/magnet'
 import { Button } from '@web/components/ui/button'
 import { Input } from '@web/components/ui/input'
-import type { FlowDocument, FlowEdge, FlowNode } from '@web/lib/flow/flow-document'
+import { removeNodeFromDocument, type FlowDocument, type FlowEdge, type FlowNode } from '@web/lib/flow/flow-document'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { cn } from '@web/lib/utils'
 
 import { FlowNodeAgent } from './flow-node-agent'
 import { FlowNodeInput } from './flow-node-input'
 
-/** 文档级的节点变更应用：只处理位置和删除，其他视觉态不落库。 */
-function applyDocumentNodeChanges(changes: NodeChange[], nodes: FlowNode[]): FlowNode[] {
-  let next = nodes
+/** 文档级的节点变更应用：处理位置变更与删除（级联删除相连边）。 */
+function applyDocumentNodeAndEdgeChanges(
+  changes: NodeChange[],
+  nodes: FlowNode[],
+  edges: FlowEdge[],
+): { nodes: FlowNode[]; edges: FlowEdge[] } {
+  let nextNodes = nodes
+  let nextEdges = edges
+  const removedIds = new Set<string>()
+
   for (const change of changes) {
     if (change.type === 'position' && change.position !== undefined) {
       const position = change.position
-      next = next.map((node) => (node.id === change.id ? { ...node, position } : node))
+      nextNodes = nextNodes.map((node) => (node.id === change.id ? { ...node, position } : node))
     } else if (change.type === 'remove') {
-      next = next.filter((node) => node.id !== change.id)
+      removedIds.add(change.id)
+      nextNodes = nextNodes.filter((node) => node.id !== change.id)
     }
   }
-  return next
+
+  if (removedIds.size > 0) {
+    nextEdges = nextEdges.filter((edge) => !removedIds.has(edge.source) && !removedIds.has(edge.target))
+  }
+
+  return { nodes: nextNodes, edges: nextEdges }
 }
 
 /** 文档级的边变更应用：只有删除会落到文档。 */
@@ -125,6 +138,7 @@ export interface FlowCanvasProps {
   onDocumentChange: (changes: { nodes: FlowNode[]; edges: FlowEdge[] }) => void
   onInputTextChange: (nodeId: string, text: string) => void
   onSelectNode: (nodeId: string | null) => void
+  onDeleteNode?: (nodeId: string) => void
   onRun: () => void
   onStop: () => void
   onImport: (file: File) => void
@@ -161,6 +175,7 @@ function FlowCanvasInner({
   onDocumentChange,
   onInputTextChange,
   onSelectNode,
+  onDeleteNode,
   onRun,
   onStop,
   onImport,
@@ -174,6 +189,20 @@ function FlowCanvasInner({
   const [nameDraft, setNameDraft] = useState<string | null>(null)
   const [selectedElementIds, setSelectedElementIds] = useState<ReadonlySet<string>>(() => new Set())
 
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      if (onDeleteNode) {
+        onDeleteNode(nodeId)
+      } else {
+        onDocumentChange(removeNodeFromDocument(document, nodeId))
+      }
+      if (selectedNodeId === nodeId) {
+        onSelectNode(null)
+      }
+    },
+    [document, onDeleteNode, onDocumentChange, onSelectNode, selectedNodeId],
+  )
+
   const handleNodesChange = useCallback(
     (changes: NodeChange[]) => {
       for (const change of changes) {
@@ -181,17 +210,20 @@ function FlowCanvasInner({
           nodeMeasuredRef.current.set(change.id, change.dimensions)
         } else if (change.type === 'remove') {
           nodeMeasuredRef.current.delete(change.id)
+          if (selectedNodeId === change.id) {
+            onSelectNode(null)
+          }
         }
       }
 
       const documentChanges = changes.filter((change) => change.type !== 'select' && change.type !== 'dimensions')
       if (documentChanges.length > 0) {
-        onDocumentChange({ nodes: applyDocumentNodeChanges(documentChanges, document.nodes), edges: document.edges })
+        onDocumentChange(applyDocumentNodeAndEdgeChanges(documentChanges, document.nodes, document.edges))
       }
       const selection = applySelectionChanges(changes, selectedElementIds)
       if (selection !== null) setSelectedElementIds(selection)
     },
-    [document.edges, document.nodes, onDocumentChange, selectedElementIds],
+    [document.edges, document.nodes, onDocumentChange, onSelectNode, selectedElementIds, selectedNodeId],
   )
 
   const handleEdgesChange = useCallback(
@@ -249,19 +281,20 @@ function FlowCanvasInner({
       document.nodes.map((node) => {
         const measured =
           nodeMeasuredRef.current.get(node.id) ??
-          (node.type === 'input' ? { width: 288, height: 140 } : { width: 320, height: 160 })
+          (node.type === 'input' ? { width: 320, height: 180 } : { width: 320, height: 160 })
 
         if (node.type === 'input') {
           return {
             id: node.id,
             type: 'input' as const,
             position: node.position,
-            selected: selectedElementIds.has(node.id),
+            selected: selectedElementIds.has(node.id) || node.id === selectedNodeId,
             measured,
             data: {
               inputText: node.data.inputText,
               onInputTextChange: (text: string) => onInputTextChange(node.id, text),
               onQuickAddNext: handleQuickAddNext,
+              onDelete: handleDeleteNode,
             },
           }
         }
@@ -269,7 +302,7 @@ function FlowCanvasInner({
           id: node.id,
           type: 'agent' as const,
           position: node.position,
-          selected: selectedElementIds.has(node.id),
+          selected: selectedElementIds.has(node.id) || node.id === selectedNodeId,
           measured,
           data: {
             agentId: node.data.agentId,
@@ -283,6 +316,7 @@ function FlowCanvasInner({
             runState: stepStates[node.id] ?? null,
             isSelected: node.id === selectedNodeId,
             onQuickAddNext: handleQuickAddNext,
+            onDelete: handleDeleteNode,
           },
         }
       }),
@@ -290,6 +324,7 @@ function FlowCanvasInner({
       agentNames,
       chainIndex,
       document.nodes,
+      handleDeleteNode,
       handleQuickAddNext,
       onInputTextChange,
       selectedElementIds,

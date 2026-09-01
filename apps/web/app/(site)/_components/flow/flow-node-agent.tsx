@@ -11,6 +11,7 @@ import {
   Loader2,
   Plus,
   SlidersHorizontal,
+  Trash2,
 } from 'lucide-react'
 import { useState } from 'react'
 
@@ -37,6 +38,7 @@ export type FlowAgentNodeData = {
   runState: FlowStepRunState | null
   isSelected: boolean
   onQuickAddNext?: (sourceNodeId: string) => void
+  onDelete?: (nodeId: string) => void
 }
 
 export type FlowAgentNode = Node<FlowAgentNodeData, 'agent'>
@@ -114,6 +116,21 @@ export function FlowNodeAgent({ id, data }: NodeProps<FlowAgentNode>) {
               <CircleStop aria-hidden="true" size={10} />
               已停止
             </Badge>
+          ) : null}
+
+          {data.onDelete ? (
+            <button
+              aria-label="删除节点"
+              className="nodrag flex size-5 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger focus-visible:outline-2 focus-visible:outline-danger"
+              onClick={(e) => {
+                e.stopPropagation()
+                data.onDelete?.(id)
+              }}
+              title="删除此节点"
+              type="button"
+            >
+              <Trash2 aria-hidden="true" size={12} />
+            </button>
           ) : null}
         </div>
       </div>

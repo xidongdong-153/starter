@@ -17,6 +17,7 @@ import {
   createFlowDocumentRepository,
   duplicateFlowDocument,
   parseFlowImport,
+  removeNodeFromDocument,
   serializeFlowDocument,
 } from '@web/lib/flow/flow-document'
 import { BUILTIN_FLOW_TEMPLATES } from '@web/lib/flow/flow-templates'
@@ -164,6 +165,16 @@ export function FlowWorkspace({ className }: { className?: string }) {
       persist(next)
     },
     [activeId, persist],
+  )
+
+  const handleDeleteNode = useCallback(
+    (nodeId: string) => {
+      updateActiveDocument((document) => removeNodeFromDocument(document, nodeId))
+      if (selectedNodeId === nodeId) {
+        setSelectedNodeId(null)
+      }
+    },
+    [selectedNodeId, updateActiveDocument],
   )
 
   const handleDocumentChange = useCallback(
@@ -533,6 +544,7 @@ export function FlowWorkspace({ className }: { className?: string }) {
             document={activeDocument}
             isLeftCollapsed={isLeftCollapsed}
             isRightCollapsed={isRightCollapsed}
+            onDeleteNode={handleDeleteNode}
             onDocumentChange={handleDocumentChange}
             onExport={handleExport}
             onImport={handleImport}
@@ -605,10 +617,12 @@ export function FlowWorkspace({ className }: { className?: string }) {
           tools={tools}
           onAgentIdChange={handleAgentIdChange}
           onConfigChange={handleConfigChange}
+          onDeleteNode={handleDeleteNode}
           onInputTextChange={handleInputTextChange}
           onModeChange={handleModeChange}
           onPromptTemplateChange={handlePromptTemplateChange}
           onRetryFrom={handleRetryFrom}
+          onRun={handleRun}
           onToggleCollapse={() => setIsRightCollapsed(true)}
           running={running}
           selectedNode={selectedNode}
