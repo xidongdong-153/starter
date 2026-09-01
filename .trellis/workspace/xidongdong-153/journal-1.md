@@ -765,3 +765,23 @@ Web 端新增 /flow 页面：React Flow（@xyflow/react v12）画布 + 客户端
 ### Status
 
 [OK] **Completed**
+
+
+## Session 10: startRun 内联 Agent 配置任务规划
+
+**Date**: 2026-09-01
+**Task**: startRun 内联 Agent 配置任务规划
+**Package**: admin
+**Branch**: `main`
+
+### Summary
+
+深度讨论 API AI 能力原子化后落地 Trellis 任务 09-01-ai-run-inline-config：完成 prd/design/implement 三份规划文档（含契约 schema v3 快照、0027 迁移、resolveInline 服务层、Flow 双模式节点），停在待用户确认启动的位置。
+
+### Git Commits
+
+(No commits - planning session)
+
+### Status
+
+[OK] **Completed**

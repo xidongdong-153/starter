@@ -1,0 +1,9 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "AI 系统三层边界与 AgentDefinition/Run 职责，改动必须保持这些边界"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run Service 是状态唯一写入入口，startRun 分流改动的落点规则"}
+{"file": ".trellis/spec/api/backend/agent-session-guidelines.md", "reason": "Session 与 Run 关系，lane 与幂等行为"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "executor 配置结构与 ResolvedAgentDefinition 到 executor 的传递约束"}
+{"file": ".trellis/spec/api/backend/database-guidelines.md", "reason": "Drizzle 迁移流程与 schema 改动规范"}
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "API 侧质量检查命令"}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "Web 前端规范入口"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "契约层规范入口"}
