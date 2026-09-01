@@ -57,8 +57,9 @@ export interface RunExecutionContext {
   readonly requestId: string;
   readonly principal: PrincipalContext;
   readonly scope: ResourceScope;
-  readonly agentId: string;
-  readonly agentRevision: number;
+  /** 预设 Agent 启动时非空；内联配置启动为 null。 */
+  readonly agentId: string | null;
+  readonly agentRevision: number | null;
   readonly outputContract: ResolvedAiOutputContract | null;
   /** 审计用的调用者 ID，由 principal 推导，不单独传参。 */
   readonly userId: string;
@@ -89,8 +90,9 @@ export function createRunExecutionContext(input: {
   requestId: string;
   principal: PrincipalContext;
   scope: ResourceScope;
-  agentId: string;
-  agentRevision: number;
+  /** 预设 Agent 启动时非空；内联配置启动为 null。 */
+  agentId: string | null;
+  agentRevision: number | null;
   outputContract?: ResolvedAiOutputContract | null;
 }): RunExecutionContext {
   const state = {

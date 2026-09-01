@@ -7,6 +7,7 @@ import type {
   AiToolRef,
   AiToolSummary,
   CreateAgentDefinitionInput,
+  InlineAgentRunConfig,
   UpdateAgentDefinitionInput,
   UpdateAgentDefinitionStatusInput,
 } from "@starter/contracts";
@@ -46,9 +47,13 @@ import {
   toAgentDefinitionSummary,
 } from "./agent.presenter.js";
 
+/**
+ * Run 启动时的执行配置解析结果。预设 Agent 启动时 id/revision 非空；
+ * 内联配置启动时为 null，配置事实只存在 Run snapshot 里。
+ */
 export interface ResolvedAgentDefinition {
-  id: string;
-  revision: number;
+  id: string | null;
+  revision: number | null;
   config: AgentDefinitionConfig;
   model: NonNullable<AgentDefinitionConfig["model"]>;
   systemPrompt: string;
@@ -90,6 +95,11 @@ export interface AiAgentDefinitionService {
   ) => Promise<AgentDefinitionDetail>;
   resolve: (
     id: string,
+    access: RuntimeAccessContext,
+  ) => Promise<ResolvedAgentDefinition>;
+  /** 内联配置解析：不经过 ai_agent_definitions，校验规则与 resolve 一致。 */
+  resolveInline: (
+    config: InlineAgentRunConfig,
     access: RuntimeAccessContext,
   ) => Promise<ResolvedAgentDefinition>;
   listTools: () => AiToolSummary[];
@@ -276,16 +286,113 @@ export function createAiAgentDefinitionService(input: {
       );
     }
     const config = parseAgentDefinitionConfig(record.configJson);
-    await validateConfig(config, true);
     const model = config.model;
     const systemPromptId = config.systemPromptId;
     if (!model || !systemPromptId) throw invalidConfig();
+    let core: ResolvedConfigCore;
+    try {
+      core = await resolveConfigCore(
+        {
+          model,
+          systemPromptId,
+          systemPromptText: null,
+          skillIds: config.skillIds,
+          toolRefs: config.toolRefs,
+          outputContract: config.outputContract,
+        },
+        access,
+      );
+    } catch (error) {
+      // 预设 Agent 路径维持既有错误语义：模型引用无效统一 400，不泄漏 allowlist 判据。
+      // 技能/工具/契约的 AppError 原样传播，错误码与资源信息不变。
+      if (
+        error instanceof AppError &&
+        error.code === ApiErrorCodes.AI_MODEL_NOT_ALLOWED
+      ) {
+        throw invalidConfig("model");
+      }
+      throw error;
+    }
+    return {
+      id: record.id,
+      revision: record.revision,
+      config,
+      ...core,
+      thinkingLevel: config.thinkingLevel,
+      maxTurns: config.maxTurns,
+    };
+  }
+
+  async function resolveInline(
+    input: InlineAgentRunConfig,
+    access: RuntimeAccessContext,
+  ): Promise<ResolvedAgentDefinition> {
+    if (access.principal.kind === "product_app") {
+      throw new AppError(
+        ApiErrorCodes.AI_RUN_INLINE_CONFIG_FORBIDDEN,
+        "应用凭据主体不能使用内联 Agent 配置",
+        403,
+      );
+    }
+    const core = await resolveConfigCore(
+      {
+        model: input.model,
+        systemPromptId: input.systemPromptId ?? null,
+        systemPromptText: input.systemPrompt ?? null,
+        skillIds: input.skillIds,
+        toolRefs: input.toolRefs,
+        outputContract: input.outputContract,
+      },
+      access,
+    );
+    const config: AgentDefinitionConfig = {
+      schemaVersion: 2,
+      model: core.model,
+      systemPromptId: input.systemPromptId ?? null,
+      skillIds: input.skillIds,
+      toolRefs: input.toolRefs,
+      outputContract: input.outputContract,
+      outputMode: input.outputMode,
+      thinkingLevel: input.thinkingLevel,
+      maxTurns: input.maxTurns,
+    };
+    return {
+      id: null,
+      revision: null,
+      config,
+      ...core,
+      thinkingLevel: input.thinkingLevel,
+      maxTurns: input.maxTurns,
+    };
+  }
+
+  /**
+   * 预设 Agent 与内联配置共用的解析核心：模型 allowlist、系统提示词、
+   * 技能启用、工具 scope、输出契约元数据。模型不在 allowlist 时抛
+   * AI_MODEL_NOT_ALLOWED（403），由预设路径决定是否改写错误码。
+   */
+  async function resolveConfigCore(
+    input: {
+      model: NonNullable<AgentDefinitionConfig["model"]>;
+      systemPromptId: string | null;
+      systemPromptText: string | null;
+      skillIds: string[];
+      toolRefs: AiToolRef[];
+      outputContract: AiOutputContractRef | null;
+    },
+    access: RuntimeAccessContext,
+  ): Promise<ResolvedConfigCore> {
+    const model = await resolveModel(input.model);
     const rawSystemPrompt =
-      promptService.resolveSystemPromptContent(systemPromptId);
-    if (!rawSystemPrompt) throw invalidConfig();
-    const skills = config.skillIds.map((id) => {
+      input.systemPromptText !== null
+        ? input.systemPromptText
+        : input.systemPromptId !== null
+          ? promptService.resolveSystemPromptContent(input.systemPromptId)
+          : null;
+    if (!rawSystemPrompt) throw invalidConfig("systemPrompt");
+    const skills = input.skillIds.map((id) => {
       const skill = skillRepository.findSkillById(id);
-      if (!skill || !skill.enabled) throw invalidConfig();
+      if (!skill || !skill.enabled) throw invalidConfig("skill");
       return {
         id: skill.id,
         name: skill.name,
@@ -294,30 +401,23 @@ export function createAiAgentDefinitionService(input: {
     });
     const systemPrompt =
       appendSkillDescriptions(rawSystemPrompt, skills) ?? rawSystemPrompt;
-    const tools = config.toolRefs.map((ref) => {
+    // 精确 ref 必须存在，且同一配置不能引用同名不同版本
+    // （Pi 模型调用只携带 Tool name，没有第二个版本选择字段）。
+    const toolNames = new Set<string>();
+    const tools = input.toolRefs.map((ref) => {
+      if (toolNames.has(ref.name) || ref.name === "emit_structured_output")
+        throw invalidConfig("tool");
+      toolNames.add(ref.name);
       const tool = toolRegistry.find(ref);
       if (!tool || !isAiToolAvailableInScope(tool, access.scope)) {
         throw invalidConfig("tool");
       }
       return tool;
     });
-
-    const outputContract = config.outputContract
-      ? resolveOutputContract(config.outputContract)
+    const outputContract = input.outputContract
+      ? resolveOutputContract(input.outputContract)
       : null;
-
-    return {
-      id: record.id,
-      revision: record.revision,
-      config,
-      model,
-      systemPrompt,
-      skills,
-      tools,
-      outputContract,
-      thinkingLevel: config.thinkingLevel,
-      maxTurns: config.maxTurns,
-    };
+    return { model, systemPrompt, skills, tools, outputContract };
   }
 
   async function validateConfig(
@@ -404,8 +504,17 @@ export function createAiAgentDefinitionService(input: {
     update,
     updateStatus,
     resolve,
+    resolveInline,
     listTools,
   };
+}
+
+interface ResolvedConfigCore {
+  model: NonNullable<AgentDefinitionConfig["model"]>;
+  systemPrompt: string;
+  skills: Array<Pick<AiSkillRecord, "id" | "name" | "description">>;
+  tools: RegisteredAiTool[];
+  outputContract: ResolvedAiOutputContract | null;
 }
 
 function normalizeConfig(config: AgentDefinitionConfig): AgentDefinitionConfig {

@@ -6,6 +6,7 @@ import { toAgentRun } from "@api/modules/ai/run/run.presenter.js";
 import { createAiAgentRunRepository } from "@api/modules/ai/run/run.repository.js";
 import { parseAgentDefinitionConfig } from "@api/modules/ai/agent/agent.presenter.js";
 import { StoredJsonError } from "@api/shared/stored-json.js";
+import { agentRunSnapshotSchema } from "@starter/contracts";
 import { createTestApp } from "./helpers.js";
 
 const runId = "01958c80-8df7-7ce2-8f90-1234567890a1";
@@ -271,5 +272,86 @@ describe("run event sequence 并发", () => {
     } finally {
       test.cleanup();
     }
+  });
+});
+
+describe("内联配置 Run 行与快照兼容", () => {
+  const inlineRunId = "01958c80-8df7-7ce2-8f90-1234567890b1";
+  const SNAPSHOT_V3 = JSON.stringify({
+    schemaVersion: 3,
+    agentId: null,
+    agentRevision: null,
+    model: { providerId: "openai", modelId: "gpt-4o" },
+    systemPromptId: null,
+    skillIds: [],
+    toolRefs: [],
+    outputContract: null,
+    outputMode: "optional",
+    thinkingLevel: "off",
+    maxTurns: 8,
+  });
+
+  it("agentId 为 NULL 的 Run 行可创建并读回，快照 v3 解析正确", () => {
+    const test = createTestApp();
+    try {
+      seedRun(test.runtime);
+      const repository = createAiAgentRunRepository(test.runtime.db);
+      const created = repository.create({
+        id: inlineRunId,
+        sessionId,
+        agentId: null,
+        lane: "main",
+        agentRevision: null,
+        snapshotJson: SNAPSHOT_V3,
+        requestId: "request-inline-1",
+        now: new Date(),
+      });
+      expect(created.agentId).toBeNull();
+      expect(created.agentRevision).toBeNull();
+
+      const found = repository.findById(inlineRunId)!;
+      const run = toAgentRun(found);
+      expect(run.agentId).toBeNull();
+      expect(run.agentRevision).toBeNull();
+      expect(run.snapshot.schemaVersion).toBe(3);
+      expect(run.snapshot.agentId).toBeNull();
+      expect(run.snapshot.systemPromptId).toBeNull();
+
+      // 存量 v2 快照照常解析
+      const legacy = toAgentRun(repository.findById(runId)!);
+      expect(legacy.snapshot.schemaVersion).toBe(2);
+      expect(legacy.snapshot.agentId).toBe(agentId);
+    } finally {
+      test.cleanup();
+    }
+  });
+
+  it("快照 schema 同时接受 v2 与 v3，成对约束生效", () => {
+    expect(agentRunSnapshotSchema.safeParse(JSON.parse(SNAPSHOT)).success).toBe(
+      true,
+    );
+    expect(
+      agentRunSnapshotSchema.safeParse(JSON.parse(SNAPSHOT_V3)).success,
+    ).toBe(true);
+    // v2 不允许空 agentId
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...JSON.parse(SNAPSHOT),
+        agentId: null,
+      }).success,
+    ).toBe(false);
+    // v3 的 agentId 与 agentRevision 必须成对
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...JSON.parse(SNAPSHOT_V3),
+        agentRevision: 1,
+      }).success,
+    ).toBe(false);
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...JSON.parse(SNAPSHOT),
+        schemaVersion: 3,
+      }).success,
+    ).toBe(true);
   });
 });

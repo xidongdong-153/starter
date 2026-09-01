@@ -80,8 +80,9 @@ export function createAiRunTraceRepository(
         attributes: {
           sessionId: run.sessionId,
           lane: run.lane,
-          agentId: run.agentId,
-          agentRevision: String(run.agentRevision),
+          ...(run.agentId !== null && run.agentRevision !== null
+            ? { agentId: run.agentId, agentRevision: String(run.agentRevision) }
+            : {}),
         },
       },
       ...turns.map((turn): RunTraceNode => ({

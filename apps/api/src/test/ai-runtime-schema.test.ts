@@ -272,7 +272,7 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "finished_at",
       ].sort(),
     );
-    // 终态关系字段和幂等键允许为空，其余业务字段必须非空
+    // 终态关系字段、幂等键和内联配置的 agent 标识允许为空，其余业务字段必须非空
     expect(
       columns
         .filter((column) => column.notnull === 0)
@@ -286,6 +286,8 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
         "finished_at",
         "idempotency_key",
         "idempotency_scope",
+        "agent_id",
+        "agent_revision",
       ].sort(),
     );
 
@@ -299,6 +301,7 @@ it("ai_agent_runs 已经等于目标形态，不需要 replacement migration", (
     expect(ddl).toContain("ai_agent_runs_status_check");
     expect(ddl).toContain("ai_agent_runs_revision_check");
     expect(ddl).toContain("ai_agent_runs_snapshot_json_check");
+    expect(ddl).toContain("ai_agent_runs_agent_pair_check");
 
     const foreignKeys = sqlite
       .prepare(

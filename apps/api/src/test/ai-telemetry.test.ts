@@ -72,6 +72,7 @@ it("startAiSpan 与 openAiSpanScope 组成 Run -> Turn -> Step -> Model Call/Too
     "starter.ai.session.id": "session-1",
     "starter.ai.lane": "main",
     "starter.ai.request.id": "request-1",
+    "starter.ai.run.config.source": "agent",
     "starter.ai.principal.kind": "starter_user",
     "starter.ai.tenant.id": "starter",
     "starter.ai.project.id": "starter",

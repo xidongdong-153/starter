@@ -17,9 +17,10 @@ export type AiAgentRunRecord = typeof aiAgentRuns.$inferSelect;
 export interface AiAgentRunCreateInput {
   id: string;
   sessionId: string;
-  agentId: string;
+  /** 预设 Agent 启动时非空；内联配置启动为 NULL。 */
+  agentId: string | null;
   lane: string;
-  agentRevision: number;
+  agentRevision: number | null;
   snapshotJson: string;
   requestId: string;
   now: Date;

@@ -85,13 +85,19 @@ export const STARTER_AI_TELEMETRY_SCHEMA = defineTelemetrySchema({
         },
         "starter.ai.agent.id": {
           type: "string",
-          required: true,
-          description: "AgentDefinition ID",
+          required: false,
+          description: "AgentDefinition ID，内联配置启动时为空",
         },
         "starter.ai.agent.revision": {
           type: "number",
+          required: false,
+          description: "Run 启动时固定的 Agent revision，内联配置启动时为空",
+        },
+        "starter.ai.run.config.source": {
+          type: "string",
           required: true,
-          description: "Run 启动时固定的 Agent revision",
+          values: ["agent", "inline"],
+          description: "执行配置来源：预设 Agent 或内联配置",
         },
         "starter.ai.provider": {
           type: "string",

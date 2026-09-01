@@ -11,6 +11,7 @@ import {
   listAdminAgentDefinitionsRoute,
   listAdminAiToolsRoute,
   listPublicAgentDefinitionsRoute,
+  listPublicAiToolsRoute,
   updateAdminAgentDefinitionRoute,
   updateAdminAgentDefinitionStatusRoute,
 } from "./agent.openapi.js";
@@ -64,6 +65,9 @@ export function createAiAgentDefinitionRoute(deps: {
           ),
           200,
         ),
+    )
+    .openapi({ ...listPublicAiToolsRoute, middleware: [requireAuth] }, (c) =>
+      c.json(createSuccessResponse(service.listTools(), c.var.requestId), 200),
     )
     .openapi(
       { ...listAdminAiToolsRoute, middleware: [requireAuth, requireRead] },

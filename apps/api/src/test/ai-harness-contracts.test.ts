@@ -4,6 +4,7 @@ import {
   agentDefinitionSummarySchema,
   agentRunLiveSnapshotSchema,
   agentRunSchema,
+  agentRunSnapshotSchema,
   agentSessionSchema,
   agentTranscriptItemSchema,
   agentTranscriptQuerySchema,
@@ -13,6 +14,7 @@ import {
   createAgentSessionSchema,
   defaultAgentDefinitionConfig,
   followUpAgentRunSchema,
+  inlineAgentRunConfigSchema,
   runEventSchema,
   startAgentRunSchema,
   starterRunDataSchema,
@@ -652,6 +654,121 @@ describe("agent harness contracts", () => {
         ...audit,
         scenario: "agent_run",
         runId: null,
+      }).success,
+    ).toBe(false);
+  });
+
+  it("快照 schema 同时接受 v2 与 v3，内联配置与 startRun 互斥规则生效", () => {
+    // v2（预设 Agent）：agentId/agentRevision 非空
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(true);
+    // v2 不允许空 agentId
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        agentId: null,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(false);
+    // v3（内联配置）：agentId/agentRevision 同时为空
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        schemaVersion: 3,
+        agentId: null,
+        agentRevision: null,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(true);
+    // v3 不允许只空一个
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        schemaVersion: 3,
+        agentId: null,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(false);
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        schemaVersion: 3,
+        agentRevision: null,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(false);
+    // v3 也允许预设 Agent（agentId 非空）
+    expect(
+      agentRunSnapshotSchema.safeParse({
+        ...SNAPSHOT,
+        schemaVersion: 3,
+        outputContract: null,
+        outputMode: "optional",
+      }).success,
+    ).toBe(true);
+
+    // 内联配置：systemPrompt 与 systemPromptId 二选一
+    const inlineBase = {
+      model: MODEL,
+      systemPrompt: "内联系统提示词",
+    } as const;
+    expect(inlineAgentRunConfigSchema.safeParse(inlineBase).success).toBe(true);
+    expect(inlineAgentRunConfigSchema.parse(inlineBase)).toMatchObject({
+      skillIds: [],
+      toolRefs: [],
+      outputContract: null,
+      outputMode: "optional",
+      thinkingLevel: "off",
+      maxTurns: 8,
+    });
+    // 双空拒绝
+    expect(inlineAgentRunConfigSchema.safeParse({ model: MODEL }).success).toBe(
+      false,
+    );
+    // 双传拒绝
+    expect(
+      inlineAgentRunConfigSchema.safeParse({
+        model: MODEL,
+        systemPrompt: "内联",
+        systemPromptId: IDS.prompt,
+      }).success,
+    ).toBe(false);
+    // 引用式提示词可用
+    expect(
+      inlineAgentRunConfigSchema.safeParse({
+        model: MODEL,
+        systemPromptId: IDS.prompt,
+      }).success,
+    ).toBe(true);
+    // 未知字段拒绝（strictObject）
+    expect(
+      inlineAgentRunConfigSchema.safeParse({
+        ...inlineBase,
+        apiKey: "secret",
+      }).success,
+    ).toBe(false);
+
+    // startRun：agentId 与 config 互斥
+    expect(
+      startAgentRunSchema.safeParse({
+        input: "hello",
+        config: { ...inlineBase },
+      }).success,
+    ).toBe(true);
+    expect(
+      startAgentRunSchema.safeParse({
+        input: "hello",
+        agentId: IDS.agent,
+        config: { ...inlineBase },
       }).success,
     ).toBe(false);
   });

@@ -8,6 +8,7 @@ import type {
   AssistantMessage,
   Context,
   Model,
+  Models,
   SimpleStreamOptions,
 } from "@earendil-works/pi-ai";
 import { ApiErrorCodes, starterRunDataSchema } from "@starter/contracts";
@@ -29,6 +30,7 @@ import {
   aiProviderConfigs,
   aiRunSteps,
   aiRunTurns,
+  aiSkills,
   aiStructuredOutputs,
   aiToolExecutions,
   permissions,
@@ -49,6 +51,8 @@ import {
   createAiRunLifecycleRepository,
 } from "@api/modules/ai/run/index.js";
 import { createAiAgentSessionRepository } from "@api/modules/ai/session/index.js";
+import { createAiUsageAuditRepository } from "@api/modules/ai/usage-audit/usage-audit.repository.js";
+import { createAiUsageAuditService } from "@api/modules/ai/usage-audit/usage-audit.service.js";
 import { generateId } from "@api/shared/id.js";
 import { z } from "zod";
 
@@ -2255,3 +2259,353 @@ async function patchJson(
     body: JSON.stringify(body),
   });
 }
+
+/** 内联配置启动的基本测试环境：真实 executor + 固定回复流 + 用量审计。 */
+async function setupInlineApp() {
+  const directory = await mkdtemp(join(tmpdir(), "starter-run-inline-"));
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const streamFn = () =>
+    streamResponse(
+      assistantMessage([{ type: "text", text: "inline reply" }], "stop"),
+      "stop",
+    );
+  // 审计注入依赖 models 选项（createInstrumentedModels），只传 streamFn 不落审计。
+  // getModel 按 ref 构造同 provider/id 的模型对象，审计记录内联配置实际值，
+  // 与真实运行时 models.getModel(providerId, modelId) 的解析行为一致。
+  const models = {
+    getModel: (providerId: string, modelId: string) => ({
+      ...model,
+      provider: providerId,
+      id: modelId,
+    }),
+    getAuth: async () => ({ auth: { apiKey: "test" }, source: "test" }),
+    streamSimple: streamFn,
+  } as unknown as Models;
+  const test = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (runtime) => {
+        const usage = createAiUsageAuditService(
+          createAiUsageAuditRepository(runtime.db),
+          runtime.logger,
+        );
+        return createPiAgentExecutor({
+          sessionStore: store,
+          models,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(runtime.db),
+          audit: usage.createAgentModelCallAudit(),
+          toolAudit: usage.createAgentToolExecutionAudit(),
+        });
+      },
+    },
+  );
+  return { directory, store, ...test };
+}
+
+it("内联配置启动 Run：事件流与预设 Agent 同构，快照 v3 且 agentId 为空", async () => {
+  const { directory, store, app, cleanup, runtime } = await setupInlineApp();
+  try {
+    const user = await register(app, "run-inline@example.com");
+    const modelRef = seedModel(runtime);
+    const { sessionId } = await createSession(app, user.cookie, "内联 Run");
+
+    const started = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: modelRef,
+        systemPrompt: "你是内联配置的助手。",
+        maxTurns: 4,
+      },
+    });
+    expect(started.status).toBe(200);
+    const body = await readSse(started);
+    const events = parseSseEvents(body);
+    expect(events.map((event) => event.type)).toEqual([
+      "run.started",
+      "turn.started",
+      "step.started",
+      "model_call.started",
+      "message.started",
+      "model_call.first_output",
+      "model_call.completed",
+      "message.delta",
+      "message.completed",
+      "step.completed",
+      "turn.completed",
+      "run.completed",
+    ]);
+    // run.started 的 agent 字段对内联 Run 为空，模型是内联配置实际值
+    expect(events[0]?.data).toMatchObject({
+      agentId: null,
+      agentRevision: null,
+      model: modelRef,
+    });
+    expect(events.at(-1)?.data).toMatchObject({ reason: "model_finished" });
+
+    const runId = events[0]?.runId as string;
+    expect(runId).toBeTruthy();
+    const detail = await getRun(app, user.cookie, sessionId, runId);
+    expect(detail.status).toBe(200);
+    const detailBody = await readSuccess<{
+      agentId: string | null;
+      agentRevision: number | null;
+      status: string;
+      snapshot: {
+        schemaVersion: number;
+        agentId: string | null;
+        agentRevision: number | null;
+        systemPromptId: string | null;
+        maxTurns: number;
+        model: { providerId: string; modelId: string };
+      };
+    }>(detail);
+    expect(detailBody.data).toMatchObject({
+      agentId: null,
+      agentRevision: null,
+      status: "completed",
+      snapshot: {
+        schemaVersion: 3,
+        agentId: null,
+        agentRevision: null,
+        systemPromptId: null,
+        maxTurns: 4,
+        model: modelRef,
+      },
+    });
+
+    // 主库 Run 行 agentId 为 NULL；模型审计照常落库且是内联配置的实际模型
+    const row = runtime.db
+      .select()
+      .from(aiAgentRuns)
+      .where(eq(aiAgentRuns.id, runId))
+      .get();
+    expect(row?.agentId).toBeNull();
+    expect(row?.agentRevision).toBeNull();
+    expect(row?.status).toBe("completed");
+    // 审计 finalize 是 best-effort，终态后短暂轮询等待落库
+    let call: typeof aiModelCalls.$inferSelect | undefined;
+    for (let attempt = 0; attempt < 50 && !call; attempt += 1) {
+      call = runtime.db
+        .select()
+        .from(aiModelCalls)
+        .where(eq(aiModelCalls.runId, runId))
+        .get();
+      if (!call) await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    expect(call?.scenario).toBe("agent_run");
+    expect(call?.providerId).toBe(modelRef.providerId);
+    expect(call?.modelId).toBe(modelRef.modelId);
+
+    // Pi 侧 terminal entry 写入且 agentId 为空
+    const entries = await store.findRunTerminalEntries({
+      sessionId,
+      lane: "main",
+      runId,
+    });
+    expect(entries).toHaveLength(1);
+    expect(starterRunDataSchema.safeParse(entries[0]?.data).success).toBe(true);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("agentId 与 config 同传 400；都缺时回落 defaultAgentId，无默认 400", async () => {
+  const { directory, app, cleanup, runtime } = await setupInlineApp();
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-fallback@example.com");
+    const { agentId } = await setupAgent(app, runtime, admin, "fallback-agent");
+    const modelRef = seedModel(runtime);
+    const { sessionId } = await createSession(app, user.cookie, "回落");
+
+    // 两者都不传且没有默认 Agent
+    const missing = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+    });
+    expect(missing.status).toBe(400);
+    expect((await readFailure(missing)).error.code).toBe(
+      ApiErrorCodes.COMMON_INVALID_REQUEST,
+    );
+
+    // agentId 与 config 同传在 schema 层拒绝
+    const both = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      agentId,
+      config: { model: modelRef, systemPrompt: "内联" },
+    });
+    expect(both.status).toBe(400);
+    expect((await readFailure(both)).error.code).toBe(
+      ApiErrorCodes.COMMON_INVALID_REQUEST,
+    );
+
+    // 设置 defaultAgentId 后，都不传的启动回落到默认 Agent
+    const patched = await patchJson(
+      app,
+      `/api/ai/sessions/${sessionId}`,
+      user.cookie,
+      { defaultAgentId: agentId },
+    );
+    expect(patched.status).toBe(200);
+    const fallback = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+    });
+    expect(fallback.status).toBe(200);
+    const events = parseSseEvents(await readSse(fallback));
+    expect(events[0]?.data).toMatchObject({ agentId });
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("内联配置校验失败：模型不在 allowlist 403，未注册工具与停用技能 400", async () => {
+  const { directory, app, cleanup, runtime } = await setupInlineApp();
+  try {
+    const user = await register(app, "run-invalid@example.com");
+    const modelRef = seedModel(runtime);
+    const { sessionId } = await createSession(app, user.cookie, "校验失败");
+
+    // 模型不在 ai_enabled_models 且 Provider 目录中不存在
+    const disallowed = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: { providerId: modelRef.providerId, modelId: "not-in-catalog" },
+        systemPrompt: "内联",
+      },
+    });
+    expect(disallowed.status).toBe(403);
+    expect((await readFailure(disallowed)).error.code).toBe(
+      ApiErrorCodes.AI_MODEL_NOT_ALLOWED,
+    );
+
+    // 未注册的工具 ref
+    const unknownTool = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: modelRef,
+        systemPrompt: "内联",
+        toolRefs: [{ name: "missing-tool", version: "1.0.0" }],
+      },
+    });
+    expect(unknownTool.status).toBe(400);
+    expect((await readFailure(unknownTool)).error.code).toBe(
+      ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+    );
+
+    // 停用的技能
+    const skillId = generateId();
+    const now = new Date();
+    runtime.db
+      .insert(aiSkills)
+      .values({
+        id: skillId,
+        name: `disabled-skill-${skillId}`,
+        description: "已停用",
+        content: "内容",
+        enabled: false,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run();
+    const disabledSkill = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: modelRef,
+        systemPrompt: "内联",
+        skillIds: [skillId],
+      },
+    });
+    expect(disabledSkill.status).toBe(400);
+    expect((await readFailure(disabledSkill)).error.code).toBe(
+      ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+    );
+
+    // 校验失败不创建 Run 行
+    expect(
+      runtime.db
+        .select()
+        .from(aiAgentRuns)
+        .all()
+        .filter((row) => row.sessionId === sessionId),
+    ).toHaveLength(0);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("内联配置 systemPrompt 与 systemPromptId 必须二选一", async () => {
+  const { directory, app, cleanup, runtime } = await setupInlineApp();
+  try {
+    const user = await register(app, "run-prompt-pair@example.com");
+    const modelRef = seedModel(runtime);
+    const { sessionId } = await createSession(app, user.cookie, "二选一");
+
+    // 双空：既没有内联文本也没有引用
+    const empty = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: { model: modelRef },
+    });
+    expect(empty.status).toBe(400);
+
+    // 双传
+    const promptId = generateId();
+    const both = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: modelRef,
+        systemPrompt: "内联",
+        systemPromptId: promptId,
+      },
+    });
+    expect(both.status).toBe(400);
+    expect((await readFailure(both)).error.code).toBe(
+      ApiErrorCodes.COMMON_INVALID_REQUEST,
+    );
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});
+
+it("内联配置引用 systemPromptId 时正常启动并写入快照", async () => {
+  const { directory, app, cleanup, runtime } = await setupInlineApp();
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const user = await register(app, "run-prompt-ref@example.com");
+    const modelRef = seedModel(runtime);
+    const prompt = await postJson(app, "/api/ai/system-prompts", admin.cookie, {
+      name: "inline-ref-prompt",
+      content: "引用式系统提示词。",
+    });
+    const promptBody = await readSuccess<{ id: string }>(prompt);
+    const { sessionId } = await createSession(app, user.cookie, "引用提示词");
+
+    const started = await startRun(app, user.cookie, sessionId, {
+      input: "hello",
+      config: {
+        model: modelRef,
+        systemPromptId: promptBody.data.id,
+      },
+    });
+    expect(started.status).toBe(200);
+    const events = parseSseEvents(await readSse(started));
+    expect(events.at(-1)?.type).toBe("run.completed");
+    const runId = events[0]?.runId as string;
+    const detail = await getRun(app, user.cookie, sessionId, runId);
+    const detailBody = await readSuccess<{
+      snapshot: { systemPromptId: string | null; schemaVersion: number };
+    }>(detail);
+    expect(detailBody.data.snapshot.systemPromptId).toBe(promptBody.data.id);
+    expect(detailBody.data.snapshot.schemaVersion).toBe(3);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

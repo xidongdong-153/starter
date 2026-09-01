@@ -25,6 +25,7 @@ import { z } from "zod";
 import { createPiAgentExecutor } from "@api/infra/agent/index.js";
 import { createPiSessionStore } from "@api/infra/agent/pi-session-store.js";
 import {
+  aiAgentRuns,
   aiEnabledModels,
   aiProviderConfigs,
   permissions,
@@ -714,3 +715,78 @@ async function patchJson(
     body: JSON.stringify(body),
   });
 }
+
+it("product_app 携带内联配置启动 Run 返回 403，不创建 Run", async () => {
+  const directory = await mkdtemp(
+    join(tmpdir(), "starter-third-party-inline-"),
+  );
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, "agent-sessions.db"),
+  });
+  const streamFn = () =>
+    streamResponse(
+      assistantMessage([{ type: "text", text: "unused" }], "stop"),
+      "stop",
+    );
+  const { app, cleanup, runtime } = createTestApp(
+    {},
+    {
+      agentSessionStore: store,
+      piAgentExecutorFactory: (testRuntime) =>
+        createPiAgentExecutor({
+          sessionStore: store,
+          resolveModel: () => model,
+          streamFn,
+          hasPermission: async () => true,
+          lifecycle: createAiRunLifecycleRepository(testRuntime.db),
+        }),
+    },
+  );
+
+  try {
+    const admin = await registerAdmin(app, runtime);
+    const credential = await createAppCredential(
+      app,
+      admin.cookie,
+      "Inline forbidden",
+      "tenant-a",
+      "project-a",
+    );
+    const modelRef = seedModel(runtime);
+    const client = createProductClient(app, credential.secret, "customer-1");
+    const session = await client.createSession("内联拒绝");
+    const sessionId = session.id;
+
+    const response = await app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${credential.secret}`,
+        "X-AI-External-User-Id": "customer-1",
+        "Content-Type": "application/json",
+        Accept: "application/json",
+      },
+      body: JSON.stringify({
+        input: "hello",
+        config: {
+          model: modelRef,
+          systemPrompt: "内联配置",
+        },
+      }),
+    });
+    expect(response.status).toBe(403);
+    expect((await readFailure(response)).error.code).toBe(
+      ApiErrorCodes.AI_RUN_INLINE_CONFIG_FORBIDDEN,
+    );
+    expect(
+      runtime.db
+        .select()
+        .from(aiAgentRuns)
+        .where(eq(aiAgentRuns.sessionId, sessionId))
+        .all(),
+    ).toHaveLength(0);
+  } finally {
+    cleanup();
+    await rm(directory, { recursive: true, force: true });
+  }
+});

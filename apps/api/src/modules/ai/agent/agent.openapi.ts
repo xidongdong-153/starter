@@ -85,6 +85,21 @@ export const listAdminAgentDefinitionsRoute = createRoute({
   },
 });
 
+export const listPublicAiToolsRoute = createRoute({
+  method: "get",
+  path: "/api/ai/tools",
+  tags: runtimeTags,
+  security: [{ cookieAuth: [] }],
+  responses: {
+    200: apiSuccessResponse(
+      z.array(aiToolSummarySchema),
+      "工具注册表列表（公开）",
+      "PublicAiToolSummaryListResponse",
+    ),
+    401: unauthorizedResponse,
+  },
+});
+
 export const listAdminAiToolsRoute = createRoute({
   method: "get",
   path: "/api/ai/admin/tools",

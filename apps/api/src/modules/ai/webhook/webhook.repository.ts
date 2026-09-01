@@ -273,9 +273,22 @@ export function createAiWebhookRepository(db: AppDatabase) {
       .limit(limit)
       .all();
     // appId / finishedAt 列可空，但查询条件已排除 null；这里再收窄一次类型。
+    // agent_id / agent_revision 在内联配置迁移后可空，但 product_app 主体
+    // 不能使用内联配置，终态 Run 的这两列恒非空。
     return rows.flatMap((row) =>
-      row.appId !== null && row.finishedAt !== null
-        ? [{ ...row, appId: row.appId, finishedAt: row.finishedAt }]
+      row.appId !== null &&
+      row.finishedAt !== null &&
+      row.agentId !== null &&
+      row.agentRevision !== null
+        ? [
+            {
+              ...row,
+              appId: row.appId,
+              finishedAt: row.finishedAt,
+              agentId: row.agentId,
+              agentRevision: row.agentRevision,
+            },
+          ]
         : [],
     );
   }

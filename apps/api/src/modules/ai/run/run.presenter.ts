@@ -41,8 +41,9 @@ export function toStarterRunData(input: {
   runId: string;
   sessionId: string;
   lane: string;
-  agentId: string;
-  agentRevision: number;
+  /** 预设 Agent 启动时非空；内联配置启动为 null。 */
+  agentId: string | null;
+  agentRevision: number | null;
   status: "completed" | "failed" | "aborted";
   finalEntryId: string | null;
   errorCode: ApiErrorCode | null;

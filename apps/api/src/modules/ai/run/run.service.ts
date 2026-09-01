@@ -216,6 +216,23 @@ export function createAiAgentRunService(input: {
     context.publisher.publish(event);
   }
 
+  /** 预设 Agent 路径：显式 agentId 或 Session 默认 Agent，都没有时 400。 */
+  async function resolvePresetAgent(
+    input: StartAgentRunInput,
+    session: ReturnType<typeof requireActiveSession>,
+    access: RuntimeAccessContext,
+  ) {
+    const agentId = input.agentId ?? session.defaultAgentId;
+    if (!agentId) {
+      throw new AppError(
+        ApiErrorCodes.COMMON_INVALID_REQUEST,
+        "启动 Run 需要 agentId 或 Session 的 defaultAgentId",
+        400,
+      );
+    }
+    return agentService.resolve(agentId, access);
+  }
+
   async function startRun(startInput: {
     access: RuntimeAccessContext;
     sessionId: string;
@@ -224,16 +241,10 @@ export function createAiAgentRunService(input: {
   }): Promise<StartRunResult> {
     const { access, sessionId, requestId } = startInput;
     const session = requireActiveSession(access, sessionId);
-    const agentId = startInput.input.agentId ?? session.defaultAgentId;
-    if (!agentId) {
-      throw new AppError(
-        ApiErrorCodes.COMMON_INVALID_REQUEST,
-        "启动 Run 需要 agentId 或 Session 的 defaultAgentId",
-        400,
-      );
-    }
-
-    const resolved = await agentService.resolve(agentId, access);
+    // 内联配置与预设 Agent 二选一（schema 层互斥）；都不传时回落 Session 默认 Agent。
+    const resolved = startInput.input.config
+      ? await agentService.resolveInline(startInput.input.config, access)
+      : await resolvePresetAgent(startInput.input, session, access);
     const lane = startInput.input.lane ?? "main";
 
     // 附件解析与能力硬校验在幂等预检查之前：失败请求不 reserve、
@@ -262,7 +273,7 @@ export function createAiAgentRunService(input: {
     }
 
     const runId = generateId();
-    const snapshot = buildSnapshot(resolved.id, resolved.revision, resolved);
+    const snapshot = buildSnapshot(resolved);
 
     let lease: ActiveRunLease;
     try {
@@ -325,8 +336,9 @@ export function createAiAgentRunService(input: {
         access.principal.externalUserId ?? undefined,
       "starter.ai.subject.type": access.scope.subjectType ?? undefined,
       "starter.ai.subject.id": access.scope.subjectId ?? undefined,
-      "starter.ai.agent.id": resolved.id,
-      "starter.ai.agent.revision": resolved.revision,
+      "starter.ai.run.config.source": resolved.id !== null ? "agent" : "inline",
+      "starter.ai.agent.id": resolved.id ?? undefined,
+      "starter.ai.agent.revision": resolved.revision ?? undefined,
       "starter.ai.provider": resolved.model.providerId,
       "starter.ai.model": resolved.model.modelId,
       "starter.ai.output.mode":
@@ -1335,14 +1347,12 @@ function terminalEventForRecord(
 }
 
 function buildSnapshot(
-  agentId: string,
-  agentRevision: number,
   resolved: import("../agent/agent.service.js").ResolvedAgentDefinition,
 ): AgentRunSnapshot {
   return {
-    schemaVersion: 2,
-    agentId,
-    agentRevision,
+    schemaVersion: 3,
+    agentId: resolved.id,
+    agentRevision: resolved.revision,
     model: resolved.model,
     systemPromptId: resolved.config.systemPromptId,
     skillIds: resolved.config.skillIds,

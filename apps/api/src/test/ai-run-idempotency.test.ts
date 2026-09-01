@@ -466,6 +466,54 @@ it("同 key 的 SSE 模式重试回放完整事件流并以 terminal 事件结�
   }
 });
 
+it("内联配置 Run 的同 key 重试返回同一 runId，不新建 Run row", async () => {
+  const ctx = await setupRunApp(() => doneStream());
+  try {
+    const sessionId = await ctx.createSession();
+    const key = "inline-run-0001";
+    // agentId 传 undefined 会被 JSON.stringify 丢弃，换成内联 config
+    const first = await ctx.startRunJson(sessionId, {
+      agentId: undefined,
+      idempotencyKey: key,
+      config: {
+        model: { providerId: "openai", modelId: "gpt-4" },
+        systemPrompt: "内联配置的幂等测试",
+      },
+    });
+    const runId = await readRunId(first);
+
+    const second = await ctx.startRunJson(sessionId, {
+      agentId: undefined,
+      idempotencyKey: key,
+      config: {
+        model: { providerId: "openai", modelId: "gpt-4" },
+        systemPrompt: "内联配置的幂等测试",
+      },
+    });
+    const replayedRunId = await readRunId(second);
+    expect(replayedRunId).toBe(runId);
+
+    await pollRunTerminal(
+      ctx.app,
+      { cookie: ctx.user.cookie },
+      sessionId,
+      runId,
+    );
+    expect(ctx.runRows()).toHaveLength(1);
+
+    // 内联 Run 行的 agentId 为空
+    const row = ctx.runRows()[0]!;
+    const runRow = ctx.runtime.db
+      .select({ agentId: aiAgentRuns.agentId })
+      .from(aiAgentRuns)
+      .where(eq(aiAgentRuns.id, row.id))
+      .get();
+    expect(runRow?.agentId).toBeNull();
+  } finally {
+    await ctx.cleanup();
+  }
+});
+
 async function registerAdmin(
   app: RunAppContext["app"],
   runtime: RunAppContext["runtime"],

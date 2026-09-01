@@ -431,12 +431,13 @@ export const aiAgentRuns = sqliteTable(
     sessionId: text("session_id")
       .notNull()
       .references(() => aiAgentSessions.id, { onDelete: "cascade" }),
-    agentId: text("agent_id")
-      .notNull()
-      .references(() => aiAgentDefinitions.id, { onDelete: "restrict" }),
+    /** 预设 Agent 启动时非空；内联配置启动为 NULL··，与 agentRevision 成对。 */
+    agentId: text("agent_id").references(() => aiAgentDefinitions.id, {
+      onDelete: "restrict",
+    }),
     lane: text("lane").notNull(),
     status: text("status").notNull(),
-    agentRevision: integer("agent_revision").notNull(),
+    agentRevision: integer("agent_revision"),
     snapshotJson: text("snapshot_json").notNull(),
     requestId: text("request_id").notNull(),
     /** startRun 幂等键，与 idempotencyScope 一起构成唯一约束；不带 key 的启动为 NULL。 */
@@ -480,6 +481,10 @@ export const aiAgentRuns = sqliteTable(
       sql`${table.status} IN ('starting', 'running', 'completed', 'failed', 'aborted', 'interrupted')`,
     ),
     check("ai_agent_runs_revision_check", sql`${table.agentRevision} >= 1`),
+    check(
+      "ai_agent_runs_agent_pair_check",
+      sql`(${table.agentId} IS NULL) = (${table.agentRevision} IS NULL)`,
+    ),
     check(
       "ai_agent_runs_snapshot_json_check",
       sql`json_valid(${table.snapshotJson})`,
