@@ -35,7 +35,7 @@ export function ChatHeader({
   stopping,
 }: ChatHeaderProps) {
   return (
-    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur-md">
+    <header className="relative z-30 flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur-md">
       <div className="flex min-w-0 items-center gap-2.5">
         {onToggleSidebarMobile ? (
           <Button

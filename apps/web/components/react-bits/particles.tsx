@@ -27,6 +27,7 @@ interface Particle {
 /**
  * React Bits - Particles 粒子背景组件
  * 轻量 Canvas 粒子漂浮动效，支持鼠标微量排斥与主题颜色适配。
+ * 自身采用 pointer-events-none，绝不阻挡任何上层交互或下拉菜单。
  */
 export function Particles({
   className = '',
@@ -96,6 +97,7 @@ export function Particles({
     resize()
 
     const handleMouseMove = (e: MouseEvent) => {
+      if (!canvas) return
       const rect = canvas.getBoundingClientRect()
       mouse.x = e.clientX - rect.left
       mouse.y = e.clientY - rect.top
@@ -106,8 +108,8 @@ export function Particles({
       mouse.y = -1000
     }
 
-    canvas.addEventListener('mousemove', handleMouseMove)
-    canvas.addEventListener('mouseleave', handleMouseLeave)
+    window.addEventListener('mousemove', handleMouseMove)
+    window.addEventListener('mouseleave', handleMouseLeave)
 
     const draw = () => {
       ctx.clearRect(0, 0, width, height)
@@ -151,15 +153,15 @@ export function Particles({
     return () => {
       cancelAnimationFrame(animationFrameId)
       resizeObserver.disconnect()
-      canvas.removeEventListener('mousemove', handleMouseMove)
-      canvas.removeEventListener('mouseleave', handleMouseLeave)
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('mouseleave', handleMouseLeave)
     }
   }, [ease, particleColors, particleCount, particleHoverFactor, particleSize, speed])
 
   return (
     <canvas
       aria-hidden="true"
-      className={`pointer-events-auto absolute inset-0 size-full ${className}`}
+      className={`pointer-events-none absolute inset-0 size-full ${className}`}
       ref={canvasRef}
     />
   )

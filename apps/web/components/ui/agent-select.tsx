@@ -152,7 +152,12 @@ export function AgentSelect({
 
   return (
     <div
-      className={cn('relative inline-block text-left', isCompact ? 'min-w-[150px]' : 'w-full', className)}
+      className={cn(
+        'relative inline-block text-left',
+        isOpen ? 'z-50' : 'z-10',
+        isCompact ? 'min-w-[150px]' : 'w-full',
+        className,
+      )}
       ref={containerRef}
     >
       {/* 下拉触发器按钮 */}
