@@ -43,6 +43,8 @@ export interface FlowInspectorProps {
   skills: AiSkillSummary[]
   /** 链上序号，nodeId → 从 0 计的步骤序号。 */
   chainIndex: Map<string, number>
+  /** 按链上序号排列的 Agent 节点名称，供模板编辑器变量标签用。 */
+  stepNames?: string[]
   /** 运行态，nodeId → 步骤状态。 */
   stepStates: Record<string, FlowStepRunState>
   running: boolean
@@ -71,6 +73,7 @@ export function FlowInspector({
   tools,
   skills,
   chainIndex,
+  stepNames,
   stepStates,
   running,
   onNameChange,
@@ -478,6 +481,7 @@ export function FlowInspector({
           onChange={(template) => onPromptTemplateChange(selectedNode.id, template)}
           onRun={onRun}
           stepIndex={stepIndex}
+          stepNames={stepNames}
           value={selectedNode.data.promptTemplate}
         />
 

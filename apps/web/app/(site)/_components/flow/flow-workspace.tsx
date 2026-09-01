@@ -146,6 +146,12 @@ export function FlowWorkspace({ className }: { className?: string }) {
     return map
   }, [graph])
 
+  /** 按链上序号排列的节点名称，序号即数组下标；graph 不 ok 时为空数组，编辑器回落序号显示。 */
+  const stepNames = useMemo(
+    () => (graph?.ok ? graph.chain.steps.map((step) => step.node.data.name.trim()) : []),
+    [graph],
+  )
+
   const agentNames = useMemo(() => new Map(agents.map((agent) => [agent.id, agent.name])), [agents])
 
   const stepStates = useMemo(() => {
@@ -626,6 +632,7 @@ export function FlowWorkspace({ className }: { className?: string }) {
           chainIndex={chainIndex}
           models={models}
           skills={skills}
+          stepNames={stepNames}
           tools={tools}
           onAgentIdChange={handleAgentIdChange}
           onConfigChange={handleConfigChange}

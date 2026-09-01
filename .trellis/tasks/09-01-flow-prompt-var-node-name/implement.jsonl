@@ -1,0 +1,4 @@
+{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file": ".trellis/spec/web/frontend/index.md", "reason": "web 前端规范入口：开发前检查项"}
+{"file": ".trellis/spec/web/frontend/ai-runtime-consumer.md", "reason": "第 10 节记录了 FlowAgentNodeData.name 的显示回落约定，本任务沿用同一规则"}
+{"file": ".trellis/spec/web/frontend/component-guidelines.md", "reason": "Inspector/编辑器组件约定（use client、可访问性）"}

@@ -13,7 +13,8 @@ import { cn } from '@web/lib/utils'
 export interface FlowPromptEditorProps {
   value: string
   stepIndex: number | null
-  agentNames?: Map<string, string>
+  /** 按链上序号排列的上游节点名称，序号即数组下标。 */
+  stepNames?: string[]
   disabled?: boolean
   onChange: (value: string) => void
   onRun?: () => void
@@ -37,6 +38,7 @@ interface VariableInfo {
 export function FlowPromptEditor({
   value,
   stepIndex,
+  stepNames,
   disabled = false,
   onChange,
   onRun,
@@ -66,7 +68,17 @@ export function FlowPromptEditor({
       }
       const match = v.match(/\{\{steps\.(\d+)\.output\}\}/)
       if (match && match[1] !== undefined) {
-        const stepNum = Number(match[1]) + 1
+        const stepIdx = Number(match[1])
+        const stepNum = stepIdx + 1
+        const name = stepNames?.[stepIdx]
+        // 有名称的上游节点用名称标识变量，空名称维持链上序号表述
+        if (name) {
+          return {
+            variable: v,
+            label: `${name} 产出`,
+            description: `节点“${name}”的最终生成结果`,
+          }
+        }
         return {
           variable: v,
           label: `Agent ${stepNum} 产出`,
@@ -75,7 +87,7 @@ export function FlowPromptEditor({
       }
       return { variable: v, label: v, description: '' }
     })
-  }, [rawVariables])
+  }, [rawVariables, stepNames])
 
   const filteredSuggestions = useMemo(() => {
     if (!suggestionFilter) return variableItems
