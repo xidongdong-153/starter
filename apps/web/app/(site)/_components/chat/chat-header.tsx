@@ -1,14 +1,11 @@
 'use client'
 
 import type { AgentDefinitionSummary } from '@starter/contracts'
-import { Bot, Loader2, Menu, PanelLeftOpen } from 'lucide-react'
-import type { ChangeEvent } from 'react'
+import { Loader2, Menu, PanelLeftOpen } from 'lucide-react'
 
+import { AgentSelect } from '@web/components/ui/agent-select'
 import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
-
-const selectClass =
-  'h-9 border border-input bg-surface px-2.5 text-xs transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
 
 export interface ChatHeaderProps {
   agentId: string
@@ -37,10 +34,6 @@ export function ChatHeader({
   sessionTitle,
   stopping,
 }: ChatHeaderProps) {
-  function handleAgentSelect(event: ChangeEvent<HTMLSelectElement>) {
-    onAgentChange(event.target.value)
-  }
-
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface/90 px-4 backdrop-blur-md">
       <div className="flex min-w-0 items-center gap-2.5">
@@ -86,25 +79,16 @@ export function ChatHeader({
       </div>
 
       <div className="flex items-center gap-2">
-        <label className="sr-only" htmlFor="header-agent-select">
-          选择 Agent
-        </label>
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-          <Bot aria-hidden="true" className="shrink-0 text-primary" size={15} />
-          <select
-            className={selectClass}
-            disabled={running || agents.length === 0}
-            id="header-agent-select"
-            onChange={handleAgentSelect}
-            value={agentId}
-          >
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
-        </div>
+        <AgentSelect
+          agentId={agentId}
+          agents={agents}
+          disabled={running || agents.length === 0}
+          id="header-agent-select"
+          menuAlign="end"
+          onAgentChange={onAgentChange}
+          placeholder="选择 Agent"
+          size="sm"
+        />
       </div>
     </header>
   )

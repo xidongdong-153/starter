@@ -4,6 +4,7 @@ import type { AgentDefinitionSummary } from '@starter/contracts'
 import { AlertCircle, CheckCircle2, ChevronRight, CircleStop, RotateCcw } from 'lucide-react'
 import { useRef } from 'react'
 
+import { AgentSelect } from '@web/components/ui/agent-select'
 import { Badge } from '@web/components/ui/badge'
 import { Button } from '@web/components/ui/button'
 import { Label } from '@web/components/ui/label'
@@ -12,9 +13,6 @@ import type { FlowNode } from '@web/lib/flow/flow-document'
 import type { FlowStepRunState } from '@web/lib/flow/flow-run'
 import { availableVariables } from '@web/lib/flow/flow-template'
 import { cn } from '@web/lib/utils'
-
-const selectClass =
-  'h-11 w-full border border-input bg-surface px-2.5 text-sm text-foreground transition-colors outline-none focus-visible:border-primary/60 focus-visible:ring-2 focus-visible:ring-ring/40 disabled:opacity-60'
 
 export interface FlowInspectorProps {
   selectedNode: FlowNode | null
@@ -184,19 +182,19 @@ export function FlowInspector({
           <Label className="text-xs" htmlFor="flow-agent-select">
             Agent
           </Label>
-          <select
-            className={cn(selectClass, 'mt-1.5')}
-            id="flow-agent-select"
-            onChange={(event) => onAgentIdChange(selectedNode.id, event.target.value)}
-            value={selectedNode.data.agentId}
-          >
-            <option value="">选择 Agent</option>
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name}
-              </option>
-            ))}
-          </select>
+          <div className="mt-1.5">
+            <AgentSelect
+              agentId={selectedNode.data.agentId}
+              agents={agents}
+              allowEmpty
+              disabled={running}
+              emptyOptionText="未选择 Agent"
+              id="flow-agent-select"
+              onAgentChange={(agentId) => onAgentIdChange(selectedNode.id, agentId)}
+              placeholder="选择 Agent"
+              size="default"
+            />
+          </div>
           {selectedNode.data.agentId.length === 0 ? (
             <p className="mt-1.5 text-[11px] text-warning">尚未选择 Agent，运行前需要先选择。</p>
           ) : null}
