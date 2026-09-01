@@ -984,19 +984,36 @@ export type AgentTranscript = z.infer<typeof agentTranscriptSchema>
 export const agentRunStatusSchema = z.enum(['starting', 'running', 'completed', 'failed', 'aborted', 'interrupted'])
 export type AgentRunStatus = z.infer<typeof agentRunStatusSchema>
 
-export const agentRunSnapshotSchema = z.strictObject({
-  schemaVersion: z.literal(2),
-  agentId: uuidSchema,
-  agentRevision: z.number().int().min(1),
-  model: strictAiModelRefSchema,
-  systemPromptId: uuidSchema.nullable(),
-  skillIds: agentSkillIdsSchema,
-  toolRefs: agentToolRefsSchema,
-  outputContract: aiOutputContractRefSchema.nullable().default(null),
-  outputMode: aiOutputModeSchema.default('optional'),
-  thinkingLevel: agentThinkingLevelSchema,
-  maxTurns: z.number().int().min(1).max(32),
-})
+export const agentRunSnapshotSchema = z
+  .strictObject({
+    schemaVersion: z.union([z.literal(2), z.literal(3)]),
+    agentId: uuidSchema.nullable(),
+    agentRevision: z.number().int().min(1).nullable(),
+    model: strictAiModelRefSchema,
+    systemPromptId: uuidSchema.nullable(),
+    skillIds: agentSkillIdsSchema,
+    toolRefs: agentToolRefsSchema,
+    outputContract: aiOutputContractRefSchema.nullable().default(null),
+    outputMode: aiOutputModeSchema.default('optional'),
+    thinkingLevel: agentThinkingLevelSchema,
+    maxTurns: z.number().int().min(1).max(32),
+  })
+  .superRefine((snapshot, context) => {
+    if (snapshot.schemaVersion === 2 && (snapshot.agentId === null || snapshot.agentRevision === null)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentId'],
+        message: 'v2 快照的 agentId 与 agentRevision 必须非空',
+      })
+    }
+    if (snapshot.schemaVersion === 3 && (snapshot.agentId === null) !== (snapshot.agentRevision === null)) {
+      context.addIssue({
+        code: 'custom',
+        path: ['agentId'],
+        message: 'v3 快照的 agentId 与 agentRevision 必须成对出现',
+      })
+    }
+  })
 
 export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>
 
@@ -1040,8 +1057,9 @@ export const agentRunSchema = z
   .strictObject({
     id: uuidSchema,
     sessionId: uuidSchema,
-    agentId: uuidSchema,
-    agentRevision: z.number().int().min(1),
+    /** 预设 Agent 启动时非空；内联配置启动（快照 v3）时为 null。 */
+    agentId: uuidSchema.nullable(),
+    agentRevision: z.number().int().min(1).nullable(),
     lane: agentLaneSchema,
     status: agentRunStatusSchema,
     snapshot: agentRunSnapshotSchema,
@@ -1107,18 +1125,46 @@ const agentRunIdempotencyKeySchema = z
   .max(128)
   .regex(/^[\w.:-]+$/u)
 
-export const startAgentRunSchema = z.strictObject({
-  agentId: uuidSchema.optional(),
-  lane: agentLaneSchema.optional(),
-  input: agentRunInputTextSchema,
-  /**
-   * 可选幂等键。同一调用方 scope 内，相同 key 的重复启动返回既有 Run 而不是新建；
-   * key 在 Run 行创建成功后才被消费，此前的失败（如 lane 占用）不占用 key。
-   */
-  idempotencyKey: agentRunIdempotencyKeySchema.optional(),
-  /** 可选图片附件引用；与 `input` 一起构成首条 user message。 */
-  attachmentIds: agentAttachmentIdsSchema.optional(),
-})
+/**
+ * startRun 的内联 Agent 配置：不经过 ai_agent_definitions，直接在请求体里
+ * 给出执行配置。`systemPrompt`（内联文本）与 `systemPromptId`（引用）二选一。
+ */
+export const inlineAgentRunConfigSchema = z
+  .strictObject({
+    model: strictAiModelRefSchema,
+    systemPrompt: z.string().trim().min(1).max(100_000).optional(),
+    systemPromptId: uuidSchema.optional(),
+    skillIds: agentSkillIdsSchema.default([]),
+    toolRefs: agentToolRefsSchema.default([]),
+    outputContract: aiOutputContractRefSchema.nullable().default(null),
+    outputMode: aiOutputModeSchema.default('optional'),
+    thinkingLevel: agentThinkingLevelSchema.default('off'),
+    maxTurns: z.number().int().min(1).max(32).default(8),
+  })
+  .refine((value) => (value.systemPrompt !== undefined) !== (value.systemPromptId !== undefined), {
+    message: 'systemPrompt 与 systemPromptId 必须二选一',
+  })
+
+export type InlineAgentRunConfig = z.infer<typeof inlineAgentRunConfigSchema>
+
+export const startAgentRunSchema = z
+  .strictObject({
+    agentId: uuidSchema.optional(),
+    /** 内联 Agent 配置；与 agentId 互斥，两者都不传时回落 Session 的 defaultAgentId。 */
+    config: inlineAgentRunConfigSchema.optional(),
+    lane: agentLaneSchema.optional(),
+    input: agentRunInputTextSchema,
+    /**
+     * 可选幂等键。同一调用方 scope 内，相同 key 的重复启动返回既有 Run 而不是新建；
+     * key 在 Run 行创建成功后才被消费，此前的失败（如 lane 占用）不占用 key。
+     */
+    idempotencyKey: agentRunIdempotencyKeySchema.optional(),
+    /** 可选图片附件引用；与 `input` 一起构成首条 user message。 */
+    attachmentIds: agentAttachmentIdsSchema.optional(),
+  })
+  .refine((value) => !(value.agentId !== undefined && value.config !== undefined), {
+    message: 'agentId 与 config 不能同时提供',
+  })
 
 export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>
 
@@ -1213,8 +1259,9 @@ const runEventSchemas = [
     ...runEventEnvelopeShape,
     type: z.literal('run.started'),
     data: z.strictObject({
-      agentId: uuidSchema,
-      agentRevision: z.number().int().min(1),
+      /** 预设 Agent 启动时非空；内联配置启动时为 null。 */
+      agentId: uuidSchema.nullable(),
+      agentRevision: z.number().int().min(1).nullable(),
       model: strictAiModelRefSchema,
       outputContract: aiOutputContractRefSchema.nullable(),
     }),
@@ -1434,8 +1481,9 @@ export const starterRunDataSchema = z
     runId: uuidSchema,
     sessionId: uuidSchema,
     lane: agentLaneSchema,
-    agentId: uuidSchema,
-    agentRevision: z.number().int().min(1),
+    /** 预设 Agent 启动时非空；内联配置启动时为 null。 */
+    agentId: uuidSchema.nullable(),
+    agentRevision: z.number().int().min(1).nullable(),
     status: z.enum(['completed', 'failed', 'aborted']),
     finalEntryId: uuidSchema.nullable(),
     errorCode: apiErrorCodeSchema.nullable(),
