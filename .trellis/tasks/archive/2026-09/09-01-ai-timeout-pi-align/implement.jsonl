@@ -1,0 +1,4 @@
+{"file": ".trellis/spec/api/backend/index.md", "reason": "api backend 层的 spec 索引，实现前过一遍总览"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "AI 系统设计文档，含 maxRunMs / requestTimeoutMs 现有超时结构记录，本次改动直接相关"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi agent executor 的实现约定，maxRunMs 选项在该层"}
+{"file": ".trellis/spec/api/backend/error-handling.md", "reason": "env 解析与错误约定，新增 AI_RUN_MAX_MS 需遵循"}

@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/api/backend/quality-guidelines.md", "reason": "检查阶段的质量基线（类型、Lint、Format、测试要求）"}
+{"file": ".trellis/spec/api/backend/ai-system-design.md", "reason": "校验改动与 AI 超时设计文档一致，并确认文档本身已同步更新"}
