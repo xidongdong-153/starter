@@ -35,6 +35,7 @@ GET    /api/ai/usage/calls/{callId}
 
 ```text
 GET    /api/ai/models
+GET    /api/ai/tools
 GET    /api/ai/preferences
 PUT    /api/ai/preferences
 POST   /api/ai/test
@@ -477,6 +478,108 @@ expect(model.api).toBe("openai-responses")
 ```ts
 const events = await collect(provider.streamSimple(model, context, options))
 expect(events.at(-1)).toMatchObject({ type: "done", reason: "stop" })
+```
+
+## 10. startRun 内联 Agent 配置（inlineAgentRunConfig）
+
+### 10.1 Scope / Trigger
+
+- `POST /api/ai/sessions/{sessionId}/runs` 请求体新增可选 `config`，与 `agentId` 互斥。触发本节规则的场景：新增调用方接入 startRun、修改 Agent 解析校验、修改 `ai_agent_runs` 的 agent 列或快照 schema。
+- `ai_agent_runs.agent_id` / `agent_revision` 从 NOT NULL 改为可空，迁移 0027。任何写入 Run 行的代码必须保持两列同时为空或同时有值。
+
+### 10.2 Signatures
+
+契约（`packages/contracts/src/ai.ts`）：
+
+```ts
+export const inlineAgentRunConfigSchema = z
+  .strictObject({
+    model: strictAiModelRefSchema,            // 必填，无默认
+    systemPrompt: z.string().trim().min(1).max(100_000).optional(),
+    systemPromptId: uuidSchema.optional(),    // 与 systemPrompt 二选一
+    skillIds: agentSkillIdsSchema.default([]),
+    toolRefs: agentToolRefsSchema.default([]),
+    outputContract: aiOutputContractRefSchema.nullable().default(null),
+    outputMode: aiOutputModeSchema.default('optional'),
+    thinkingLevel: agentThinkingLevelSchema.default('off'),
+    maxTurns: z.number().int().min(1).max(32).default(8),
+  })
+  .refine((v) => (v.systemPrompt !== undefined) !== (v.systemPromptId !== undefined))
+
+export const startAgentRunSchema = z
+  .strictObject({
+    agentId: uuidSchema.optional(),
+    config: inlineAgentRunConfigSchema.optional(), // 与 agentId 互斥
+    lane: agentLaneSchema.optional(),
+    input: agentRunInputTextSchema,
+    idempotencyKey: agentRunIdempotencyKeySchema.optional(),
+    attachmentIds: agentAttachmentIdsSchema.optional(),
+  })
+  .refine((v) => !(v.agentId !== undefined && v.config !== undefined))
+```
+
+服务层（`agent.service.ts`）：
+
+```ts
+resolveConfigCore(config, access): Promise<ResolvedConfigCore>  // 预设与内联共用
+resolveInline(input: InlineAgentRunConfig, access): Promise<ResolvedAgentDefinition>
+// 返回值 id/revision 为 null，config.schemaVersion 固定 2
+```
+
+### 10.3 Contracts
+
+- 请求：`agentId` 与 `config` 都不传时回落 Session 的 `defaultAgentId`；两个都传返回 400。
+- 快照：内联 Run 写 `schemaVersion: 3`，`agentId`/`agentRevision` 为 null；预设 Run 同样写 v3（两列有值）。读取端兼容 2 和 3，v3 校验两列成对出现。
+- 快照只存 `systemPromptId`（内联文本时为 null），不存 systemPrompt 正文。
+- 审计：`ai_model_calls.scenario` 仍为 `agent_run`，行为不变。
+- 遥测：Run 启动时记录 `starter.ai.run.config.source`，值为 `agent`（预设）或 `inline`（内联）。
+- 公开路由：`GET /api/ai/tools`（requireAuth）返回 `service.listTools()`，供 Flow 前端选择工具。
+
+### 10.4 Validation & Error Matrix
+
+| 条件 | 结果 |
+| --- | --- |
+| `agentId` 与 `config` 同传 | 400 `COMMON.INVALID_REQUEST`（refine） |
+| `systemPrompt` 与 `systemPromptId` 都传或都不传 | 400（refine） |
+| `config.model` 不在 `ai_enabled_models` 白名单 | 403 `AI.MODEL_NOT_ALLOWED` |
+| 内联 `systemPromptId` 指向不存在的 Prompt | 404 `AI.SYSTEM_PROMPT_NOT_FOUND` |
+| 内联 `skillIds` 含未启用技能 | 403，与预设路径同码 |
+| 内联 `toolRefs` 超出 scope | 403，与预设路径同码 |
+| product_app 主体带 `config` | 403 `AI.RUN_INLINE_CONFIG_FORBIDDEN` |
+| 都不传且 Session 无 `defaultAgentId` | 400 `COMMON.INVALID_REQUEST` |
+
+内联与预设的校验必须走同一个 `resolveConfigCore`，禁止在 resolveInline 里复制规则。
+
+### 10.5 Good / Base / Bad Cases
+
+- Good：`{ input, config: { model, systemPrompt: "..." } }` → Run 创建成功，快照 v3，agent_id 为空，事件流与预设 Run 同构。
+- Base：`{ input, agentId }` 或空 agentId 回落 default → 行为与改动前完全一致，快照 v3，agent_id 有值。
+- Bad：为内联 Run 造一行假的 `ai_agent_definitions`（禁止）；或内联路径绕过 allowlist 直接调 Gateway（禁止）。
+
+### 10.6 Tests Required
+
+- `ai-agent-runs.test.ts`：内联启动成功（快照 v3、agentId 空、事件流与预设同构）、同传 400、回落 default、模型不在白名单 403、product_app 403。
+- `ai-run-data-layer.test.ts`：`agent_id IS NULL` 的 Run 行写入与读回；v2 旧快照读兼容。
+- `ai-run-idempotency.test.ts`：内联 Run 的幂等行为与预设一致。
+- 迁移回滚检查：`SELECT count(*) FROM ai_agent_runs WHERE agent_id IS NULL` 为 0 才能执行 down。
+
+### 10.7 Wrong vs Correct
+
+错误写法（绕过共享校验）：
+
+```ts
+async function resolveInline(input) {
+  const model = await gateway.getModel(input.model) // 跳过 allowlist
+}
+```
+
+正确写法（复用核心）：
+
+```ts
+async function resolveInline(input, access) {
+  const core = await resolveConfigCore(toCoreInput(input), access)
+  return { id: null, revision: null, config: buildConfig(input), ...core }
+}
 ```
 
 错误写法：

@@ -2,7 +2,7 @@
 
 ## 1. Scope / Trigger
 
-Web 作为产品前端消费 AI 运行时能力时用本规范。chat 和 flow 页面全部走产品面 `/api/chat/*`、`/api/flow/*`（独立 typed client），不直调 `/api/ai/*`；`/api/ai/*` 保留给 product_app + Bearer 和 Admin。控制面（Provider、模型、Prompt、Skill、Agent、凭据、用量）不在 Web，归 `apps/admin`。
+Web 作为产品前端消费 AI 运行时能力时用本规范。chat 和 flow 页面的运行时调用（Run 启动、事件流、transcript、Session）全部走产品面 `/api/chat/*`、`/api/flow/*`（独立 typed client），不直调 `/api/ai/*`；`/api/ai/*` 的运行时端点保留给 product_app + Bearer 和 Admin。静态资源清单是例外：`GET /api/ai/models`、`GET /api/ai/tools`、`GET /api/ai/skills` 直接走主 AppType `apiRpc`（`lib/api/ai-resources.api.ts`），这些端点本身就是 requireAuth 的用户可用面，不携带敏感数据。控制面（Provider、模型目录管理、Prompt、Skill 管理、Agent、凭据、用量）不在 Web，归 `apps/admin`。
 
 参考实现：`app/(site)/chat/`、`app/(site)/_components/chat/`、`hooks/use-chat-run.ts`、`lib/ai/`、`lib/api/chat.api.ts`、`lib/api/flow.api.ts`。产品面服务端约定见 `.trellis/spec/api/backend/product-module-guidelines.md`。
 
@@ -194,7 +194,8 @@ throw new Error("Agent Run 没有产生任何事件，请稍后重试。");
 - 会话列表、切换、改名、归档已支持（`lib/ai/chat-session-view.ts` 负责列表纯函数，`use-chat-run.ts` 负责状态与异步编排）。steer、follow-up、transcript 翻页、多 lane 视图仍不在范围内。
 - Thinking 折叠展示，Tool 显示名称、状态和 `safeSummary`，Compaction 显示一行说明。不引 Markdown 渲染器和 Chat SDK。
 - 刷新页面时这一轮还在跑，页面会用 `GET /active-run` 找回 runId 并接回事件流继续渲染。会话列表不标记哪个会话在跑，进终态的 Run 也没有重新回放入口。
-- 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。flow 页的 HTTP 调用全部走 `/api/flow/*`（`lib/api/flow.api.ts`，`flowRpc` client，transcript 按 lane 读取）；flow 面没有 active-run 和 events/stream 恢复入口，页面刷新即丢运行态；画布运行态不持久化，服务端 Session/transcript 是持久事实。
+- 多节点客户端编排已由 `/flow` 页面承担（`app/(site)/_components/flow/`、`lib/flow/`、`hooks/use-flow-run.ts`）：画布定义存 localStorage（`web-agent-flow/v1`），运行时新建 Session，每步用 lane `flow-<序号>` 启动 Run，幂等键 `flowRunId-序号`，从失败节点重试时追加 `-rN` 换新 key（failed Run 同 key 会命中旧 Run）。flow 页的 HTTP 调用全部走 `/api/flow/*`（`lib/api/flow.api.ts`，`flowRpc` client，transcript 按 lane 读取）；flow 面没有 active-run 和 events/stream 恢复入口，页面刷新即丢运行态；画布运行态不持久化，服务端 Session/transcript 是持久事实。模型/工具/技能清单例外，走 `apiRpc`（见第 1 节）。
+- flow 画布的 Agent 节点有两种模式（`flow-document.ts` 的 `FlowAgentNodeData`）：预设模式存 `agentId`，自定义模式存 `config`（`FlowAgentInlineConfig`，字段对齐契约 `InlineAgentRunConfig`）。`config` 字段存在即自定义模式，旧文档没有该字段则按预设模式解析，无迁移。运行时 `use-flow-run.ts` 的 `FlowChainStep.target` 二选一：`{ agentId }` 或 `{ config }`，透传给 `startRunStream`；两者都缺时由 `flow-workspace.tsx` 运行前校验拦截（自定义节点必须有 model 和非空 systemPrompt）。
 
 ## 11. 图片附件（Chat 输入）
 

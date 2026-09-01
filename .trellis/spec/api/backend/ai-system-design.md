@@ -71,6 +71,8 @@ flowchart LR
 
 它只保存引用和执行参数，不保存 Provider secret、Prompt 正文、Skill 正文、Tool schema 或 handler。Run 开始时解析当前可用配置，并把无 secret 的配置快照写入 `ai_agent_runs.snapshot_json`。
 
+startRun 还支持内联配置：请求体带 `config`（`inlineAgentRunConfigSchema`）而不带 `agentId` 时，Run Service 调 `resolveInline` 解析，跳过 `ai_agent_definitions`。两条路径共用 `resolveConfigCore`（模型 allowlist、Prompt、技能、工具 scope、输出契约），规则不会分叉。内联 Run 的 Run 行 `agent_id`/`agent_revision` 为空，快照 `schemaVersion` 为 3。细节见 `ai-integration-guidelines.md` 第 10 节。
+
 ### 3.2 AgentSession
 
 代码位置：`apps/api/src/modules/ai/session/` 和 `apps/api/src/infra/agent/pi-session-store.ts`。
@@ -191,18 +193,20 @@ sequenceDiagram
 ```ts
 {
   agentId?: string
+  config?: InlineAgentRunConfig  // 与 agentId 互斥
   lane?: string
   input: string
   idempotencyKey?: string
+  attachmentIds?: string[]
 }
 ```
 
-`input` 去除首尾空白后必须是 1 到 100000 个字符。没有传 `agentId` 时使用 Session 的 `defaultAgentId`；两者都没有时返回 `COMMON.INVALID_REQUEST`。`idempotencyKey` 去除首尾空白后 8 到 128 字符，字符集 `[A-Za-z0-9._:-]`。
+`input` 去除首尾空白后必须是 1 到 100000 个字符。`agentId` 与 `config` 只能传一个；都不传时使用 Session 的 `defaultAgentId`，两者都没有时返回 `COMMON.INVALID_REQUEST`。带 `config` 时走 `agentService.resolveInline`：product_app 主体返回 403 `AI.RUN_INLINE_CONFIG_FORBIDDEN`，其余校验与预设路径共用 `resolveConfigCore`（内联 `systemPrompt` 文本与 `systemPromptId` 引用二选一，模型必须在白名单）。`idempotencyKey` 去除首尾空白后 8 到 128 字符，字符集 `[A-Za-z0-9._:-]`。
 
 Run Service 接着按以下顺序执行：
 
 1. 校验当前用户拥有该 Session，且 Session 没有归档。
-2. 解析 Agent 当前配置和 revision。
+2. 解析 Agent 当前配置和 revision（预设走 `resolve(id)`，内联走 `resolveInline(config, access)`）。
 3. 请求带 `idempotencyKey` 时按 `idempotency_scope + idempotency_key` 预检查：命中同 Session 直接返回既有 Run（SSE 模式 subscribe 回放），异 Session 返回 409 `AI.IDEMPOTENCY_KEY_CONFLICT`。这一步在 reserve 之前，不占 lane 租约；scope 由 `RuntimeAccessContext` 七字段拼出，与 Session 可见性判据一致。
 4. 对 `sessionId + lane` 做 registry reserve。冲突在创建 Run 行之前返回 `AI.SESSION_BUSY`，此时 key 未被消费。
 5. 为非 `main` lane 创建 Pi lane。
@@ -379,7 +383,7 @@ Starter 主库保存：
 | --- | --- | --- |
 | `ai_agent_definitions` | Agent 名称、状态、revision、无 secret config 引用 | Provider secret、Prompt/Skill 正文、Tool handler |
 | `ai_agent_sessions` | Session id、owner、title、defaultAgentId、归档时间 | transcript、lane tree、Tool result |
-| `ai_agent_runs` | Run id、Session、Agent revision、lane、状态、snapshot、终态字段 | message 正文、事件流 |
+| `ai_agent_runs` | Run id、Session、Agent id 与 revision（内联 Run 时两列均为 NULL，成对出现）、lane、状态、snapshot、终态字段 | message 正文、事件流 |
 | `ai_model_calls` | Provider/model、scenario、runId、耗时、token、cost、结果和错误码 | prompt、response、secret、原始错误 |
 | `ai_tool_executions` | Tool 名称、时间、耗时、状态、timeout、错误码 | arguments、result、safeSummary |
 | `ai_webhook_endpoints` | 端点 URL、所属 app、加密 signing secret、enabled/disabled、最后投递时间 | secret 明文 |
@@ -538,7 +542,7 @@ AI 路由的 OpenAPI tag 是公共边界的一部分，不能统一标成 `AI`�
 
 - `AI Control`：Provider、管理员模型目录、Prompt、Skill、Agent Definition、Tool summary、Usage audit、模型连通性测试，以及 Webhook 端点管理（`/api/ai/admin/webhook-endpoints/*`）和投递记录查询（`/api/ai/admin/webhook-deliveries`）。
 - `AI Runtime`：产品调用方可消费的 Agent Definition summary、Session、Run、Transcript、RunEvent SSE 和一次性无状态调用 `POST /api/ai/completions`。
-- `AI Compatibility`：Starter 用户模型列表和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
+- `AI Compatibility`：Starter 用户模型列表、用户可用的工具清单（`GET /api/ai/tools`）和用户模型偏好；这些接口依赖 Better Auth 和 Starter 用户模型，不是跨产品运行凭据协议。
 
 运行面 SSE 使用 `text/event-stream`：
 

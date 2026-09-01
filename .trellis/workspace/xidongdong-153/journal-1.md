@@ -785,3 +785,41 @@ Web 端新增 /flow 页面：React Flow（@xyflow/react v12）画布 + 客户端
 ### Status
 
 [OK] **Completed**
+
+
+## Session 11: startRun 内联 Agent 配置实现完成
+
+**Date**: 2026-09-01
+**Task**: startRun 内联 Agent 配置实现完成
+**Package**: api
+**Branch**: `main`
+
+### Summary
+
+实现 09-01-ai-run-inline-config 全部七阶段：契约（inlineAgentRunConfigSchema、快照 v2/v3 读兼容、互斥 refine）、迁移 0027（agent_id/revision 可空 + 成对 CHECK）、服务层（resolveConfigCore 共享校验、resolveInline、product_app 403）、GET /api/ai/tools 公开路由、约 1000 行 API 测试、Flow 前端双模式节点（ModelSelect/自定义表单/持久化/运行校验）。pnpm check 全绿，427+82+112 测试全过，浏览器走查 8 项全过，spec 更新 3 个文件。待用户确认 commit。
+
+### Main Changes
+
+- packages/contracts：inlineAgentRunConfigSchema + startAgentRunSchema config 互斥 + agentRunSnapshotSchema v2/v3 兼容 + AI_RUN_INLINE_CONFIG_FORBIDDEN 错误码
+- apps/api：迁移 0027（agent 列可空成对约束）、agent.service resolveConfigCore/resolveInline、run.service 分流与快照 v3、GET /api/ai/tools、run-execution-context 可空 agent
+- apps/web：Flow 节点双模式（flow-document config 字段、model-select 组件、flow-inspector 自定义表单、use-flow-run target 二选一、ai-resources.api）
+- .trellis/spec：ai-integration-guidelines 第 10 节（7 段式）、ai-system-design 输入阶段与 OpenAPI 面、ai-runtime-consumer 主 AppType 例外说明
+
+### Git Commits
+
+(No commits - planning session)
+
+### Testing
+
+- [OK] pnpm check（类型+Lint+Format）全绿
+- [OK] pnpm test：API 59 文件 427 测试、Web 82、Admin 112 全过
+- [OK] 浏览器走查：旧文档兼容、模式切换、模型下拉 18 项、校验警告、localStorage 持久化、刷新恢复、切回删除 config 全过
+- [OK] API 级：内联模型不在白名单 403 AI_MODEL_NOT_ALLOWED；GET /api/ai/tools 未登录 401
+
+### Status
+
+[OK] **Completed**
+
+### Next Steps
+
+- 用户确认改动摘要后 commit 并归档任务
