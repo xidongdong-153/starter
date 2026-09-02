@@ -59,9 +59,12 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - `ai_agent_runs` 存 Run 索引与无 secret snapshot：id、session_id、agent_id、lane、status、agent_revision、snapshot_json、request_id、idempotency_key、idempotency_scope、final_entry_id、error_code、created_at、started_at、finished_at。message 和事件不进主库。
 - snapshot 用 `agentRunSnapshotSchema` 校验后 `JSON.stringify` 保存；读取时再次 parse，失败视为数据损坏（运行时不应发生）。
 - startRun 幂等键：`idempotency_key + idempotency_scope` 的部分唯一索引（`WHERE idempotency_key IS NOT NULL`）是最终防线；scope 由 `RuntimeAccessContext` 七字段拼出（kind|tenantId|projectId|principalId|externalUserId|subjectType|subjectId），与 accessWhere 判据一致。预检查在 reserve 之前：命中同 Session 直接返回既有 Run 的 runId（SSE 走 subscribe 回放），异 Session 409；create 命中唯一约束时先释放原始 lease 再重查走同一分支。key 只在 Run 行创建成功后被消费（busy、校验失败、404 都不消费），终态 Run（含 failed）同 key 返回原 Run 不重跑。
-- Run Service 是 registry reserve/attach/release、Run row、RunEventPublisher、`run.started` 和 terminal event 的唯一所有者；Executor 不创建或更新主库 Run。
-- `registry.reserve` 返回的原始 lease 必须保留到 Run 终态。`prepare`、`attach` 或 `markRunning` 失败时可能还没有 runId handle，清理路径必须直接释放原始 lease，不能只按 runId 释放。
-- 终态顺序固定：等待 executor result -> 写 `starter.run` -> 条件更新主库 -> 发布唯一 terminal event -> release registry。
+- Run Service 是 lane lease（进程内 registry + 持久 lease）reserve/acquire/attach/release、Run row、RunEventPublisher、`run.started` 和 terminal event 的唯一所有者；Executor 不创建或更新主库 Run。
+- Session lane 的执行排他以 `ai_agent_lane_leases` 持久 lease 为权威（`run/lane-lease.ts`；TTL 90s、续租 30s 是代码常量，不配环境变量）。`startRun` 先查进程内 registry（快速失败路径），再 acquire db lease：条件 INSERT / 过期接管（`fencing_token` +1）都不命中返回 busy，映射 `AI.SESSION_BUSY`；acquire、Run row 创建之间任何失败都要同时释放两层 lease。ownerId 用 `parseEnv` 的 `APP_INSTANCE_ID`。执行期间每 30s 续租一次，续租失败（被接管或过期）调用 registry handle 的 abort，走现有 aborted 收尾。
+- 终态事务（`completeWithTerminalEvent`）在同一事务内做 fencing 校验：执行路径传入 `lease.ownerId`，lease 行的 owner、`fencing_token` 与 Run row 的 `execution_fencing_token` 一致且未过期才按实际结果提交；失配或过期时终态强制写 `interrupted`（`AI.RUN_INTERRUPTED`），丢弃实际执行结果。恢复扫描路径不传 lease，Run row token 为 NULL 的历史行也跳过校验。
+- `startRun` 第一行 `await readiness`：`createAiServices` 把 `recoverInterrupted()` 的 Promise 存为 `AiServices.readiness`（恢复失败也 resolve，只记日志），恢复扫描（含扫描 lane 的过期 lease 清理）完成前新 Run 请求等待而不是拒绝或并行执行。诊断型 session 一致性检查保持 fire-and-forget。`/health` 语义不变，AI readiness 是内部门禁。
+- `registry.reserve` 返回的原始 lease 必须保留到 Run 终态。`prepare`、`attach` 或 `markRunning` 失败时可能还没有 runId handle，清理路径必须直接释放原始 lease，不能只按 runId 释放。db lease 同理：`RunContext.laneLease` 存的是 acquire 拿到的 owner + token 对。
+- 终态顺序固定：等待 executor result -> 写 `starter.run` -> 条件更新主库（含 fencing 校验）-> 发布唯一 terminal event -> 清续租定时器 -> db lease release -> registry release。
 - 启动恢复读取 `starter.run` 时，必须同时核对 `runId`、`sessionId`、`lane`、`agentId` 和 `agentRevision`；任一字段与主库 Run 不一致都按损坏处理并标记 `AI.RUN_INTERRUPTED`。
 - 事件队列是有界 `AsyncEventQueue`（`MAX_PENDING_EVENTS = 1024`），超限时关闭 transport，不阻塞 Agent loop、不 abort Run。客户端遇到这种提前结束不能报错，要转成轮询 `live` 快照。
 - Run Service 同时负责累积对外的活跃 Run 快照（`GET /runs/{runId}` 的 `live` 字段），Executor 和 `ActiveRunRegistry` 都不参与。所有事件必须经过 `publish` 进入队列：它先折叠快照、再 push，绕过它会让快照漏掉首尾状态。
@@ -84,7 +87,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 | Agent 不存在 | 404 | `COMMON.NOT_FOUND`（resolve 抛出） |
 | Agent 非 enabled | 409 | `AI.AGENT_NOT_ENABLED`（resolve 抛出） |
 | Agent 配置引用无效 | 400 | `AI.AGENT_CONFIG_INVALID`（resolve 抛出） |
-| registry 同 session+lane 冲突（Run row 创建前） | 409 | `AI.SESSION_BUSY`，不创建 Run |
+| registry 或持久 lease 同 session+lane 冲突（Run row 创建前） | 409 | `AI.SESSION_BUSY`，不创建 Run |
 | 同 scope 幂等键已绑定其他 Session 的 Run | 409 | `AI.IDEMPOTENCY_KEY_CONFLICT`，不影响既有 Run |
 | lane 创建失败 | 500 | `AI.SESSION_STORAGE_FAILED` |
 | 控制接口（abort/steer/follow-up）无 active handle | 409 | `AI.RUN_NOT_ACTIVE` |
@@ -96,7 +99,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 
 ## 5. Good / Base / Bad Cases
 
-- Good：`registry.reserve` 在 Run row 创建前检查，busy 直接 409 不产生 Run；Run row 创建后的失败窗口（prepare/attach/markRunning）持久化 failed 并发布 `run.failed` 作为 sequence 1 的唯一 SSE event，不发送 `run.started`，并直接释放原始 lane lease。
+- Good：`registry.reserve` + db lease acquire 在 Run row 创建前检查，busy 直接 409 不产生 Run；Run row 创建后的失败窗口（prepare/attach/markRunning）持久化 failed 并发布 `run.failed` 作为 sequence 1 的唯一 SSE event，不发送 `run.started`，并直接释放原始 lane lease（registry + db 两层）。
 - Good：正常路径只在 prepare、attach 和 starting -> running 更新成功后才发布 sequence 1 的 `run.started`；message/tool 事件与 terminal event 的 sequence 均由 RunEventPublisher 分配。
 - Good：客户端断开只停止向该连接写数据（transport 移除），不调用 abort；Run 继续执行并持久化终态。
 - Base：abort 幂等，正在取消时重复调用返回当前 Run 状态；终态后没有 handle 返回 `AI.RUN_NOT_ACTIVE`。
@@ -122,6 +125,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - `run-event-recovery.test.ts` 覆盖回放窗口竞态、delta/progress 游标、进程重启后的持久 Timeline 和 GET `/events/stream` 的 `Last-Event-ID`；测试通过 `createTestApp` 注入测试 Provider，不依赖真实模型。
 - 刷新恢复链路（`run-event-recovery.test.ts`，用挂住的 streamFn 把 Run 停在 running）：`GET /active-run` 返回该 Run 且 `status` 为 `running`；同一时刻 transcript 已含本轮 `user_message`、不含 `assistant_message`；断掉原来那条 SSE 后 Run 继续跑；用查到的 runId 连 `events/stream?afterSequence=0` 能收到从 sequence 1 开始的连续事件并以终态事件收尾；Run 进终态后 `GET /active-run` 的 data 为 null；他人查同一 session 的 `active-run` 返回 404。
 - 第三方接入链路（`apps/api/src/test/ai-third-party-access.test.ts`，Bearer product_app 视角）：CORS 预检覆盖 7 个运行面头；agent 公共列表只含 enabled、伪造 Bearer 401；`Accept: application/json` 启动返回 runId 后轮询到 completed 且 timeline 完整，显式 `text/event-stream` 仍走 SSE；structured-outputs 路由的 product/admin 可见性打码、admin 路由不打码、跨 scope 404；transcript 中 `emit_structured_output` 的 tool_activity 携带 structuredOutput。心跳修复无集成测试（15s 定时器不可观测），由两处写法一致性与既有 sse parser 测试覆盖。
+- lane lease（`apps/api/src/test/ai-lane-lease.test.ts`）：store 级条件更新（插入 token=1、未过期 busy、过期接管 token+1、旧 owner renew/release 无效果、`releaseExpired` 只删过期行）；双 runtime（`runDualRuntimeApps`，共享 Starter db、不同 `APP_INSTANCE_ID`）同 lane 互斥（一成功一 `AI.SESSION_BUSY`、主库单条非终态 Run、终态后可再启动）、不同 lane 不互斥；lease 被接管后旧 owner 终态落成 `interrupted` 且不删新 owner 的 lease 行；短 TTL / 续租间隔注入（`RuntimeDeps.laneLeaseOptions`）验证续租失败后 executor 中止；readiness 未 resolve 时 startRun 等待且不建 Run、不领 lease。双 runtime 底座共享同一个 Pi Session store 实例：Pi SQLite backend 对同一 session 只允许一个写者，两个 repository 打开同一文件会互相拒绝，与本组用例验证的 Starter lease 粒度无关。
 
 ## 7. Wrong vs Correct
 
@@ -135,9 +139,10 @@ try { registry.reserve(sessionId, lane) } catch { throw busy() }  // 后检查
 正确写法先 reserve 再创建 Run row，Run row 创建前的冲突直接 409 且不产生 Run；创建后的失败窗口统一走终态持久化：
 
 ```ts
-const lease = registry.reserve(sessionId, lane)   // busy -> 409，无 Run
+const lease = registry.reserve(sessionId, lane)   // 进程内快速失败，busy -> 409，无 Run
+const laneLease = laneLeaseStore.acquire({ ... })  // 排他权威；busy -> 409 并释放 registry lease
 await ensureLane(sessionStore, sessionId, lane)   // 非 main lane 显式创建
-repository.create({ ... })                       // 之后失败走 failed 终态
+repository.create({ ..., executionFencingToken }) // 之后失败走 failed 终态
 ```
 
 > **Warning**: Pi 只自动创建 `main` lane。非 main lane 必须由 Run Service 显式 `createLane`（已存在会抛 `already_exists`，需幂等忽略），否则 executor 打开 session 时 `Lane not found`。
