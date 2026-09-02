@@ -160,6 +160,8 @@ export const aiSystemPrompts = sqliteTable('ai_system_prompts', {
   id: text('id').primaryKey(),
   name: text('name').notNull().unique(),
   content: text('content').notNull(),
+  /** 当前内容对应的 revision 行号；事实源在 ai_system_prompt_revisions。 */
+  currentRevision: integer('current_revision').notNull().default(1),
   enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
   createdBy: text('created_by').references(() => user.id, {
     onDelete: 'set null',
@@ -170,6 +172,29 @@ export const aiSystemPrompts = sqliteTable('ai_system_prompts', {
   createdAt: timestamp('created_at').notNull(),
   updatedAt: timestamp('updated_at').notNull(),
 })
+
+/**
+ * System Prompt 版本链：每行不可变，主表 content 是 current_revision 指向内容的镜像。
+ * 内容更新时追加新行并同事务刷新主表，历史 Run 按 revision 还原当时内容。
+ */
+export const aiSystemPromptRevisions = sqliteTable(
+  'ai_system_prompt_revisions',
+  {
+    id: text('id').primaryKey(),
+    promptId: text('prompt_id')
+      .notNull()
+      .references(() => aiSystemPrompts.id, {
+        onDelete: 'cascade',
+      }),
+    revision: integer('revision').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('ai_system_prompt_revisions_prompt_revision_uidx').on(table.promptId, table.revision),
+    check('ai_system_prompt_revisions_revision_check', sql`${table.revision} >= 1`),
+  ],
+)
 
 export const aiPromptTemplates = sqliteTable(
   'ai_prompt_templates',
@@ -199,6 +224,8 @@ export const aiSkills = sqliteTable(
     name: text('name').notNull().unique(),
     description: text('description').notNull(),
     content: text('content').notNull(),
+    /** 当前内容对应的 revision 行号；事实源在 ai_skill_revisions。 */
+    currentRevision: integer('current_revision').notNull().default(1),
     enabled: integer('enabled', { mode: 'boolean' }).notNull().default(true),
     createdBy: text('created_by').references(() => user.id, {
       onDelete: 'set null',
@@ -210,6 +237,29 @@ export const aiSkills = sqliteTable(
     updatedAt: timestamp('updated_at').notNull(),
   },
   (table) => [index('ai_skills_enabled_name_idx').on(table.enabled, table.name)],
+)
+
+/**
+ * Skill 版本链：每行不可变，主表 content 是 current_revision 指向内容的镜像。
+ * content 或 description 变化都会追加新行（两者都进入执行输入）。
+ */
+export const aiSkillRevisions = sqliteTable(
+  'ai_skill_revisions',
+  {
+    id: text('id').primaryKey(),
+    skillId: text('skill_id')
+      .notNull()
+      .references(() => aiSkills.id, {
+        onDelete: 'cascade',
+      }),
+    revision: integer('revision').notNull(),
+    content: text('content').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('ai_skill_revisions_skill_revision_uidx').on(table.skillId, table.revision),
+    check('ai_skill_revisions_revision_check', sql`${table.revision} >= 1`),
+  ],
 )
 
 export const aiSettings = sqliteTable(
@@ -299,6 +349,10 @@ export const aiAgentDefinitions = sqliteTable(
     status: text('status').notNull().default('draft'),
     revision: integer('revision').notNull().default(1),
     configJson: text('config_json').notNull(),
+    /** 该 Agent revision 引用的 System Prompt revision；config 无 prompt 时为 NULL。 */
+    systemPromptRevision: integer('system_prompt_revision'),
+    /** `{"<skillId>": <revision>}`；config 无技能时为 NULL。 */
+    skillRevisionsJson: text('skill_revisions_json'),
     createdBy: text('created_by').references(() => user.id, {
       onDelete: 'set null',
     }),
@@ -439,6 +493,26 @@ export const aiAgentLaneLeases = sqliteTable(
   ],
 )
 
+/**
+ * Run 启动时固化的解析事实；Run 行创建后、executor 启动前写入。
+ * 失败时 Run 按现有错误收尾落成 failed，不存在无 manifest 的 starting/running Run。
+ */
+export const aiRunResolvedManifests = sqliteTable(
+  'ai_run_resolved_manifests',
+  {
+    runId: text('run_id')
+      .primaryKey()
+      .references(() => aiAgentRuns.id, {
+        onDelete: 'cascade',
+      }),
+    manifestHash: text('manifest_hash').notNull(),
+    /** aiRunResolvedManifestSchema 校验后的 JSON。 */
+    manifestJson: text('manifest_json').notNull(),
+    createdAt: timestamp('created_at').notNull(),
+  },
+  (table) => [check('ai_run_resolved_manifests_json_check', sql`json_valid(${table.manifestJson})`)],
+)
+
 export const aiRunTurns = sqliteTable(
   'ai_run_turns',
   {
@@ -512,12 +586,40 @@ export const aiStructuredOutputs = sqliteTable(
     contractVersion: text('contract_version').notNull(),
     schemaHash: text('schema_hash').notNull(),
     renderKind: text('render_kind').notNull(),
+    /** emit 时刻的 contract 可见性；历史行为 NULL，读取时回退 registry 当前定义。 */
+    visibility: text('visibility'),
+    /** emit 时刻的输出模式；历史行为 NULL，读取时回退 registry 当前定义。 */
+    mode: text('mode'),
     valueJson: text('value_json').notNull(),
     createdAt: timestamp('created_at').notNull(),
   },
   (table) => [
     index('ai_structured_outputs_run_created_idx').on(table.runId, table.createdAt, table.id),
     index('ai_structured_outputs_step_idx').on(table.stepId),
+  ],
+)
+
+/**
+ * Output Contract 的版本快照：define 时写入，历史 structured output 读取不依赖
+ * 当前进程仍注册同名 contract。同 name+version 的定义视为不可变，重复写入忽略。
+ */
+export const aiOutputContractSnapshots = sqliteTable(
+  'ai_output_contract_snapshots',
+  {
+    name: text('name').notNull(),
+    version: text('version').notNull(),
+    description: text('description').notNull(),
+    schemaJson: text('schema_json').notNull(),
+    renderKind: text('render_kind').notNull(),
+    visibility: text('visibility').notNull(),
+    mode: text('mode').notNull(),
+    firstSeenAt: timestamp('first_seen_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.name, table.version] }),
+    check('ai_output_contract_snapshots_json_check', sql`json_valid(${table.schemaJson})`),
+    check('ai_output_contract_snapshots_visibility_check', sql`${table.visibility} IN ('product', 'admin')`),
+    check('ai_output_contract_snapshots_mode_check', sql`${table.mode} IN ('optional', 'required')`),
   ],
 )
 

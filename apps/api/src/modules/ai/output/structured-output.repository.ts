@@ -15,6 +15,10 @@ export interface StructuredOutputRecord {
   contractVersion: string
   schemaHash: string
   renderKind: string
+  /** emit 时刻的 contract 可见性；历史行为 NULL，读取时回退 registry 当前定义。 */
+  visibility: string | null
+  /** emit 时刻的输出模式；历史行为 NULL，读取时回退 registry 当前定义。 */
+  mode: string | null
   /** 已通过 Contract schema 校验的取值；读取时再次经过共享 schema parse。 */
   value: AiStructuredOutputValue
   createdAt: Date
@@ -22,9 +26,11 @@ export interface StructuredOutputRecord {
 
 export interface AiStructuredOutputRepository {
   create: (
-    input: Omit<StructuredOutputRecord, 'id' | 'createdAt'> & {
+    input: Omit<StructuredOutputRecord, 'id' | 'createdAt' | 'visibility' | 'mode'> & {
       id?: string
       createdAt?: Date
+      visibility?: string | null
+      mode?: string | null
     },
   ) => StructuredOutputRecord
   listByRun: (runId: string) => StructuredOutputRecord[]
@@ -41,6 +47,8 @@ export function createAiStructuredOutputRepository(db: AppDatabase): AiStructure
     contractVersion: row.contractVersion,
     schemaHash: row.schemaHash,
     renderKind: row.renderKind,
+    visibility: row.visibility,
+    mode: row.mode,
     value: parseStoredJson({
       column: 'ai_structured_outputs.value_json',
       json: row.valueJson,
@@ -61,6 +69,8 @@ export function createAiStructuredOutputRepository(db: AppDatabase): AiStructure
         contractVersion: input.contractVersion,
         schemaHash: input.schemaHash,
         renderKind: input.renderKind,
+        visibility: input.visibility ?? null,
+        mode: input.mode ?? null,
         valueJson: JSON.stringify(aiStructuredOutputValueSchema.parse(input.value)),
         createdAt: input.createdAt ?? new Date(),
       }

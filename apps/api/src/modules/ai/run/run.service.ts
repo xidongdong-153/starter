@@ -5,6 +5,7 @@ import type {
   AgentRun,
   AgentRunSnapshot,
   AiModelRef,
+  AiRunResolvedManifest,
   ApiErrorCode,
   FollowUpAgentRunInput,
   RunEvent,
@@ -49,7 +50,9 @@ import { applyRunEvent, createRunLiveSnapshot, toAgentRunLiveSnapshot } from './
 import { toAgentRun, toStarterRunData } from './run.presenter.js'
 import type { AiAgentRunRecord, AiAgentRunRepository } from './run.repository.js'
 import type { AiRunEventRepository, RunEventDraft } from './run-event.repository.js'
+import type { AiRunResolvedManifestRepository } from './run-resolved-manifest.repository.js'
 import type { AiRunTraceRepository } from './run-trace.repository.js'
+import { buildResolvedRunManifest } from './resolved-manifest.js'
 import { AsyncEventQueue } from '@api/infra/agent/pi-event-mapper.js'
 import { RunEventPublisher } from './run-event.publisher.js'
 
@@ -110,6 +113,8 @@ export interface AiAgentRunService {
   structuredOutputs: (access: RuntimeAccessContext, sessionId: string, runId: string) => StructuredOutputList
   /** Admin 读取 Run 的全部结构化输出，value 不打码。 */
   adminStructuredOutputs: (runId: string) => StructuredOutputList
+  /** 读回 Run 启动时固化的 resolved manifest；不存在（Run 未启动成功）返回 null。 */
+  describeResolvedManifest: (runId: string) => AiRunResolvedManifest | null
   recoverInterrupted: () => Promise<RunRecoveryReport>
 }
 
@@ -141,8 +146,10 @@ export function createAiAgentRunService(input: {
   eventRepository: AiRunEventRepository
   traceRepository?: AiRunTraceRepository
   structuredOutputRepository?: AiStructuredOutputRepository
-  /** contract 渲染元数据（visibility / mode）的唯一来源，读取路径必需。 */
+  /** contract 渲染元数据（visibility / mode）的来源之一；表内值优先，NULL 回退。 */
   outputContractRegistry: AiOutputContractRegistry
+  /** resolved manifest 持久化；startRun 必需。 */
+  resolvedManifestRepository?: AiRunResolvedManifestRepository
   /** 附件解析：归属校验 + 读字节转 base64；带附件的输入必需。 */
   resolveAttachments: AiAttachmentResolver['resolveForRequest']
   /** 模型能力查询：目标模型是否支持图片输入，统一查 runtime 模型表。 */
@@ -175,6 +182,7 @@ export function createAiAgentRunService(input: {
   const readiness = input.readiness ?? Promise.resolve()
   const structuredOutputRepository = input.structuredOutputRepository
   const outputContractRegistry = input.outputContractRegistry
+  const resolvedManifestRepository = input.resolvedManifestRepository
   const eventRepository = input.eventRepository
   const telemetry = input.telemetry ?? NOOP_TELEMETRY_CONTEXT
   /** 活跃 Run 的进程内快照，Run 终态后立即移除。 */
@@ -283,6 +291,11 @@ export function createAiAgentRunService(input: {
       registry.release(lease)
       laneLeaseStore.release({ sessionId, lane, owner: laneLease })
       throw new Error('Run Event repository 未配置')
+    }
+    if (!resolvedManifestRepository) {
+      registry.release(lease)
+      laneLeaseStore.release({ sessionId, lane, owner: laneLease })
+      throw new Error('Run resolved manifest repository 未配置')
     }
     const events = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS)
     // 关联上下文由 Run Service 创建，向下传给 Executor、事件映射、模型流和 Tool adapter。
@@ -397,6 +410,43 @@ export function createAiAgentRunService(input: {
       throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, '创建 Agent Run 失败', 500)
     }
 
+    // resolved manifest 在 run row 之后、executor 启动前固化；写入失败按
+    // 启动失败收尾（释放两层 lease），不存在无 manifest 的 starting/running Run。
+    const manifest = buildResolvedRunManifest({
+      agentId: resolved.id,
+      agentRevision: resolved.revision,
+      model: resolved.model,
+      systemPrompt: resolved.manifestFacts.systemPrompt,
+      skills: resolved.manifestFacts.skills,
+      tools: resolved.tools,
+      outputContract: resolved.outputContract,
+    })
+
+    try {
+      resolvedManifestRepository.create({
+        runId,
+        manifestHash: manifest.manifestHash,
+        manifestJson: JSON.stringify(manifest),
+        now: new Date(),
+      })
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Run resolved manifest 写入失败')
+      runTelemetry.close({
+        attributes: {
+          'starter.ai.run.outcome': 'failed',
+          'starter.ai.error.code': ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+          'starter.ai.error.category': 'storage',
+        },
+        status: { status: 'error' },
+      })
+      void finalizeRun(context, {
+        status: 'failed',
+        finalEntryId: null,
+        errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+      })
+      return { runId, events }
+    }
+
     let prepared: PreparedAgentExecution
     try {
       prepared = executor.prepare({
@@ -422,6 +472,8 @@ export function createAiAgentRunService(input: {
                       contractVersion: contract.version,
                       schemaHash: contract.schemaHash,
                       renderKind: contract.renderKind,
+                      visibility: contract.visibility,
+                      mode: contract.mode,
                       value,
                     }),
                   publish: (event) => {
@@ -526,9 +578,10 @@ export function createAiAgentRunService(input: {
   }
 
   /**
-   * 结构化输出读取路径。contract resolve 不到（已从代码注册表移除）的记录
-   * 跳过并记 WARN：registry 是渲染元数据的唯一来源，不可渲染的输出不返回。
-   * contract ref 组装与 session transcript 回放共用 toStructuredOutputContractRef。
+   * 结构化输出读取路径。visibility/mode 取表内值（emit 时刻的事实），
+   * 历史 NULL 行回退 registry 当前定义；两者都拿不到（contract 已移除且
+   * 行无值）跳过并记 WARN。contract ref 组装与 session transcript 回放
+   * 共用 toStructuredOutputContractRef。
    */
   function listStructuredOutputs(runId: string, includeAdminValues: boolean): StructuredOutputList {
     const records = structuredOutputRepository?.listByRun(runId) ?? []
@@ -538,8 +591,8 @@ export function createAiAgentRunService(input: {
         name: record.contractName,
         version: record.contractVersion,
       })
-      const ref = contract ? toStructuredOutputContractRef(record, contract) : null
-      if (!contract || !ref) {
+      const ref = toStructuredOutputContractRef(record, contract)
+      if (!ref) {
         logger.warn(
           {
             runId,
@@ -547,14 +600,14 @@ export function createAiAgentRunService(input: {
             contractName: record.contractName,
             contractVersion: record.contractVersion,
           },
-          'Structured Output contract 已从注册表移除，读取时跳过该条',
+          'Structured Output 无法渲染（contract 已移除且无表内可见性），读取时跳过该条',
         )
         continue
       }
       items.push({
         referenceId: record.id,
         contract: ref,
-        value: includeAdminValues || contract.visibility === 'product' ? record.value : null,
+        value: includeAdminValues || ref.visibility === 'product' ? record.value : null,
         createdAt: record.createdAt.toISOString(),
       })
     }
@@ -569,6 +622,10 @@ export function createAiAgentRunService(input: {
   function adminStructuredOutputs(runId: string): StructuredOutputList {
     if (!repository.findById(runId)) throw notFound()
     return listStructuredOutputs(runId, true)
+  }
+
+  function describeResolvedManifest(runId: string): AiRunResolvedManifest | null {
+    return resolvedManifestRepository?.findByRunId(runId) ?? null
   }
 
   function timeline(
@@ -1089,6 +1146,7 @@ export function createAiAgentRunService(input: {
     subscribe,
     structuredOutputs,
     adminStructuredOutputs,
+    describeResolvedManifest,
     abort,
     steer,
     followUp,

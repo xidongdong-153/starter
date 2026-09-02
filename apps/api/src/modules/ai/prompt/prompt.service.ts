@@ -26,6 +26,19 @@ export interface AiPromptService {
   resolveSystemPromptContent: (systemPromptId: string | null) => string | null
   getGlobalSystemPromptId: () => string | null
   assertSystemPromptAvailable: (systemPromptId: string | null) => void
+  /** 当前 revision（主表 current_revision）；不存在或未启用返回 null。 */
+  getSystemPromptRevision: (systemPromptId: string) => number | null
+  /** 读取不可变 revision 行内容；不存在返回 null。 */
+  findSystemPromptRevisionContent: (systemPromptId: string, revision: number) => string | null
+  /**
+   * 按 pinned revision 读取内容：revision 行存在时返回该行内容与 revision；
+   * 行缺失（绕过 repository 写入的数据）回退主表当前内容与当前 revision。
+   * 不存在或未启用返回 null。
+   */
+  resolveSystemPromptForManifest: (
+    systemPromptId: string,
+    pinnedRevision: number | null,
+  ) => { content: string; revision: number } | null
 }
 
 export function createAiPromptService(repository: AiPromptRepository): AiPromptService {
@@ -142,6 +155,23 @@ export function createAiPromptService(repository: AiPromptRepository): AiPromptS
       if (!record || !record.enabled) {
         throw new AppError(ApiErrorCodes.AI_PROMPT_NOT_FOUND, '系统提示词不存在或未启用', 404)
       }
+    },
+    getSystemPromptRevision(systemPromptId) {
+      const record = repository.findSystemPromptById(systemPromptId)
+      if (!record || !record.enabled) return null
+      return record.currentRevision
+    },
+    findSystemPromptRevisionContent(systemPromptId, revision) {
+      return repository.findSystemPromptRevisionContent(systemPromptId, revision) ?? null
+    },
+    resolveSystemPromptForManifest(systemPromptId, pinnedRevision) {
+      const record = repository.findSystemPromptById(systemPromptId)
+      if (!record || !record.enabled) return null
+      if (pinnedRevision !== null) {
+        const content = repository.findSystemPromptRevisionContent(systemPromptId, pinnedRevision)
+        if (content !== undefined) return { content, revision: pinnedRevision }
+      }
+      return { content: record.content, revision: record.currentRevision }
     },
   }
 

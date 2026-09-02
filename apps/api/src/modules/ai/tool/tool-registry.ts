@@ -1,6 +1,7 @@
 import { PermissionKeys, type AiToolRef, type AiToolSummary, type Permission } from '@starter/contracts'
 import { z, type ZodType } from 'zod'
 import type { PrincipalContext, ResourceScope } from '@api/modules/ai/principal.js'
+import { canonicalJson, sha256Hex } from '@api/modules/ai/run/resolved-manifest.js'
 
 export interface AiToolExecutionContext {
   principal: PrincipalContext
@@ -63,6 +64,8 @@ export interface RegisteredAiTool {
   scope: AiToolScope
   requiredPermission: Permission | null
   internal?: boolean
+  /** 注册时对 name/version/description/timeoutMs/inputSchema 计算的 canonical SHA-256；相同定义重复注册不变。 */
+  manifestHash: string
   execute: (context: AiToolExecutionContext, input: unknown) => Promise<AiToolResult>
 }
 
@@ -79,7 +82,7 @@ export interface AiToolRegistry {
 }
 
 export function defineAiTool<TInput>(input: AiToolDefinitionInput<TInput>): RegisteredAiTool {
-  validateToolDefinition(input)
+  const schemaJson = validateToolDefinition(input)
   return Object.freeze({
     name: input.name,
     version: input.version,
@@ -89,8 +92,26 @@ export function defineAiTool<TInput>(input: AiToolDefinitionInput<TInput>): Regi
     scope: input.scope,
     requiredPermission: input.requiredPermission,
     internal: input.internal,
+    manifestHash: toolManifestHash({
+      name: input.name,
+      version: input.version,
+      description: input.description,
+      timeoutMs: input.timeoutMs,
+      inputSchema: schemaJson,
+    }),
     execute: (context: AiToolExecutionContext, value: unknown) => input.execute(context, value as TInput),
   })
+}
+
+/** Tool manifest hash 的输入结构；hash 稳定性测试用同一结构断言。 */
+export function toolManifestHash(input: {
+  name: string
+  version: string
+  description: string
+  timeoutMs: number
+  inputSchema: unknown
+}): string {
+  return sha256Hex(canonicalJson(input))
 }
 
 export function createAiToolRegistry(tools: readonly RegisteredAiTool[]): AiToolRegistry {
@@ -134,12 +155,13 @@ function toolRefKey(tool: { name: string; version: string }): string {
   return `${tool.name}@${tool.version}`
 }
 
+/** 校验定义并返回 canonical hash 用的 JSON Schema（draft-7）；定义无效时抛错。 */
 function validateToolDefinition(
   tool: Pick<
     RegisteredAiTool,
     'name' | 'version' | 'description' | 'inputSchema' | 'timeoutMs' | 'scope' | 'requiredPermission' | 'internal'
   >,
-): void {
+): Record<string, unknown> {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(tool.name)) {
     throw new Error(`AI 工具名称无效: ${tool.name}`)
   }
@@ -163,4 +185,5 @@ function validateToolDefinition(
   }
   const schema = z.toJSONSchema(tool.inputSchema, { target: 'draft-7' })
   if (schema.type !== 'object') throw new Error(`AI 工具参数必须是 object schema: ${tool.name}`)
+  return schema
 }

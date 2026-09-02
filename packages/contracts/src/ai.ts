@@ -1017,6 +1017,61 @@ export const agentRunSnapshotSchema = z
 
 export type AgentRunSnapshot = z.infer<typeof agentRunSnapshotSchema>
 
+/** hash 十六进制（SHA-256）；manifest、内容与 schema hash 共用同一个格式约束。 */
+const sha256HexSchema = z.string().regex(/^[a-f0-9]{64}$/u)
+
+/**
+ * Run 启动时固化的解析事实：当时实际使用的模型、Prompt、Skill、Tool 与
+ * Output Contract。只含版本引用与 hash，不含 Prompt 正文、schema JSON、
+ * secret 或 handler 信息；资源后续修改不改变旧 Run 的 manifest。
+ */
+export const aiRunResolvedManifestSystemPromptSchema = z.strictObject({
+  /** 预设 Prompt 引用；内联配置为 null。 */
+  promptId: uuidSchema.nullable(),
+  revision: z.number().int().min(1).nullable(),
+  /** 预设时为 Prompt 内容 hash；内联时为内联文本 hash。 */
+  contentHash: sha256HexSchema,
+  /** true = 内联文本；false = 预设引用。 */
+  inline: z.boolean(),
+})
+export type AiRunResolvedManifestSystemPrompt = z.infer<typeof aiRunResolvedManifestSystemPromptSchema>
+
+export const aiRunResolvedManifestSkillSchema = z.strictObject({
+  skillId: uuidSchema,
+  revision: z.number().int().min(1),
+  contentHash: sha256HexSchema,
+})
+export type AiRunResolvedManifestSkill = z.infer<typeof aiRunResolvedManifestSkillSchema>
+
+export const aiRunResolvedManifestToolSchema = z.strictObject({
+  name: aiToolNameSchema,
+  version: aiToolVersionSchema,
+  manifestHash: sha256HexSchema,
+})
+export type AiRunResolvedManifestTool = z.infer<typeof aiRunResolvedManifestToolSchema>
+
+export const aiRunResolvedManifestOutputContractSchema = z.strictObject({
+  name: aiOutputContractRefSchema.shape.name,
+  version: aiOutputContractRefSchema.shape.version,
+  schemaHash: sha256HexSchema,
+})
+export type AiRunResolvedManifestOutputContract = z.infer<typeof aiRunResolvedManifestOutputContractSchema>
+
+export const aiRunResolvedManifestSchema = z.strictObject({
+  /** 预设 Agent 启动时非空；内联配置为 null（与 agentId 成对）。 */
+  agentRevision: z.number().int().min(1).nullable(),
+  agentId: uuidSchema.nullable(),
+  /** providerId/modelId 规范化引用。 */
+  modelRef: z.string().min(1).max(240),
+  systemPrompt: aiRunResolvedManifestSystemPromptSchema.nullable(),
+  skills: z.array(aiRunResolvedManifestSkillSchema),
+  tools: z.array(aiRunResolvedManifestToolSchema),
+  outputContract: aiRunResolvedManifestOutputContractSchema.nullable(),
+  /** 其余全部字段的 canonical JSON SHA-256；计算时排除自身。 */
+  manifestHash: sha256HexSchema,
+})
+export type AiRunResolvedManifest = z.infer<typeof aiRunResolvedManifestSchema>
+
 export const agentRunLiveSnapshotSchema = z.strictObject({
   lastSequence: z.number().int().min(0),
   turn: z.number().int().min(0),

@@ -33,6 +33,7 @@ import {
 import {
   createAiAgentRunRepository,
   createAiRunEventRepository,
+  createAiRunResolvedManifestRepository,
   createAiRunTraceRepository,
   createAiRunLifecycleRepository,
   createAiAgentRunService,
@@ -196,6 +197,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     repository: createAiAgentRunRepository(runtime.db, sessionRepository),
     eventRepository: createAiRunEventRepository(runtime.db),
     traceRepository: createAiRunTraceRepository(runtime.db),
+    resolvedManifestRepository: createAiRunResolvedManifestRepository(runtime.db),
     sessionRepository,
     sessionStore: runtime.agentSessionStore,
     agentService: agentDefinitionService,

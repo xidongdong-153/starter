@@ -22,10 +22,25 @@ import { appendSkillDescriptions } from '../skill/skill-tools.js'
 import type { AiSkillRecord, AiSkillRepository } from '../skill/skill.repository.js'
 import { AppError } from '@api/shared/app-error.js'
 import { generateId } from '@api/shared/id.js'
+import { sha256Hex } from '../run/resolved-manifest.js'
 
 import { AiAgentDefinitionRevisionConflictError } from './agent.repository.js'
 import type { AiAgentDefinitionRecord, AiAgentDefinitionRepository } from './agent.repository.js'
 import { parseAgentDefinitionConfig, toAgentDefinitionDetail, toAgentDefinitionSummary } from './agent.presenter.js'
+
+/**
+ * Run 启动时固化的解析事实：资源版本引用与内容 hash。只含 revision 与
+ * SHA-256，不含 Prompt 正文；内联文本只存 hash，不落库。
+ */
+export interface ResolvedAgentManifestFacts {
+  systemPrompt: {
+    promptId: string | null
+    revision: number | null
+    contentHash: string
+    inline: boolean
+  } | null
+  skills: Array<{ skillId: string; revision: number; contentHash: string }>
+}
 
 /**
  * Run 启动时的执行配置解析结果。预设 Agent 启动时 id/revision 非空；
@@ -42,6 +57,8 @@ export interface ResolvedAgentDefinition {
   outputContract: ResolvedAiOutputContract | null
   thinkingLevel: AgentDefinitionConfig['thinkingLevel']
   maxTurns: number
+  /** resolved manifest 的组装输入；由 resolve/resolveInline 一并返回。 */
+  manifestFacts: ResolvedAgentManifestFacts
 }
 
 export interface AiAgentDefinitionService {
@@ -80,6 +97,10 @@ export function createAiAgentDefinitionService(input: {
 }): AiAgentDefinitionService {
   const { repository, resolveModel, promptService, skillRepository, toolRegistry, outputContractRegistry } = input
 
+  /** config 引用资源的当前 revision 记录；资源校验已由 validateConfig 保证。 */
+  const configResourceRevisions = (config: AgentDefinitionConfig) =>
+    makeConfigResourceRevisions(config, promptService, skillRepository)
+
   function listPublic(query: AgentDefinitionListQuery) {
     const result = repository.list({ ...query, status: 'enabled' })
     return {
@@ -113,12 +134,15 @@ export function createAiAgentDefinitionService(input: {
   async function create(input: CreateAgentDefinitionInput, actorId: string): Promise<AgentDefinitionDetail> {
     const config = normalizeConfig(input.config ?? defaultAgentDefinitionConfig)
     await validateConfig(config, false)
+    const revisions = configResourceRevisions(config)
     try {
       const record = repository.create({
         id: generateId(),
         name: input.name,
         description: input.description ?? '',
         configJson: JSON.stringify(config),
+        systemPromptRevision: revisions.systemPromptRevision,
+        skillRevisionsJson: revisions.skillRevisionsJson,
         createdBy: actorId,
         updatedBy: actorId,
         now: new Date(),
@@ -140,6 +164,9 @@ export function createAiAgentDefinitionService(input: {
       const nextConfig = input.config ? normalizeConfig(input.config) : currentConfig
       const configChanged = !sameConfig(currentConfig, nextConfig)
       if (input.config && configChanged) await validateConfig(nextConfig, current.status === 'enabled')
+      // config 变化时记录新引用资源的当前 revision；不变时保留既有记录列，
+      // 资源更新已由传播路径同步刷新过。
+      const revisions = configChanged ? configResourceRevisions(nextConfig) : null
 
       try {
         const record = repository.update({
@@ -147,6 +174,8 @@ export function createAiAgentDefinitionService(input: {
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(configChanged ? { configJson: JSON.stringify(nextConfig) } : {}),
+          ...(revisions ? { systemPromptRevision: revisions.systemPromptRevision } : {}),
+          ...(revisions ? { skillRevisionsJson: revisions.skillRevisionsJson } : {}),
           expectedRevision: current.revision,
           expectedStatus: current.status,
           revision: current.revision + (configChanged ? 1 : 0),
@@ -216,7 +245,9 @@ export function createAiAgentDefinitionService(input: {
           model,
           systemPromptId,
           systemPromptText: null,
+          systemPromptRevision: record.systemPromptRevision,
           skillIds: config.skillIds,
+          skillRevisions: parseSkillRevisionsRecord(record.skillRevisionsJson),
           toolRefs: config.toolRefs,
           outputContract: config.outputContract,
         },
@@ -252,7 +283,9 @@ export function createAiAgentDefinitionService(input: {
         model: input.model,
         systemPromptId: input.systemPromptId ?? null,
         systemPromptText: input.systemPrompt ?? null,
+        systemPromptRevision: null,
         skillIds: input.skillIds,
+        skillRevisions: null,
         toolRefs: input.toolRefs,
         outputContract: input.outputContract,
       },
@@ -283,29 +316,69 @@ export function createAiAgentDefinitionService(input: {
    * 预设 Agent 与内联配置共用的解析核心：模型 allowlist、系统提示词、
    * 技能启用、工具 scope、输出契约元数据。模型不在 allowlist 时抛
    * AI_MODEL_NOT_ALLOWED（403），由预设路径决定是否改写错误码。
+   *
+   * manifest facts：预设 Agent 按 Agent 行记录的 pinned revision 读不可变
+   * revision 行内容（保证同一 Agent revision 解析出同一 hash）；内联配置
+   * 读当前值。revision 行缺失（绕过 repository 写入的数据）回退主表当前值。
    */
   async function resolveConfigCore(
     input: {
       model: NonNullable<AgentDefinitionConfig['model']>
       systemPromptId: string | null
       systemPromptText: string | null
+      /** 预设 Agent 的 pinned Prompt revision；内联为 null。 */
+      systemPromptRevision: number | null
       skillIds: string[]
+      /** 预设 Agent 的 pinned Skill revision 映射；内联为 null。 */
+      skillRevisions: Record<string, number> | null
       toolRefs: AiToolRef[]
       outputContract: AiOutputContractRef | null
     },
     access: RuntimeAccessContext,
   ): Promise<ResolvedConfigCore> {
     const model = await resolveModel(input.model)
-    const rawSystemPrompt =
-      input.systemPromptText !== null
-        ? input.systemPromptText
-        : input.systemPromptId !== null
-          ? promptService.resolveSystemPromptContent(input.systemPromptId)
-          : null
-    if (!rawSystemPrompt) throw invalidConfig('systemPrompt')
+    let rawSystemPrompt: string
+    let systemPromptFacts: ResolvedAgentManifestFacts['systemPrompt']
+    if (input.systemPromptText !== null) {
+      rawSystemPrompt = input.systemPromptText
+      systemPromptFacts = {
+        promptId: null,
+        revision: null,
+        contentHash: sha256Hex(input.systemPromptText),
+        inline: true,
+      }
+    } else if (input.systemPromptId !== null) {
+      const resolved = promptService.resolveSystemPromptForManifest(input.systemPromptId, input.systemPromptRevision)
+      if (!resolved || resolved.content.length === 0) throw invalidConfig('systemPrompt')
+      rawSystemPrompt = resolved.content
+      systemPromptFacts = {
+        promptId: input.systemPromptId,
+        revision: resolved.revision,
+        contentHash: sha256Hex(resolved.content),
+        inline: false,
+      }
+    } else {
+      throw invalidConfig('systemPrompt')
+    }
+    const skillFacts: ResolvedAgentManifestFacts['skills'] = []
     const skills = input.skillIds.map((id) => {
       const skill = skillRepository.findSkillById(id)
       if (!skill || !skill.enabled) throw invalidConfig('skill')
+      const pinned = input.skillRevisions?.[id] ?? null
+      let revision = skill.currentRevision
+      let content = skill.content
+      if (pinned !== null) {
+        const revisionContent = skillRepository.findSkillRevisionContent(id, pinned)
+        if (revisionContent !== undefined) {
+          revision = pinned
+          content = revisionContent
+        }
+      }
+      skillFacts.push({
+        skillId: skill.id,
+        revision,
+        contentHash: sha256Hex(content),
+      })
       return {
         id: skill.id,
         name: skill.name,
@@ -326,7 +399,14 @@ export function createAiAgentDefinitionService(input: {
       return tool
     })
     const outputContract = input.outputContract ? resolveOutputContract(input.outputContract) : null
-    return { model, systemPrompt, skills, tools, outputContract }
+    return {
+      model,
+      systemPrompt,
+      skills,
+      tools,
+      outputContract,
+      manifestFacts: { systemPrompt: systemPromptFacts, skills: skillFacts },
+    }
   }
 
   async function validateConfig(config: AgentDefinitionConfig, requireExecutable: boolean): Promise<void> {
@@ -418,6 +498,7 @@ interface ResolvedConfigCore {
   skills: Array<Pick<AiSkillRecord, 'id' | 'name' | 'description'>>
   tools: RegisteredAiTool[]
   outputContract: ResolvedAiOutputContract | null
+  manifestFacts: ResolvedAgentManifestFacts
 }
 
 function normalizeConfig(config: AgentDefinitionConfig): AgentDefinitionConfig {
@@ -478,6 +559,46 @@ function sameToolRefs(left: AiToolRef[], right: AiToolRef[]): boolean {
 
 function sameStringArray(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => value === right[index])
+}
+
+/** Agent 行的 skill_revisions_json 解析；空值或非法 JSON 返回 null。 */
+function parseSkillRevisionsRecord(skillRevisionsJson: string | null): Record<string, number> | null {
+  if (!skillRevisionsJson) return null
+  try {
+    const parsed = JSON.parse(skillRevisionsJson) as unknown
+    if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) return null
+    const result: Record<string, number> = {}
+    for (const [key, value] of Object.entries(parsed)) {
+      if (typeof value !== 'number') return null
+      result[key] = value
+    }
+    return result
+  } catch {
+    return null
+  }
+}
+
+/** config 引用资源的当前 revision 记录；资源缺失或未启用按配置无效抛出。 */
+function makeConfigResourceRevisions(
+  config: AgentDefinitionConfig,
+  promptService: AiPromptService,
+  skillRepository: AiSkillRepository,
+): { systemPromptRevision: number | null; skillRevisionsJson: string | null } {
+  let systemPromptRevision: number | null = null
+  if (config.systemPromptId) {
+    systemPromptRevision = promptService.getSystemPromptRevision(config.systemPromptId)
+    if (systemPromptRevision === null) throw invalidConfig('systemPrompt')
+  }
+  const skillRevisions: Record<string, number> = {}
+  for (const skillId of config.skillIds) {
+    const skill = skillRepository.findSkillById(skillId)
+    if (!skill || !skill.enabled) throw invalidConfig('skill')
+    skillRevisions[skillId] = skill.currentRevision
+  }
+  return {
+    systemPromptRevision,
+    skillRevisionsJson: Object.keys(skillRevisions).length > 0 ? JSON.stringify(skillRevisions) : null,
+  }
 }
 
 function invalidConfig(resource?: string): AppError {

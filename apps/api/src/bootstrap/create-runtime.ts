@@ -13,6 +13,7 @@ import type { AiToolRegistry } from '@api/modules/ai/tool/tool-registry.js'
 import { createAiToolRegistry } from '@api/modules/ai/tool/tool-registry.js'
 import type { AiOutputContractRegistry } from '@api/modules/ai/output/output-contract-registry.js'
 import { createAiOutputContractRegistry } from '@api/modules/ai/output/output-contract-registry.js'
+import { createAiOutputContractSnapshotRepository } from '@api/modules/ai/output/output-contract-snapshot.repository.js'
 import { createTestAiTools } from '@api/modules/ai/tool/test-tools.js'
 import type { LaneLeaseStore, LaneLeaseStoreOptions } from '@api/modules/ai/run/lane-lease.js'
 import { createLaneLeaseStore } from '@api/modules/ai/run/lane-lease.js'
@@ -103,7 +104,13 @@ export function createRuntime(input: NodeJS.ProcessEnv = process.env, deps: Runt
     deps.aiGateway ?? createAiGateway(ai.getModelsCollection(), env.AI_REQUEST_TIMEOUT_MS, ai.getProviderRequestEnv)
   const mailer = deps.mailer ?? createMailer(env, logger)
   const aiTools = deps.aiTools ?? createAiToolRegistry(env.AI_TEST_TOOLS_ENABLED ? createTestAiTools() : [])
-  const aiOutputContracts = deps.aiOutputContracts ?? createAiOutputContractRegistry()
+  // define 时写入快照表，历史 structured output 读取不依赖进程内注册表；
+  // 注入自定义 registry 的调用方（测试）自行决定是否携带 snapshotStore。
+  const aiOutputContracts =
+    deps.aiOutputContracts ??
+    createAiOutputContractRegistry([], {
+      snapshotStore: createAiOutputContractSnapshotRepository(database.db),
+    })
   const aiTelemetry = createAiTelemetryContext(deps.telemetryContext, {
     onFailure: (failure) => createChildLogger(logger, 'ai-telemetry').warn(failure, 'AI telemetry 记录失败，已忽略'),
   })

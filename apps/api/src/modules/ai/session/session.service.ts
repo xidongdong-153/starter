@@ -159,9 +159,11 @@ export function createAiAgentSessionService(input: {
   }
 
   /**
-   * 取回本页 toolResult entry 引用的结构化输出，value 按 registry 当前可见性打码
+   * 取回本页 toolResult entry 引用的结构化输出，value 按可见性打码
    * （product 才带值，与 run 模块 structured-outputs 路由一致）。
-   * contract resolve 不到的条目跳过并记 WARN，对应 item 不带 structuredOutput 字段。
+   * visibility/mode 取表内值（emit 时刻的事实），历史 NULL 行回退 registry
+   * 当前定义；两者都拿不到的条目跳过并记 WARN，对应 item 不带 structuredOutput
+   * 字段。contract ref 组装与 run 模块共用 toStructuredOutputContractRef。
    */
   function readStructuredOutputsForTranscript(
     entries: readonly Entry[],
@@ -177,8 +179,8 @@ export function createAiAgentSessionService(input: {
         name: record.contractName,
         version: record.contractVersion,
       })
-      const ref = contract ? toStructuredOutputContractRef(record, contract) : null
-      if (!contract || !ref) {
+      const ref = toStructuredOutputContractRef(record, contract)
+      if (!ref) {
         logger.warn(
           {
             sessionId,
@@ -187,13 +189,13 @@ export function createAiAgentSessionService(input: {
             contractName: record.contractName,
             contractVersion: record.contractVersion,
           },
-          'Structured Output contract 已从注册表移除，transcript 跳过该条',
+          'Structured Output 无法渲染（contract 已移除且无表内可见性），transcript 跳过该条',
         )
         continue
       }
       outputs.set(record.id, {
         contract: ref,
-        value: contract.visibility === 'product' ? record.value : null,
+        value: ref.visibility === 'product' ? record.value : null,
       })
     }
     return outputs

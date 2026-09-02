@@ -38,6 +38,10 @@ export interface AiAgentDefinitionRepository {
     name: string
     description: string
     configJson: string
+    /** config 引用的 System Prompt 当前 revision；无 prompt 引用时 null。 */
+    systemPromptRevision: number | null
+    /** `{"<skillId>": <revision>}`；无技能引用时 null。 */
+    skillRevisionsJson: string | null
     createdBy: string
     updatedBy: string
     now: Date
@@ -50,6 +54,9 @@ export interface AiAgentDefinitionRepository {
     name?: string
     description?: string
     configJson?: string
+    /** config 变化时同步刷新资源 revision 记录；不传时保持现有列。 */
+    systemPromptRevision?: number | null
+    skillRevisionsJson?: string | null
     expectedRevision: number
     expectedStatus: string
     revision: number
@@ -72,6 +79,8 @@ export function createAiAgentDefinitionRepository(db: AppDatabase): AiAgentDefin
     name: string
     description: string
     configJson: string
+    systemPromptRevision: number | null
+    skillRevisionsJson: string | null
     createdBy: string
     updatedBy: string
     now: Date
@@ -85,6 +94,8 @@ export function createAiAgentDefinitionRepository(db: AppDatabase): AiAgentDefin
           status: 'draft',
           revision: 1,
           configJson: input.configJson,
+          systemPromptRevision: input.systemPromptRevision,
+          skillRevisionsJson: input.skillRevisionsJson,
           createdBy: input.createdBy,
           updatedBy: input.updatedBy,
           createdAt: input.now,
@@ -134,6 +145,8 @@ export function createAiAgentDefinitionRepository(db: AppDatabase): AiAgentDefin
     name?: string
     description?: string
     configJson?: string
+    systemPromptRevision?: number | null
+    skillRevisionsJson?: string | null
     expectedRevision: number
     expectedStatus: string
     revision: number
@@ -147,6 +160,8 @@ export function createAiAgentDefinitionRepository(db: AppDatabase): AiAgentDefin
           ...(input.name !== undefined ? { name: input.name } : {}),
           ...(input.description !== undefined ? { description: input.description } : {}),
           ...(input.configJson !== undefined ? { configJson: input.configJson } : {}),
+          ...(input.systemPromptRevision !== undefined ? { systemPromptRevision: input.systemPromptRevision } : {}),
+          ...(input.skillRevisionsJson !== undefined ? { skillRevisionsJson: input.skillRevisionsJson } : {}),
           revision: input.revision,
           updatedBy: input.updatedBy,
           updatedAt: input.now,

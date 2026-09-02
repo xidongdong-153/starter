@@ -30,6 +30,7 @@ interface AiAgentRunService {
   steer(access: RuntimeAccessContext, sessionId: string, runId: string, text: string): AgentRun
   followUp(access: RuntimeAccessContext, sessionId: string, runId: string, text: string): AgentRun
   recoverInterrupted(): Promise<RunRecoveryReport>
+  describeResolvedManifest(runId: string): AiRunResolvedManifest | null
 }
 ```
 
@@ -74,7 +75,9 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - `activeRun` 的判据只有主库 Run 行的 `starting` / `running`，不查 `ActiveRunRegistry`：registry 是进程内索引，进程重启后 `recoverInterrupted` 已经把非终态 Run 落成 `interrupted`，此时应该返回 null，让客户端保持静态历史。查询参数 `lane` 默认 `main`，响应 data 与 `GET /runs/{runId}` 同源（`toAgentRun(record, readLiveSnapshot(record))`），没有在跑的 Run 时 data 是 null 而不是 404。
 - SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。两处 SSE handler（创建流与恢复流）的心跳写入必须都是真实换行 `": heartbeat\n\n"`——写字面量 `\\n` 会产出永不封帧的垃圾字节并粘连下一帧。
 - `POST /runs` 按 Accept 分流：请求 Accept 含 `application/json` 且不含 `text/event-stream` 时返回 JSON `{ ok, data: { runId }, meta }`，不订阅事件流（Run 照常执行，客户端用 `GET /runs/{runId}` + timeline 轮询）；缺省、`*/*` 或仅 `text/event-stream` 时维持 SSE，向后兼容既有客户端。
-- 结构化输出读取（运行面与 admin 两路）的可见性规则：contract `visibility=product` 时运行面返回 value、`visibility=admin` 时返回 `value: null`；admin 路由恒返回 value。contract ref 组装用 `toStructuredOutputContractRef`（`output/output-contract-registry.ts`）：`schemaHash` / `renderKind` 取表内记录（emit 时刻的事实），`visibility` / `mode` 取 registry 当前定义；该函数与 transcript 回放（session 模块）共用，改一处必须同步另一处。contract 已从代码注册表移除（`registry.find` 不到）的记录不返回，记 WARN——registry 是渲染元数据的唯一来源。
+- 结构化输出读取（运行面与 admin 两路）的可见性规则：contract `visibility=product` 时运行面返回 value、`visibility=admin` 时返回 `value: null`；admin 路由恒返回 value。contract ref 组装用 `toStructuredOutputContractRef`（`output/output-contract-registry.ts`）：`schemaHash` / `renderKind` / `visibility` / `mode` 都取表内记录（emit 时刻的事实）；存量行的 `visibility` / `mode` 为 NULL 时回退 registry 当前定义。该函数与 transcript 回放（session 模块）共用，改一处必须同步另一处。contract 已从代码注册表移除且行内无表内值的记录不返回，记 WARN；有表内值的仍可渲染。
+- Run 启动在 run row 之后、executor 启动之前写入 `ai_run_resolved_manifests`（manifest 只含资源 revision、content hash、tool manifestHash、contract schemaHash，无 Prompt 正文无 secret）。写入失败按 starting 失败收尾：发布 run.failed、释放两层 lease，不存在无 manifest 的 starting/running Run。`describeResolvedManifest(runId)` 读回经 `aiRunResolvedManifestSchema` 校验的 DTO。
+- Prompt/Skill 的 content、description、name（name 拼进 system prompt 的 available_skills 块且 read_skill 按 name 查找）变化都在单事务内追加 revision 行、刷新主表镜像、bump 引用 Agent 的 revision 与记录列；仅 enabled 变化不触发。resolve 按 Agent 行 pinned revision 读不可变 revision 行，行缺失时回退主表当前值（测试种子兼容）。不变量：Agent revision 变化当且仅当其执行输入可能变化。skill description 的历史 revision 行只存 content，description-only 变化产生的 revision 行与上一行内容相同，事后无法重建当时的 available_skills 块——这是已知边界。`read_skill` 执行期按 name 读主表当前内容，长 Run 中途更新 skill 会读到比 manifest 记录更新的内容，留阶段 C 处理。`ai_output_contract_snapshots` 表当前只写不读（define 时 upsert 全量元数据 + schema JSON），供阶段 D manifest presenter 使用，是预写存储。
 
 ## 4. Validation & Error Matrix
 
@@ -126,6 +129,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - 刷新恢复链路（`run-event-recovery.test.ts`，用挂住的 streamFn 把 Run 停在 running）：`GET /active-run` 返回该 Run 且 `status` 为 `running`；同一时刻 transcript 已含本轮 `user_message`、不含 `assistant_message`；断掉原来那条 SSE 后 Run 继续跑；用查到的 runId 连 `events/stream?afterSequence=0` 能收到从 sequence 1 开始的连续事件并以终态事件收尾；Run 进终态后 `GET /active-run` 的 data 为 null；他人查同一 session 的 `active-run` 返回 404。
 - 第三方接入链路（`apps/api/src/test/ai-third-party-access.test.ts`，Bearer product_app 视角）：CORS 预检覆盖 7 个运行面头；agent 公共列表只含 enabled、伪造 Bearer 401；`Accept: application/json` 启动返回 runId 后轮询到 completed 且 timeline 完整，显式 `text/event-stream` 仍走 SSE；structured-outputs 路由的 product/admin 可见性打码、admin 路由不打码、跨 scope 404；transcript 中 `emit_structured_output` 的 tool_activity 携带 structuredOutput。心跳修复无集成测试（15s 定时器不可观测），由两处写法一致性与既有 sse parser 测试覆盖。
 - lane lease（`apps/api/src/test/ai-lane-lease.test.ts`）：store 级条件更新（插入 token=1、未过期 busy、过期接管 token+1、旧 owner renew/release 无效果、`releaseExpired` 只删过期行）；双 runtime（`runDualRuntimeApps`，共享 Starter db、不同 `APP_INSTANCE_ID`）同 lane 互斥（一成功一 `AI.SESSION_BUSY`、主库单条非终态 Run、终态后可再启动）、不同 lane 不互斥；lease 被接管后旧 owner 终态落成 `interrupted` 且不删新 owner 的 lease 行；短 TTL / 续租间隔注入（`RuntimeDeps.laneLeaseOptions`）验证续租失败后 executor 中止；readiness 未 resolve 时 startRun 等待且不建 Run、不领 lease。双 runtime 底座共享同一个 Pi Session store 实例：Pi SQLite backend 对同一 session 只允许一个写者，两个 repository 打开同一文件会互相拒绝，与本组用例验证的 Starter lease 粒度无关。
+- resolved manifest（`apps/api/src/test/ai-resolved-manifest.test.ts`）：相同 Agent revision 两次 Run 相同 manifestHash；Prompt/Skill 的 content、description、name 更新都传播（资源 revision+1、引用 Agent revision+1、未引用不变、旧 Run manifest 不变）；内联配置 manifest（inline=true、contentHash 为内联文本 SHA-256、全文不落库）；manifest 写入失败 Run 落 failed 且两层 lease 释放；Tool manifestHash 稳定；contract 移除后历史输出按表内值渲染。
 
 ## 7. Wrong vs Correct
 
