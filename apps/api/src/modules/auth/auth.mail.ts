@@ -1,8 +1,8 @@
-import type { MailMessage } from "@api/infra/mail/index.js";
+import type { MailMessage } from '@api/infra/mail/index.js'
 
 interface AuthMailInput {
-  link: string;
-  name: string;
+  link: string
+  name: string
 }
 
 function escapeHtml(value: string): string {
@@ -10,36 +10,35 @@ function escapeHtml(value: string): string {
     /[&<>"']/g,
     (character) =>
       ({
-        "&": "&amp;",
-        "<": "&lt;",
-        ">": "&gt;",
-        '"': "&quot;",
-        "'": "&#39;",
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
       })[character] ?? character,
-  );
+  )
 }
 
-export type AuthMailBody = Omit<MailMessage, "to">;
+export type AuthMailBody = Omit<MailMessage, 'to'>
 
-const FONT_STACK =
-  '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif';
+const FONT_STACK = '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif'
 
-const BG = "#faf4ed"; // Rose Pine Dawn base
-const SURFACE = "#fffaf3"; // Rose Pine Dawn surface
-const BORDER = "#f2e9e1"; // Rose Pine Dawn overlay
-const TEXT = "#575279"; // Rose Pine Dawn text
-const MUTED = "#9893a5"; // Rose Pine Dawn muted
-const ACCENT = "#b4637a"; // Rose Pine Dawn love
-const LINK = "#286983"; // Rose Pine Dawn pine
+const BG = '#faf4ed' // Rose Pine Dawn base
+const SURFACE = '#fffaf3' // Rose Pine Dawn surface
+const BORDER = '#f2e9e1' // Rose Pine Dawn overlay
+const TEXT = '#575279' // Rose Pine Dawn text
+const MUTED = '#9893a5' // Rose Pine Dawn muted
+const ACCENT = '#b4637a' // Rose Pine Dawn love
+const LINK = '#286983' // Rose Pine Dawn pine
 
 interface MailShellParts {
-  preheader: string;
-  subject: string;
-  title: string;
-  paragraphs: string[];
-  ctaText: string;
-  ctaUrl: string;
-  note: string;
+  preheader: string
+  subject: string
+  title: string
+  paragraphs: string[]
+  ctaText: string
+  ctaUrl: string
+  note: string
 }
 
 /**
@@ -47,22 +46,14 @@ interface MailShellParts {
  * table 布局 + 全内联样式，兼容 Gmail / Outlook / Apple Mail；
  * 按钮下方附完整链接，防止邮件客户端屏蔽按钮。
  */
-function renderShell({
-  preheader,
-  subject,
-  title,
-  paragraphs,
-  ctaText,
-  ctaUrl,
-  note,
-}: MailShellParts): string {
-  const safeCtaUrl = escapeHtml(ctaUrl);
+function renderShell({ preheader, subject, title, paragraphs, ctaText, ctaUrl, note }: MailShellParts): string {
+  const safeCtaUrl = escapeHtml(ctaUrl)
   const paragraphsHtml = paragraphs
     .map(
       (paragraph) =>
         `<p style="margin: 0 0 14px; font-size: 15px; line-height: 24px; color: ${TEXT};">${escapeHtml(paragraph)}</p>`,
     )
-    .join("");
+    .join('')
 
   return `<!DOCTYPE html>
 <html lang="zh-CN">
@@ -128,71 +119,59 @@ function renderShell({
     </tr>
   </table>
 </body>
-</html>`;
+</html>`
 }
 
 /**
  * 验证邮件。link 指向 Admin 的 /verify-email?token= 页面，token 有效期 1 小时。
  */
-export function buildVerificationEmail({
-  link,
-  name,
-}: AuthMailInput): AuthMailBody {
-  const subject = "验证你的 Starter 邮箱";
-  const greeting = name ? `${name}，你好。` : "你好。";
+export function buildVerificationEmail({ link, name }: AuthMailInput): AuthMailBody {
+  const subject = '验证你的 Starter 邮箱'
+  const greeting = name ? `${name}，你好。` : '你好。'
   const text = [
     `${greeting}你刚用这个邮箱注册了 Starter 账号。`,
-    "",
-    "点下面的链接验证邮箱：",
+    '',
+    '点下面的链接验证邮箱：',
     link,
-    "",
-    "链接 1 小时内有效。如果不是你注册的账号，忽略这封邮件即可。",
-  ].join("\n");
+    '',
+    '链接 1 小时内有效。如果不是你注册的账号，忽略这封邮件即可。',
+  ].join('\n')
   const html = renderShell({
-    preheader: "验证你的 Starter 邮箱，确认邮箱归你所有。",
+    preheader: '验证你的 Starter 邮箱，确认邮箱归你所有。',
     subject,
-    title: "验证你的邮箱",
-    paragraphs: [
-      `${greeting}你刚用这个邮箱注册了 Starter 账号。`,
-      "点下面的按钮验证邮箱，确认这个邮箱归你所有。",
-    ],
-    ctaText: "验证邮箱",
+    title: '验证你的邮箱',
+    paragraphs: [`${greeting}你刚用这个邮箱注册了 Starter 账号。`, '点下面的按钮验证邮箱，确认这个邮箱归你所有。'],
+    ctaText: '验证邮箱',
     ctaUrl: link,
-    note: "链接 1 小时内有效。如果不是你注册的账号，忽略这封邮件即可。",
-  });
+    note: '链接 1 小时内有效。如果不是你注册的账号，忽略这封邮件即可。',
+  })
 
-  return { subject, text, html };
+  return { subject, text, html }
 }
 
 /**
  * 重置密码邮件。link 指向 Admin 的 /reset-password?token= 页面，token 有效期 1 小时。
  */
-export function buildResetPasswordEmail({
-  link,
-  name,
-}: AuthMailInput): AuthMailBody {
-  const subject = "重置你的 Starter 密码";
-  const greeting = name ? `${name}，你好。` : "你好。";
+export function buildResetPasswordEmail({ link, name }: AuthMailInput): AuthMailBody {
+  const subject = '重置你的 Starter 密码'
+  const greeting = name ? `${name}，你好。` : '你好。'
   const text = [
     `${greeting}你刚发起了密码重置。`,
-    "",
-    "点下面的链接设置新密码：",
+    '',
+    '点下面的链接设置新密码：',
     link,
-    "",
-    "链接 1 小时内有效。如果不是你发起的重置，忽略这封邮件，你的原密码仍然有效。",
-  ].join("\n");
+    '',
+    '链接 1 小时内有效。如果不是你发起的重置，忽略这封邮件，你的原密码仍然有效。',
+  ].join('\n')
   const html = renderShell({
-    preheader: "为你的 Starter 账号设置新密码。",
+    preheader: '为你的 Starter 账号设置新密码。',
     subject,
-    title: "重置你的密码",
-    paragraphs: [
-      `${greeting}你刚发起了密码重置。`,
-      "点下面的按钮，去设置一个新密码。",
-    ],
-    ctaText: "设置新密码",
+    title: '重置你的密码',
+    paragraphs: [`${greeting}你刚发起了密码重置。`, '点下面的按钮，去设置一个新密码。'],
+    ctaText: '设置新密码',
     ctaUrl: link,
-    note: "链接 1 小时内有效。如果不是你发起的重置，忽略这封邮件，你的原密码仍然有效。",
-  });
+    note: '链接 1 小时内有效。如果不是你发起的重置，忽略这封邮件，你的原密码仍然有效。',
+  })
 
-  return { subject, text, html };
+  return { subject, text, html }
 }

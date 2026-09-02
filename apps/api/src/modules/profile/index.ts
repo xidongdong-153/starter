@@ -1,1 +1,1 @@
-export { createProfileRoute } from "./profile.route.js";
+export { createProfileRoute } from './profile.route.js'

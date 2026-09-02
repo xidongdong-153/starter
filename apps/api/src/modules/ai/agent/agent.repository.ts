@@ -1,82 +1,80 @@
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from 'drizzle-orm'
 
-import type { AgentDefinitionStatus } from "@starter/contracts";
+import type { AgentDefinitionStatus } from '@starter/contracts'
 
-import type { AppDatabase } from "@api/infra/db/client.js";
-import { aiAgentDefinitions } from "@api/modules/ai/ai.schema.js";
+import type { AppDatabase } from '@api/infra/db/client.js'
+import { aiAgentDefinitions } from '@api/modules/ai/ai.schema.js'
 
-export type AiAgentDefinitionRecord = typeof aiAgentDefinitions.$inferSelect;
+export type AiAgentDefinitionRecord = typeof aiAgentDefinitions.$inferSelect
 
 export class AiAgentDefinitionNameConflictError extends Error {
   constructor() {
-    super("AI Agent definition name already exists");
-    this.name = "AiAgentDefinitionNameConflictError";
+    super('AI Agent definition name already exists')
+    this.name = 'AiAgentDefinitionNameConflictError'
   }
 }
 
 export class AiAgentDefinitionRevisionConflictError extends Error {
   constructor() {
-    super("AI Agent definition changed concurrently");
-    this.name = "AiAgentDefinitionRevisionConflictError";
+    super('AI Agent definition changed concurrently')
+    this.name = 'AiAgentDefinitionRevisionConflictError'
   }
 }
 
 export interface AiAgentDefinitionListInput {
-  status?: AgentDefinitionStatus;
-  page: number;
-  pageSize: number;
+  status?: AgentDefinitionStatus
+  page: number
+  pageSize: number
 }
 
 export interface AiAgentDefinitionListResult {
-  items: AiAgentDefinitionRecord[];
-  total: number;
+  items: AiAgentDefinitionRecord[]
+  total: number
 }
 
 export interface AiAgentDefinitionRepository {
   create: (input: {
-    id: string;
-    name: string;
-    description: string;
-    configJson: string;
-    createdBy: string;
-    updatedBy: string;
-    now: Date;
-  }) => AiAgentDefinitionRecord;
-  findById: (id: string) => AiAgentDefinitionRecord | undefined;
-  findByName: (name: string) => AiAgentDefinitionRecord | undefined;
-  list: (input: AiAgentDefinitionListInput) => AiAgentDefinitionListResult;
+    id: string
+    name: string
+    description: string
+    configJson: string
+    createdBy: string
+    updatedBy: string
+    now: Date
+  }) => AiAgentDefinitionRecord
+  findById: (id: string) => AiAgentDefinitionRecord | undefined
+  findByName: (name: string) => AiAgentDefinitionRecord | undefined
+  list: (input: AiAgentDefinitionListInput) => AiAgentDefinitionListResult
   update: (input: {
-    id: string;
-    name?: string;
-    description?: string;
-    configJson?: string;
-    expectedRevision: number;
-    expectedStatus: string;
-    revision: number;
-    updatedBy: string;
-    now: Date;
-  }) => AiAgentDefinitionRecord | undefined;
+    id: string
+    name?: string
+    description?: string
+    configJson?: string
+    expectedRevision: number
+    expectedStatus: string
+    revision: number
+    updatedBy: string
+    now: Date
+  }) => AiAgentDefinitionRecord | undefined
   updateStatus: (input: {
-    id: string;
-    status: AgentDefinitionStatus;
-    expectedRevision: number;
-    expectedStatus: string;
-    updatedBy: string;
-    now: Date;
-  }) => AiAgentDefinitionRecord | undefined;
+    id: string
+    status: AgentDefinitionStatus
+    expectedRevision: number
+    expectedStatus: string
+    updatedBy: string
+    now: Date
+  }) => AiAgentDefinitionRecord | undefined
 }
 
-export function createAiAgentDefinitionRepository(
-  db: AppDatabase,
-): AiAgentDefinitionRepository {
+export function createAiAgentDefinitionRepository(db: AppDatabase): AiAgentDefinitionRepository {
   function create(input: {
-    id: string;
-    name: string;
-    description: string;
-    configJson: string;
-    createdBy: string;
-    updatedBy: string;
-    now: Date;
+    id: string
+    name: string
+    description: string
+    configJson: string
+    createdBy: string
+    updatedBy: string
+    now: Date
   }): AiAgentDefinitionRecord {
     try {
       db.insert(aiAgentDefinitions)
@@ -84,7 +82,7 @@ export function createAiAgentDefinitionRepository(
           id: input.id,
           name: input.name,
           description: input.description,
-          status: "draft",
+          status: 'draft',
           revision: 1,
           configJson: input.configJson,
           createdBy: input.createdBy,
@@ -92,45 +90,33 @@ export function createAiAgentDefinitionRepository(
           createdAt: input.now,
           updatedAt: input.now,
         })
-        .run();
+        .run()
     } catch (error) {
       if (isNameConflict(error)) {
-        throw new AiAgentDefinitionNameConflictError();
+        throw new AiAgentDefinitionNameConflictError()
       }
-      throw error;
+      throw error
     }
 
-    return findById(input.id)!;
+    return findById(input.id)!
   }
 
   function findById(id: string): AiAgentDefinitionRecord | undefined {
-    return db
-      .select()
-      .from(aiAgentDefinitions)
-      .where(eq(aiAgentDefinitions.id, id))
-      .get();
+    return db.select().from(aiAgentDefinitions).where(eq(aiAgentDefinitions.id, id)).get()
   }
 
   function findByName(name: string): AiAgentDefinitionRecord | undefined {
-    return db
-      .select()
-      .from(aiAgentDefinitions)
-      .where(eq(aiAgentDefinitions.name, name))
-      .get();
+    return db.select().from(aiAgentDefinitions).where(eq(aiAgentDefinitions.name, name)).get()
   }
 
-  function list(
-    input: AiAgentDefinitionListInput,
-  ): AiAgentDefinitionListResult {
-    const condition = input.status
-      ? eq(aiAgentDefinitions.status, input.status)
-      : undefined;
+  function list(input: AiAgentDefinitionListInput): AiAgentDefinitionListResult {
+    const condition = input.status ? eq(aiAgentDefinitions.status, input.status) : undefined
     const countRow = db
       .select({ count: sql<number>`count(*)` })
       .from(aiAgentDefinitions)
       .where(condition)
-      .get();
-    const total = countRow ? countRow.count : 0;
+      .get()
+    const total = countRow ? countRow.count : 0
     const items = db
       .select()
       .from(aiAgentDefinitions)
@@ -138,33 +124,29 @@ export function createAiAgentDefinitionRepository(
       .orderBy(desc(aiAgentDefinitions.updatedAt), desc(aiAgentDefinitions.id))
       .limit(input.pageSize)
       .offset((input.page - 1) * input.pageSize)
-      .all();
+      .all()
 
-    return { items, total };
+    return { items, total }
   }
 
   function update(input: {
-    id: string;
-    name?: string;
-    description?: string;
-    configJson?: string;
-    expectedRevision: number;
-    expectedStatus: string;
-    revision: number;
-    updatedBy: string;
-    now: Date;
+    id: string
+    name?: string
+    description?: string
+    configJson?: string
+    expectedRevision: number
+    expectedStatus: string
+    revision: number
+    updatedBy: string
+    now: Date
   }): AiAgentDefinitionRecord | undefined {
     try {
       const result = db
         .update(aiAgentDefinitions)
         .set({
           ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.description !== undefined
-            ? { description: input.description }
-            : {}),
-          ...(input.configJson !== undefined
-            ? { configJson: input.configJson }
-            : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
+          ...(input.configJson !== undefined ? { configJson: input.configJson } : {}),
           revision: input.revision,
           updatedBy: input.updatedBy,
           updatedAt: input.now,
@@ -176,28 +158,28 @@ export function createAiAgentDefinitionRepository(
             eq(aiAgentDefinitions.status, input.expectedStatus),
           ),
         )
-        .run();
+        .run()
       if (result.changes === 0) {
-        if (!findById(input.id)) return undefined;
-        throw new AiAgentDefinitionRevisionConflictError();
+        if (!findById(input.id)) return undefined
+        throw new AiAgentDefinitionRevisionConflictError()
       }
     } catch (error) {
       if (isNameConflict(error)) {
-        throw new AiAgentDefinitionNameConflictError();
+        throw new AiAgentDefinitionNameConflictError()
       }
-      throw error;
+      throw error
     }
 
-    return findById(input.id);
+    return findById(input.id)
   }
 
   function updateStatus(input: {
-    id: string;
-    status: AgentDefinitionStatus;
-    expectedRevision: number;
-    expectedStatus: string;
-    updatedBy: string;
-    now: Date;
+    id: string
+    status: AgentDefinitionStatus
+    expectedRevision: number
+    expectedStatus: string
+    updatedBy: string
+    now: Date
   }): AiAgentDefinitionRecord | undefined {
     const result = db
       .update(aiAgentDefinitions)
@@ -213,20 +195,17 @@ export function createAiAgentDefinitionRepository(
           eq(aiAgentDefinitions.status, input.expectedStatus),
         ),
       )
-      .run();
+      .run()
     if (result.changes === 0) {
-      if (!findById(input.id)) return undefined;
-      throw new AiAgentDefinitionRevisionConflictError();
+      if (!findById(input.id)) return undefined
+      throw new AiAgentDefinitionRevisionConflictError()
     }
-    return findById(input.id);
+    return findById(input.id)
   }
 
-  return { create, findById, findByName, list, update, updateStatus };
+  return { create, findById, findByName, list, update, updateStatus }
 }
 
 function isNameConflict(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    error.message.includes("ai_agent_definitions.name")
-  );
+  return error instanceof Error && error.message.includes('ai_agent_definitions.name')
 }

@@ -1,33 +1,33 @@
-import { readdirSync, readFileSync } from "node:fs";
-import { join } from "node:path";
-import { ApiErrorCodes } from "@starter/contracts";
-import { AppError } from "@api/shared/app-error.js";
+import { readdirSync, readFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { ApiErrorCodes } from '@starter/contracts'
+import { AppError } from '@api/shared/app-error.js'
 
 const PINO_LEVEL_NAMES: Record<number, string> = {
-  10: "trace",
-  20: "debug",
-  30: "info",
-  40: "warn",
-  50: "error",
-  60: "fatal",
-};
-
-export type SystemLogLevel = "info" | "warn" | "error";
-
-export interface SystemLogsQuery {
-  requestId?: string;
-  level?: SystemLogLevel;
-  query?: string;
-  page?: number;
-  pageSize?: number;
-  limit?: number;
+  10: 'trace',
+  20: 'debug',
+  30: 'info',
+  40: 'warn',
+  50: 'error',
+  60: 'fatal',
 }
 
-export type SystemLogEntry = Record<string, unknown>;
+export type SystemLogLevel = 'info' | 'warn' | 'error'
+
+export interface SystemLogsQuery {
+  requestId?: string
+  level?: SystemLogLevel
+  query?: string
+  page?: number
+  pageSize?: number
+  limit?: number
+}
+
+export type SystemLogEntry = Record<string, unknown>
 
 export interface SystemLogsResult {
-  items: SystemLogEntry[];
-  total: number;
+  items: SystemLogEntry[]
+  total: number
 }
 
 export function createSystemService(logsDir: string | undefined) {
@@ -39,71 +39,67 @@ export function createSystemService(logsDir: string | undefined) {
    */
   function queryLogs(params: SystemLogsQuery): SystemLogsResult {
     if (!logsDir) {
-      throw new AppError(
-        ApiErrorCodes.COMMON_INVALID_REQUEST,
-        "未配置日志目录",
-        400,
-      );
+      throw new AppError(ApiErrorCodes.COMMON_INVALID_REQUEST, '未配置日志目录', 400)
     }
 
     const files = readdirSync(logsDir)
-      .filter((name) => name.startsWith("app"))
-      .sort((a, b) => (a < b ? 1 : -1));
+      .filter((name) => name.startsWith('app'))
+      .sort((a, b) => (a < b ? 1 : -1))
 
-    const items: SystemLogEntry[] = [];
+    const items: SystemLogEntry[] = []
     for (const file of files) {
-      const lines = readFileSync(join(logsDir, file), "utf8").split("\n");
+      const lines = readFileSync(join(logsDir, file), 'utf8').split('\n')
       for (let index = lines.length - 1; index >= 0; index -= 1) {
-        const line = lines[index]?.trim();
-        if (!line) continue;
+        const line = lines[index]?.trim()
+        if (!line) continue
 
-        let entry: SystemLogEntry;
+        let entry: SystemLogEntry
         try {
-          entry = JSON.parse(line) as SystemLogEntry;
+          entry = JSON.parse(line) as SystemLogEntry
         } catch {
-          continue;
+          continue
         }
-        if (!matches(entry, params)) continue;
+        if (!matches(entry, params)) continue
 
-        items.push(entry);
+        items.push(entry)
       }
     }
 
     if (params.requestId) {
-      items.reverse();
+      items.reverse()
       return {
         items: items.slice(0, params.limit ?? 100),
         total: items.length,
-      };
+      }
     }
 
-    const page = params.page ?? 1;
-    const pageSize = params.pageSize ?? 20;
+    const page = params.page ?? 1
+    const pageSize = params.pageSize ?? 20
     return {
       items: items.slice((page - 1) * pageSize, page * pageSize),
       total: items.length,
-    };
+    }
   }
 
-  return { queryLogs };
+  return { queryLogs }
 }
 
 function matches(entry: SystemLogEntry, params: SystemLogsQuery): boolean {
   if (params.level) {
-    const level = resolveLevel(entry.level);
-    if (level !== params.level) return false;
+    const level = resolveLevel(entry.level)
+    if (level !== params.level) return false
   }
-  if (params.requestId && entry.requestId !== params.requestId) return false;
+  if (params.requestId && entry.requestId !== params.requestId) return false
   if (params.query && !JSON.stringify(entry).includes(params.query)) {
-    return false;
+    return false
   }
-  return true;
+  return true
 }
 
 function resolveLevel(value: unknown): string | undefined {
-  if (typeof value === "number") return PINO_LEVEL_NAMES[value];
-  if (typeof value === "string") return value;
-  return undefined;
+  if (typeof value === 'number') return PINO_LEVEL_NAMES[value]
+  if (typeof value === 'string') return value
+  return undefined
 }
 
-export type SystemService = ReturnType<typeof createSystemService>;
+export type SystemService = ReturnType<typeof createSystemService>

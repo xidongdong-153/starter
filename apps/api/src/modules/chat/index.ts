@@ -1,1 +1,1 @@
-export { createChatRoute } from "./chat.route.js";
+export { createChatRoute } from './chat.route.js'

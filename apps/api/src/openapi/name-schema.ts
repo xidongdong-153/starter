@@ -1,5 +1,5 @@
-import { zodToOpenAPIRegistry } from "@asteasolutions/zod-to-openapi";
-import type { z } from "zod";
+import { zodToOpenAPIRegistry } from '@asteasolutions/zod-to-openapi'
+import type { z } from 'zod'
 
 /**
  * 给共享 contracts schema 注册 OpenAPI 组件名。
@@ -12,6 +12,6 @@ import type { z } from "zod";
  * 读取元数据。
  */
 export function nameSchema<T extends z.ZodType>(schema: T, refId: string): T {
-  zodToOpenAPIRegistry.add(schema, { _internal: { refId } });
-  return schema;
+  zodToOpenAPIRegistry.add(schema, { _internal: { refId } })
+  return schema
 }

@@ -1,7 +1,6 @@
-import type { ApiErrorCode } from "@starter/contracts";
+import type { ApiErrorCode } from '@starter/contracts'
 
-export type AppErrorStatus =
-  400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 503 | 504;
+export type AppErrorStatus = 400 | 401 | 403 | 404 | 409 | 413 | 422 | 500 | 503 | 504
 
 export class AppError extends Error {
   constructor(
@@ -10,7 +9,7 @@ export class AppError extends Error {
     readonly status: AppErrorStatus,
     readonly details?: unknown,
   ) {
-    super(message);
-    this.name = "AppError";
+    super(message)
+    this.name = 'AppError'
   }
 }

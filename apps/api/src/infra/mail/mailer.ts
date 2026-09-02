@@ -1,17 +1,17 @@
-import type { Transporter } from "nodemailer";
-import type { Logger } from "pino";
-import type { AppEnv } from "@api/shared/env.js";
-import nodemailer from "nodemailer";
+import type { Transporter } from 'nodemailer'
+import type { Logger } from 'pino'
+import type { AppEnv } from '@api/shared/env.js'
+import nodemailer from 'nodemailer'
 
 export interface MailMessage {
-  to: string;
-  subject: string;
-  text: string;
-  html?: string;
+  to: string
+  subject: string
+  text: string
+  html?: string
 }
 
 export interface Mailer {
-  sendMail: (message: MailMessage) => Promise<void>;
+  sendMail: (message: MailMessage) => Promise<void>
 }
 
 /**
@@ -22,10 +22,10 @@ class LogMailer implements Mailer {
 
   sendMail(message: MailMessage): Promise<void> {
     this.logger.info(
-      { event: "mail.log", to: message.to, subject: message.subject },
+      { event: 'mail.log', to: message.to, subject: message.subject },
       `[mail] ${message.subject}\n${message.text}`,
-    );
-    return Promise.resolve();
+    )
+    return Promise.resolve()
   }
 }
 
@@ -45,24 +45,21 @@ class SmtpMailer implements Mailer {
       subject: message.subject,
       text: message.text,
       html: message.html,
-    });
+    })
   }
 }
 
 export function createMailer(env: AppEnv, logger: Logger): Mailer {
   if (!env.SMTP_HOST) {
-    return new LogMailer(logger);
+    return new LogMailer(logger)
   }
 
   const transport = nodemailer.createTransport({
     host: env.SMTP_HOST,
     port: env.SMTP_PORT,
     secure: env.SMTP_PORT === 465,
-    auth:
-      env.SMTP_USER && env.SMTP_PASS
-        ? { user: env.SMTP_USER, pass: env.SMTP_PASS }
-        : undefined,
-  });
+    auth: env.SMTP_USER && env.SMTP_PASS ? { user: env.SMTP_USER, pass: env.SMTP_PASS } : undefined,
+  })
 
-  return new SmtpMailer(transport, env.SMTP_FROM);
+  return new SmtpMailer(transport, env.SMTP_FROM)
 }

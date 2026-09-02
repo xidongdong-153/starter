@@ -10,8 +10,8 @@ import {
   steerAgentRunSchema,
   structuredOutputListSchema,
   uuidSchema,
-} from "@starter/contracts";
-import { createRoute, z } from "@hono/zod-openapi";
+} from '@starter/contracts'
+import { createRoute, z } from '@hono/zod-openapi'
 
 import {
   apiSuccessResponse,
@@ -22,45 +22,34 @@ import {
   invalidRequestResponse,
   notFoundResponse,
   unauthorizedResponse,
-} from "@api/openapi/responses.js";
+} from '@api/openapi/responses.js'
 
-const tags = ["AI Runtime"];
-const security: Array<Record<string, string[]>> = [
-  { cookieAuth: [] },
-  { bearerAuth: [] },
-];
-const controlTags = ["AI Control"];
-const controlSecurity = [{ cookieAuth: [] }];
+const tags = ['AI Runtime']
+const security: Array<Record<string, string[]>> = [{ cookieAuth: [] }, { bearerAuth: [] }]
+const controlTags = ['AI Control']
+const controlSecurity = [{ cookieAuth: [] }]
 
 const runParams = z.strictObject({
   sessionId: uuidSchema,
   runId: uuidSchema,
-});
-const sessionParams = z.strictObject({ sessionId: uuidSchema });
+})
+const sessionParams = z.strictObject({ sessionId: uuidSchema })
 
-const timelineResponse = apiSuccessResponse(
-  runTimelineSchema,
-  "Run Timeline",
-  "RunTimelineResponse",
-);
-const traceResponse = apiSuccessResponse(
-  runTraceSchema,
-  "Run Trace",
-  "RunTraceResponse",
-);
+const timelineResponse = apiSuccessResponse(runTimelineSchema, 'Run Timeline', 'RunTimelineResponse')
+const traceResponse = apiSuccessResponse(runTraceSchema, 'Run Trace', 'RunTraceResponse')
 const structuredOutputListResponse = apiSuccessResponse(
   structuredOutputListSchema,
-  "Structured Output List",
-  "StructuredOutputListResponse",
-);
+  'Structured Output List',
+  'StructuredOutputListResponse',
+)
 const timelineRequest = {
   params: runParams,
   query: runTimelineQuerySchema,
-};
+}
 
 export const getAgentRunTimelineRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/timeline",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/timeline',
   tags,
   security,
   request: timelineRequest,
@@ -70,11 +59,11 @@ export const getAgentRunTimelineRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getAgentRunEventsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/events",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/events',
   tags,
   security,
   request: timelineRequest,
@@ -84,15 +73,15 @@ export const getAgentRunEventsRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getAgentRunStructuredOutputsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/structured-outputs",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/structured-outputs',
   tags,
   security,
   description:
-    "读取 Run 的结构化输出列表。contract 已从代码注册表移除的记录不返回；value 按 contract 可见性打码：admin 可见性对运行面主体为 null。",
+    '读取 Run 的结构化输出列表。contract 已从代码注册表移除的记录不返回；value 按 contract 可见性打码：admin 可见性对运行面主体为 null。',
   request: { params: runParams },
   responses: {
     200: structuredOutputListResponse,
@@ -100,15 +89,15 @@ export const getAgentRunStructuredOutputsRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getAdminRunStructuredOutputsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/runs/{runId}/structured-outputs",
+  method: 'get',
+  path: '/api/ai/admin/runs/{runId}/structured-outputs',
   tags: controlTags,
   security: controlSecurity,
   description:
-    "Admin 读取 Run 的全部结构化输出，value 不打码（admin 可见性只有 admin 能读）。需要 AI_CONFIG_READ 权限。",
+    'Admin 读取 Run 的全部结构化输出，value 不打码（admin 可见性只有 admin 能读）。需要 AI_CONFIG_READ 权限。',
   request: { params: z.strictObject({ runId: uuidSchema }) },
   responses: {
     200: structuredOutputListResponse,
@@ -116,11 +105,11 @@ export const getAdminRunStructuredOutputsRoute = createRoute({
     403: forbiddenResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getAgentRunTraceRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/trace",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/trace',
   tags,
   security,
   request: { params: runParams },
@@ -129,63 +118,56 @@ export const getAgentRunTraceRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
-const runResponse = apiSuccessResponse(
-  agentRunSchema,
-  "Agent Run",
-  "AgentRunResponse",
-);
-const startRunJsonDataSchema = apiSuccessSchema(
-  startAgentRunJsonSchema,
-  "AgentRunStartJsonResponse",
-);
+const runResponse = apiSuccessResponse(agentRunSchema, 'Agent Run', 'AgentRunResponse')
+const startRunJsonDataSchema = apiSuccessSchema(startAgentRunJsonSchema, 'AgentRunStartJsonResponse')
 
 const streamResponse = {
-  content: { "text/event-stream": { schema: z.string() } },
+  content: { 'text/event-stream': { schema: z.string() } },
 
   description: [
-    "Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。",
-    "sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。",
-    "连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。",
-  ].join(""),
-};
+    'Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。',
+    'sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。',
+    '连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。',
+  ].join(''),
+}
 
 const startRunResponse = {
   content: {
-    "text/event-stream": { schema: z.string() },
-    "application/json": { schema: startRunJsonDataSchema },
+    'text/event-stream': { schema: z.string() },
+    'application/json': { schema: startRunJsonDataSchema },
   },
   description: [
-    "Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。",
-    "sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。",
-    "连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。",
-    "Accept 含 application/json 且不含 text/event-stream 时返回 JSON（只含 runId，Run 在后台照常执行，用 GET /runs/{runId} 轮询）。",
-  ].join(""),
-};
+    'Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。',
+    'sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。',
+    '连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。',
+    'Accept 含 application/json 且不含 text/event-stream 时返回 JSON（只含 runId，Run 在后台照常执行，用 GET /runs/{runId} 轮询）。',
+  ].join(''),
+}
 
 const streamRequest = {
   params: sessionParams,
   body: {
     content: {
-      "application/json": { schema: startAgentRunSchema },
+      'application/json': { schema: startAgentRunSchema },
     },
     required: true,
   },
-};
+}
 
 export const startAgentRunRoute = createRoute({
-  method: "post",
-  path: "/api/ai/sessions/{sessionId}/runs",
+  method: 'post',
+  path: '/api/ai/sessions/{sessionId}/runs',
   tags,
   security,
   description: [
-    "启动 Agent Run，按 Accept 分流返回 RunEvent SSE 或 JSON（只含 runId）。事件写入持久时间线成功后才发送；连接断开不会改变 Run。",
-    "body 可选 idempotencyKey：同一调用方 scope 内相同 key 的重复启动返回既有 Run（SSE 模式从 sequence 0 回放该 Run 事件），不新建 Run；",
-    "同 key 已绑定其他 session 时返回 409 AI.IDEMPOTENCY_KEY_CONFLICT；不同调用方（不同应用或用户）使用相同 key 互不相关。",
-    "key 只在 Run 行创建成功后被消费：lane 占用（AI.SESSION_BUSY）、参数校验失败、Session 或 Agent 不存在等启动前失败不消费 key，之后同 key 重试会创建新 Run。",
-    "Run 已终态（含 failed）后同 key 重试返回那个 Run，不重新执行；需要重跑请换新 key。",
-  ].join(""),
+    '启动 Agent Run，按 Accept 分流返回 RunEvent SSE 或 JSON（只含 runId）。事件写入持久时间线成功后才发送；连接断开不会改变 Run。',
+    'body 可选 idempotencyKey：同一调用方 scope 内相同 key 的重复启动返回既有 Run（SSE 模式从 sequence 0 回放该 Run 事件），不新建 Run；',
+    '同 key 已绑定其他 session 时返回 409 AI.IDEMPOTENCY_KEY_CONFLICT；不同调用方（不同应用或用户）使用相同 key 互不相关。',
+    'key 只在 Run 行创建成功后被消费：lane 占用（AI.SESSION_BUSY）、参数校验失败、Session 或 Agent 不存在等启动前失败不消费 key，之后同 key 重试会创建新 Run。',
+    'Run 已终态（含 failed）后同 key 重试返回那个 Run，不重新执行；需要重跑请换新 key。',
+  ].join(''),
   request: streamRequest,
   responses: {
     200: startRunResponse,
@@ -195,15 +177,14 @@ export const startAgentRunRoute = createRoute({
     409: conflictResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const getAgentRunEventsStreamRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/events/stream",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/events/stream',
   tags,
   security,
-  description:
-    "恢复已有 Run 的 RunEvent SSE。支持 afterSequence 和 Last-Event-ID，不会创建新的 Run。",
+  description: '恢复已有 Run 的 RunEvent SSE。支持 afterSequence 和 Last-Event-ID，不会创建新的 Run。',
   request: { params: runParams, query: runTimelineQuerySchema },
   responses: {
     200: streamResponse,
@@ -211,15 +192,15 @@ export const getAgentRunEventsStreamRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getAgentRunRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}',
   tags,
   security,
   description:
-    "读取 Run 持久状态和可选 live snapshot。live 只在当前 API 进程仍持有 starting/running Run 时存在，不是历史记录；终态历史从 Session transcript 读取。",
+    '读取 Run 持久状态和可选 live snapshot。live 只在当前 API 进程仍持有 starting/running Run 时存在，不是历史记录；终态历史从 Session transcript 读取。',
   request: { params: runParams },
   responses: {
     200: runResponse,
@@ -227,31 +208,27 @@ export const getAgentRunRoute = createRoute({
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const getActiveAgentRunRoute = createRoute({
-  method: "get",
-  path: "/api/ai/sessions/{sessionId}/active-run",
+  method: 'get',
+  path: '/api/ai/sessions/{sessionId}/active-run',
   tags,
   security,
   description:
-    "查该 Session 指定 lane 上仍在跑的 Run，用于刷新页面后找回 runId。只返回 starting 和 running 的 Run，没有时 data 为 null。",
+    '查该 Session 指定 lane 上仍在跑的 Run，用于刷新页面后找回 runId。只返回 starting 和 running 的 Run，没有时 data 为 null。',
   request: { params: sessionParams, query: activeAgentRunQuerySchema },
   responses: {
-    200: apiSuccessResponse(
-      agentRunSchema.nullable(),
-      "Session 进行中的 Agent Run",
-      "ActiveAgentRunResponse",
-    ),
+    200: apiSuccessResponse(agentRunSchema.nullable(), 'Session 进行中的 Agent Run', 'ActiveAgentRunResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const abortAgentRunRoute = createRoute({
-  method: "post",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/abort",
+  method: 'post',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/abort',
   tags,
   security,
   request: { params: runParams },
@@ -261,18 +238,18 @@ export const abortAgentRunRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const steerAgentRunRoute = createRoute({
-  method: "post",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/steer",
+  method: 'post',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/steer',
   tags,
   security,
   request: {
     params: runParams,
     body: {
       content: {
-        "application/json": { schema: steerAgentRunSchema },
+        'application/json': { schema: steerAgentRunSchema },
       },
       required: true,
     },
@@ -284,18 +261,18 @@ export const steerAgentRunRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const followUpAgentRunRoute = createRoute({
-  method: "post",
-  path: "/api/ai/sessions/{sessionId}/runs/{runId}/follow-ups",
+  method: 'post',
+  path: '/api/ai/sessions/{sessionId}/runs/{runId}/follow-ups',
   tags,
   security,
   request: {
     params: runParams,
     body: {
       content: {
-        "application/json": { schema: followUpAgentRunSchema },
+        'application/json': { schema: followUpAgentRunSchema },
       },
       required: true,
     },
@@ -307,4 +284,4 @@ export const followUpAgentRunRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})

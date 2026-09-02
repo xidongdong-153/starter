@@ -1,9 +1,9 @@
-import type { CustomAiProviderDefinition } from "@starter/contracts";
-import { customAiProviderDefinitionSchema } from "@starter/contracts";
-import { and, desc, eq, sql } from "drizzle-orm";
+import type { CustomAiProviderDefinition } from '@starter/contracts'
+import { customAiProviderDefinitionSchema } from '@starter/contracts'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
-import type { AppDatabase } from "@api/infra/db/client.js";
-import { parseBoundedJson } from "@api/shared/bounded-json.js";
+import type { AppDatabase } from '@api/infra/db/client.js'
+import { parseBoundedJson } from '@api/shared/bounded-json.js'
 
 import {
   aiAgentDefinitions,
@@ -13,93 +13,81 @@ import {
   aiProviderConfigs,
   aiSettings,
   userAiPreferences,
-} from "../ai.schema.js";
+} from '../ai.schema.js'
 
-type AiCustomProviderStorageRecord = typeof aiCustomProviders.$inferSelect;
+type AiCustomProviderStorageRecord = typeof aiCustomProviders.$inferSelect
 
-export interface AiCustomProviderRecord extends Omit<
-  AiCustomProviderStorageRecord,
-  "definitionJson"
-> {
-  definition: CustomAiProviderDefinition;
+export interface AiCustomProviderRecord extends Omit<AiCustomProviderStorageRecord, 'definitionJson'> {
+  definition: CustomAiProviderDefinition
 }
 
 export interface AiCustomProviderAgentReference {
-  id: string;
-  name: string;
+  id: string
+  name: string
 }
 
 export class AiCustomProviderExistsError extends Error {
   constructor() {
-    super("Custom AI Provider already exists");
-    this.name = "AiCustomProviderExistsError";
+    super('Custom AI Provider already exists')
+    this.name = 'AiCustomProviderExistsError'
   }
 }
 
 export class AiCustomProviderIdConflictError extends Error {
   constructor() {
-    super("Custom AI Provider ID conflicts with a built-in Provider");
-    this.name = "AiCustomProviderIdConflictError";
+    super('Custom AI Provider ID conflicts with a built-in Provider')
+    this.name = 'AiCustomProviderIdConflictError'
   }
 }
 
 export class AiCustomProviderRevisionConflictError extends Error {
   constructor() {
-    super("Custom AI Provider changed concurrently");
-    this.name = "AiCustomProviderRevisionConflictError";
+    super('Custom AI Provider changed concurrently')
+    this.name = 'AiCustomProviderRevisionConflictError'
   }
 }
 
 export class AiCustomProviderDefinitionInvalidError extends Error {
   constructor(providerId: string, options?: ErrorOptions) {
-    super(`Custom AI Provider definition is invalid: ${providerId}`, options);
-    this.name = "AiCustomProviderDefinitionInvalidError";
+    super(`Custom AI Provider definition is invalid: ${providerId}`, options)
+    this.name = 'AiCustomProviderDefinitionInvalidError'
   }
 }
 
 export interface AiCustomProviderRepository {
-  create: (input: {
-    definition: CustomAiProviderDefinition;
-    actorId: string;
-    now: Date;
-  }) => AiCustomProviderRecord;
-  list: () => AiCustomProviderRecord[];
-  findById: (providerId: string) => AiCustomProviderRecord | undefined;
+  create: (input: { definition: CustomAiProviderDefinition; actorId: string; now: Date }) => AiCustomProviderRecord
+  list: () => AiCustomProviderRecord[]
+  findById: (providerId: string) => AiCustomProviderRecord | undefined
   update: (input: {
-    definition: CustomAiProviderDefinition;
-    expectedRevision: number;
-    actorId: string;
-    now: Date;
-  }) => AiCustomProviderRecord | undefined;
+    definition: CustomAiProviderDefinition
+    expectedRevision: number
+    actorId: string
+    now: Date
+  }) => AiCustomProviderRecord | undefined
   delete: (input: {
-    providerId: string;
-    expectedRevision: number;
-    actorId: string;
-    now: Date;
-    assertNoAgentReferences: (
-      references: readonly AiCustomProviderAgentReference[],
-    ) => void;
-  }) => boolean;
+    providerId: string
+    expectedRevision: number
+    actorId: string
+    now: Date
+    assertNoAgentReferences: (references: readonly AiCustomProviderAgentReference[]) => void
+  }) => boolean
 }
 
 export function createAiCustomProviderRepository(
   db: AppDatabase,
   builtInProviderIds: ReadonlySet<string> | readonly string[],
 ): AiCustomProviderRepository {
-  const reservedIds = new Set(builtInProviderIds);
+  const reservedIds = new Set(builtInProviderIds)
 
   function create(input: {
-    definition: CustomAiProviderDefinition;
-    actorId: string;
-    now: Date;
+    definition: CustomAiProviderDefinition
+    actorId: string
+    now: Date
   }): AiCustomProviderRecord {
-    const parsedDefinition = parseDefinition(
-      input.definition.providerId,
-      input.definition,
-    );
-    assertNotBuiltIn(parsedDefinition.providerId);
+    const parsedDefinition = parseDefinition(input.definition.providerId, input.definition)
+    assertNotBuiltIn(parsedDefinition.providerId)
     if (findStorageById(parsedDefinition.providerId)) {
-      throw new AiCustomProviderExistsError();
+      throw new AiCustomProviderExistsError()
     }
 
     try {
@@ -113,13 +101,13 @@ export function createAiCustomProviderRepository(
           createdAt: input.now,
           updatedAt: input.now,
         })
-        .run();
+        .run()
     } catch (error) {
-      if (isProviderIdConflict(error)) throw new AiCustomProviderExistsError();
-      throw error;
+      if (isProviderIdConflict(error)) throw new AiCustomProviderExistsError()
+      throw error
     }
 
-    return findById(parsedDefinition.providerId)!;
+    return findById(parsedDefinition.providerId)!
   }
 
   function list(): AiCustomProviderRecord[] {
@@ -130,29 +118,28 @@ export function createAiCustomProviderRepository(
       .all()
       .flatMap((row) => {
         try {
-          return [toRecord(row)];
+          return [toRecord(row)]
         } catch (error) {
-          if (error instanceof AiCustomProviderDefinitionInvalidError)
-            return [];
-          throw error;
+          if (error instanceof AiCustomProviderDefinitionInvalidError) return []
+          throw error
         }
-      });
+      })
   }
 
   function findById(providerId: string): AiCustomProviderRecord | undefined {
-    const row = findStorageById(providerId);
-    return row ? toRecord(row) : undefined;
+    const row = findStorageById(providerId)
+    return row ? toRecord(row) : undefined
   }
 
   function update(input: {
-    definition: CustomAiProviderDefinition;
-    expectedRevision: number;
-    actorId: string;
-    now: Date;
+    definition: CustomAiProviderDefinition
+    expectedRevision: number
+    actorId: string
+    now: Date
   }): AiCustomProviderRecord | undefined {
-    const providerId = input.definition.providerId;
-    const parsedDefinition = parseDefinition(providerId, input.definition);
-    assertNotBuiltIn(providerId);
+    const providerId = input.definition.providerId
+    const parsedDefinition = parseDefinition(providerId, input.definition)
+    assertNotBuiltIn(providerId)
     const result = db
       .update(aiCustomProviders)
       .set({
@@ -161,53 +148,42 @@ export function createAiCustomProviderRepository(
         updatedBy: input.actorId,
         updatedAt: input.now,
       })
-      .where(
-        and(
-          eq(aiCustomProviders.providerId, providerId),
-          eq(aiCustomProviders.revision, input.expectedRevision),
-        ),
-      )
-      .run();
+      .where(and(eq(aiCustomProviders.providerId, providerId), eq(aiCustomProviders.revision, input.expectedRevision)))
+      .run()
     if (result.changes === 0) {
-      if (!findStorageById(providerId)) return undefined;
-      throw new AiCustomProviderRevisionConflictError();
+      if (!findStorageById(providerId)) return undefined
+      throw new AiCustomProviderRevisionConflictError()
     }
-    return findById(providerId);
+    return findById(providerId)
   }
 
   function deleteProvider(input: {
-    providerId: string;
-    expectedRevision: number;
-    actorId: string;
-    now: Date;
-    assertNoAgentReferences: (
-      references: readonly AiCustomProviderAgentReference[],
-    ) => void;
+    providerId: string
+    expectedRevision: number
+    actorId: string
+    now: Date
+    assertNoAgentReferences: (references: readonly AiCustomProviderAgentReference[]) => void
   }): boolean {
-    assertNotBuiltIn(input.providerId);
+    assertNotBuiltIn(input.providerId)
     return db.transaction((tx) => {
       const current = tx
         .select({ revision: aiCustomProviders.revision })
         .from(aiCustomProviders)
         .where(eq(aiCustomProviders.providerId, input.providerId))
-        .get();
-      if (!current) return false;
+        .get()
+      if (!current) return false
       if (current.revision !== input.expectedRevision) {
-        throw new AiCustomProviderRevisionConflictError();
+        throw new AiCustomProviderRevisionConflictError()
       }
 
       const references = tx
         .select({ id: aiAgentDefinitions.id, name: aiAgentDefinitions.name })
         .from(aiAgentDefinitions)
-        .where(
-          sql`json_extract(${aiAgentDefinitions.configJson}, '$.model.providerId') = ${input.providerId}`,
-        )
-        .all();
-      input.assertNoAgentReferences(references);
+        .where(sql`json_extract(${aiAgentDefinitions.configJson}, '$.model.providerId') = ${input.providerId}`)
+        .all()
+      input.assertNoAgentReferences(references)
 
-      tx.delete(aiEnabledModels)
-        .where(eq(aiEnabledModels.providerId, input.providerId))
-        .run();
+      tx.delete(aiEnabledModels).where(eq(aiEnabledModels.providerId, input.providerId)).run()
       tx.update(aiSettings)
         .set({
           globalProviderId: null,
@@ -216,16 +192,10 @@ export function createAiCustomProviderRepository(
           updatedAt: input.now,
         })
         .where(eq(aiSettings.globalProviderId, input.providerId))
-        .run();
-      tx.delete(userAiPreferences)
-        .where(eq(userAiPreferences.providerId, input.providerId))
-        .run();
-      tx.delete(aiModelCatalogs)
-        .where(eq(aiModelCatalogs.providerId, input.providerId))
-        .run();
-      tx.delete(aiProviderConfigs)
-        .where(eq(aiProviderConfigs.providerId, input.providerId))
-        .run();
+        .run()
+      tx.delete(userAiPreferences).where(eq(userAiPreferences.providerId, input.providerId)).run()
+      tx.delete(aiModelCatalogs).where(eq(aiModelCatalogs.providerId, input.providerId)).run()
+      tx.delete(aiProviderConfigs).where(eq(aiProviderConfigs.providerId, input.providerId)).run()
       tx.delete(aiCustomProviders)
         .where(
           and(
@@ -233,61 +203,51 @@ export function createAiCustomProviderRepository(
             eq(aiCustomProviders.revision, input.expectedRevision),
           ),
         )
-        .run();
-      return true;
-    });
+        .run()
+      return true
+    })
   }
 
-  function findStorageById(
-    providerId: string,
-  ): AiCustomProviderStorageRecord | undefined {
-    return db
-      .select()
-      .from(aiCustomProviders)
-      .where(eq(aiCustomProviders.providerId, providerId))
-      .get();
+  function findStorageById(providerId: string): AiCustomProviderStorageRecord | undefined {
+    return db.select().from(aiCustomProviders).where(eq(aiCustomProviders.providerId, providerId)).get()
   }
 
   function assertNotBuiltIn(providerId: string): void {
     if (reservedIds.has(providerId)) {
-      throw new AiCustomProviderIdConflictError();
+      throw new AiCustomProviderIdConflictError()
     }
   }
 
-  return { create, list, findById, update, delete: deleteProvider };
+  return { create, list, findById, update, delete: deleteProvider }
 }
 
 function isProviderIdConflict(error: unknown): boolean {
   return (
     error instanceof Error &&
-    (error.message.includes("ai_custom_providers.provider_id") ||
-      error.message.includes("UNIQUE constraint failed"))
-  );
+    (error.message.includes('ai_custom_providers.provider_id') || error.message.includes('UNIQUE constraint failed'))
+  )
 }
 
-function parseDefinition(
-  providerId: string,
-  definition: unknown,
-): CustomAiProviderDefinition {
-  const parsed = customAiProviderDefinitionSchema.safeParse(definition);
+function parseDefinition(providerId: string, definition: unknown): CustomAiProviderDefinition {
+  const parsed = customAiProviderDefinitionSchema.safeParse(definition)
   if (!parsed.success || parsed.data.providerId !== providerId) {
     throw new AiCustomProviderDefinitionInvalidError(providerId, {
       cause: parsed.success ? undefined : parsed.error,
-    });
+    })
   }
-  return parsed.data;
+  return parsed.data
 }
 
 function toRecord(row: AiCustomProviderStorageRecord): AiCustomProviderRecord {
-  let definition: unknown;
+  let definition: unknown
   try {
-    definition = parseBoundedJson(row.definitionJson);
+    definition = parseBoundedJson(row.definitionJson)
   } catch (error) {
     throw new AiCustomProviderDefinitionInvalidError(row.providerId, {
       cause: error,
-    });
+    })
   }
-  const parsedDefinition = parseDefinition(row.providerId, definition);
-  const { definitionJson: _, ...record } = row;
-  return { ...record, definition: parsedDefinition };
+  const parsedDefinition = parseDefinition(row.providerId, definition)
+  const { definitionJson: _, ...record } = row
+  return { ...record, definition: parsedDefinition }
 }

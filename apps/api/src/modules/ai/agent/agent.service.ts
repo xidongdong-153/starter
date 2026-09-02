@@ -10,171 +10,122 @@ import type {
   InlineAgentRunConfig,
   UpdateAgentDefinitionInput,
   UpdateAgentDefinitionStatusInput,
-} from "@starter/contracts";
-import {
-  agentDefinitionConfigSchema,
-  ApiErrorCodes,
-  defaultAgentDefinitionConfig,
-} from "@starter/contracts";
+} from '@starter/contracts'
+import { agentDefinitionConfigSchema, ApiErrorCodes, defaultAgentDefinitionConfig } from '@starter/contracts'
 
-import type { RuntimeAccessContext } from "../principal.js";
-import type {
-  AiToolRegistry,
-  RegisteredAiTool,
-} from "../tool/tool-registry.js";
-import { isAiToolAvailableInScope } from "../tool/tool-registry.js";
-import type {
-  AiOutputContractRegistry,
-  ResolvedAiOutputContract,
-} from "../output/output-contract-registry.js";
-import type { AiPromptService } from "../prompt/prompt.service.js";
-import { appendSkillDescriptions } from "../skill/skill-tools.js";
-import type {
-  AiSkillRecord,
-  AiSkillRepository,
-} from "../skill/skill.repository.js";
-import { AppError } from "@api/shared/app-error.js";
-import { generateId } from "@api/shared/id.js";
+import type { RuntimeAccessContext } from '../principal.js'
+import type { AiToolRegistry, RegisteredAiTool } from '../tool/tool-registry.js'
+import { isAiToolAvailableInScope } from '../tool/tool-registry.js'
+import type { AiOutputContractRegistry, ResolvedAiOutputContract } from '../output/output-contract-registry.js'
+import type { AiPromptService } from '../prompt/prompt.service.js'
+import { appendSkillDescriptions } from '../skill/skill-tools.js'
+import type { AiSkillRecord, AiSkillRepository } from '../skill/skill.repository.js'
+import { AppError } from '@api/shared/app-error.js'
+import { generateId } from '@api/shared/id.js'
 
-import { AiAgentDefinitionRevisionConflictError } from "./agent.repository.js";
-import type {
-  AiAgentDefinitionRecord,
-  AiAgentDefinitionRepository,
-} from "./agent.repository.js";
-import {
-  parseAgentDefinitionConfig,
-  toAgentDefinitionDetail,
-  toAgentDefinitionSummary,
-} from "./agent.presenter.js";
+import { AiAgentDefinitionRevisionConflictError } from './agent.repository.js'
+import type { AiAgentDefinitionRecord, AiAgentDefinitionRepository } from './agent.repository.js'
+import { parseAgentDefinitionConfig, toAgentDefinitionDetail, toAgentDefinitionSummary } from './agent.presenter.js'
 
 /**
  * Run 启动时的执行配置解析结果。预设 Agent 启动时 id/revision 非空；
  * 内联配置启动时为 null，配置事实只存在 Run snapshot 里。
  */
 export interface ResolvedAgentDefinition {
-  id: string | null;
-  revision: number | null;
-  config: AgentDefinitionConfig;
-  model: NonNullable<AgentDefinitionConfig["model"]>;
-  systemPrompt: string;
-  skills: Array<Pick<AiSkillRecord, "id" | "name" | "description">>;
-  tools: RegisteredAiTool[];
-  outputContract: ResolvedAiOutputContract | null;
-  thinkingLevel: AgentDefinitionConfig["thinkingLevel"];
-  maxTurns: number;
+  id: string | null
+  revision: number | null
+  config: AgentDefinitionConfig
+  model: NonNullable<AgentDefinitionConfig['model']>
+  systemPrompt: string
+  skills: Array<Pick<AiSkillRecord, 'id' | 'name' | 'description'>>
+  tools: RegisteredAiTool[]
+  outputContract: ResolvedAiOutputContract | null
+  thinkingLevel: AgentDefinitionConfig['thinkingLevel']
+  maxTurns: number
 }
 
 export interface AiAgentDefinitionService {
   listPublic: (query: AgentDefinitionListQuery) => {
-    items: AgentDefinitionSummary[];
-    total: number;
-    page: number;
-    pageSize: number;
-  };
-  getPublic: (id: string) => AgentDefinitionSummary;
+    items: AgentDefinitionSummary[]
+    total: number
+    page: number
+    pageSize: number
+  }
+  getPublic: (id: string) => AgentDefinitionSummary
   listAdmin: (query: AgentDefinitionListQuery) => {
-    items: AgentDefinitionDetail[];
-    total: number;
-    page: number;
-    pageSize: number;
-  };
-  getAdmin: (id: string) => AgentDefinitionDetail;
-  create: (
-    input: CreateAgentDefinitionInput,
-    actorId: string,
-  ) => Promise<AgentDefinitionDetail>;
-  update: (
-    id: string,
-    input: UpdateAgentDefinitionInput,
-    actorId: string,
-  ) => Promise<AgentDefinitionDetail>;
-  updateStatus: (
-    id: string,
-    input: UpdateAgentDefinitionStatusInput,
-    actorId: string,
-  ) => Promise<AgentDefinitionDetail>;
-  resolve: (
-    id: string,
-    access: RuntimeAccessContext,
-  ) => Promise<ResolvedAgentDefinition>;
+    items: AgentDefinitionDetail[]
+    total: number
+    page: number
+    pageSize: number
+  }
+  getAdmin: (id: string) => AgentDefinitionDetail
+  create: (input: CreateAgentDefinitionInput, actorId: string) => Promise<AgentDefinitionDetail>
+  update: (id: string, input: UpdateAgentDefinitionInput, actorId: string) => Promise<AgentDefinitionDetail>
+  updateStatus: (id: string, input: UpdateAgentDefinitionStatusInput, actorId: string) => Promise<AgentDefinitionDetail>
+  resolve: (id: string, access: RuntimeAccessContext) => Promise<ResolvedAgentDefinition>
   /** 内联配置解析：不经过 ai_agent_definitions，校验规则与 resolve 一致。 */
-  resolveInline: (
-    config: InlineAgentRunConfig,
-    access: RuntimeAccessContext,
-  ) => Promise<ResolvedAgentDefinition>;
-  listTools: () => AiToolSummary[];
+  resolveInline: (config: InlineAgentRunConfig, access: RuntimeAccessContext) => Promise<ResolvedAgentDefinition>
+  listTools: () => AiToolSummary[]
 }
 
 export function createAiAgentDefinitionService(input: {
-  repository: AiAgentDefinitionRepository;
+  repository: AiAgentDefinitionRepository
   resolveModel: (
-    model: NonNullable<AgentDefinitionConfig["model"]>,
-  ) => Promise<NonNullable<AgentDefinitionConfig["model"]>>;
-  promptService: AiPromptService;
-  skillRepository: AiSkillRepository;
-  toolRegistry: AiToolRegistry;
-  outputContractRegistry: AiOutputContractRegistry;
+    model: NonNullable<AgentDefinitionConfig['model']>,
+  ) => Promise<NonNullable<AgentDefinitionConfig['model']>>
+  promptService: AiPromptService
+  skillRepository: AiSkillRepository
+  toolRegistry: AiToolRegistry
+  outputContractRegistry: AiOutputContractRegistry
 }): AiAgentDefinitionService {
-  const {
-    repository,
-    resolveModel,
-    promptService,
-    skillRepository,
-    toolRegistry,
-    outputContractRegistry,
-  } = input;
+  const { repository, resolveModel, promptService, skillRepository, toolRegistry, outputContractRegistry } = input
 
   function listPublic(query: AgentDefinitionListQuery) {
-    const result = repository.list({ ...query, status: "enabled" });
+    const result = repository.list({ ...query, status: 'enabled' })
     return {
       items: result.items.map(toAgentDefinitionSummary),
       total: result.total,
       page: query.page,
       pageSize: query.pageSize,
-    };
+    }
   }
 
   function getPublic(id: string): AgentDefinitionSummary {
-    const record = requireRecord(id);
-    if (record.status !== "enabled") throw notFound();
-    return toAgentDefinitionSummary(record);
+    const record = requireRecord(id)
+    if (record.status !== 'enabled') throw notFound()
+    return toAgentDefinitionSummary(record)
   }
 
   function listAdmin(query: AgentDefinitionListQuery) {
-    const result = repository.list(query);
+    const result = repository.list(query)
     return {
       items: result.items.map(toAgentDefinitionDetail),
       total: result.total,
       page: query.page,
       pageSize: query.pageSize,
-    };
+    }
   }
 
   function getAdmin(id: string): AgentDefinitionDetail {
-    return toAgentDefinitionDetail(requireRecord(id));
+    return toAgentDefinitionDetail(requireRecord(id))
   }
 
-  async function create(
-    input: CreateAgentDefinitionInput,
-    actorId: string,
-  ): Promise<AgentDefinitionDetail> {
-    const config = normalizeConfig(
-      input.config ?? defaultAgentDefinitionConfig,
-    );
-    await validateConfig(config, false);
+  async function create(input: CreateAgentDefinitionInput, actorId: string): Promise<AgentDefinitionDetail> {
+    const config = normalizeConfig(input.config ?? defaultAgentDefinitionConfig)
+    await validateConfig(config, false)
     try {
       const record = repository.create({
         id: generateId(),
         name: input.name,
-        description: input.description ?? "",
+        description: input.description ?? '',
         configJson: JSON.stringify(config),
         createdBy: actorId,
         updatedBy: actorId,
         now: new Date(),
-      });
-      return toAgentDefinitionDetail(record);
+      })
+      return toAgentDefinitionDetail(record)
     } catch (error) {
-      throw normalizeRepositoryError(error);
+      throw normalizeRepositoryError(error)
     }
   }
 
@@ -184,49 +135,36 @@ export function createAiAgentDefinitionService(input: {
     actorId: string,
   ): Promise<AgentDefinitionDetail> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const current = requireRecord(id);
-      const currentConfig = parseAgentDefinitionConfig(current.configJson);
-      const nextConfig = input.config
-        ? normalizeConfig(input.config)
-        : currentConfig;
-      const configChanged = !sameConfig(currentConfig, nextConfig);
-      if (input.config && configChanged)
-        await validateConfig(nextConfig, current.status === "enabled");
+      const current = requireRecord(id)
+      const currentConfig = parseAgentDefinitionConfig(current.configJson)
+      const nextConfig = input.config ? normalizeConfig(input.config) : currentConfig
+      const configChanged = !sameConfig(currentConfig, nextConfig)
+      if (input.config && configChanged) await validateConfig(nextConfig, current.status === 'enabled')
 
       try {
         const record = repository.update({
           id,
           ...(input.name !== undefined ? { name: input.name } : {}),
-          ...(input.description !== undefined
-            ? { description: input.description }
-            : {}),
+          ...(input.description !== undefined ? { description: input.description } : {}),
           ...(configChanged ? { configJson: JSON.stringify(nextConfig) } : {}),
           expectedRevision: current.revision,
           expectedStatus: current.status,
           revision: current.revision + (configChanged ? 1 : 0),
           updatedBy: actorId,
           now: new Date(),
-        });
-        if (!record) throw notFound();
-        return toAgentDefinitionDetail(record);
+        })
+        if (!record) throw notFound()
+        return toAgentDefinitionDetail(record)
       } catch (error) {
         if (error instanceof AiAgentDefinitionRevisionConflictError) {
-          if (attempt < 2) continue;
-          throw new AppError(
-            ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
-            "Agent 更新冲突，请重试",
-            500,
-          );
+          if (attempt < 2) continue
+          throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, 'Agent 更新冲突，请重试', 500)
         }
-        throw normalizeRepositoryError(error);
+        throw normalizeRepositoryError(error)
       }
     }
 
-    throw new AppError(
-      ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
-      "Agent 更新冲突，请重试",
-      500,
-    );
+    throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, 'Agent 更新冲突，请重试', 500)
   }
 
   async function updateStatus(
@@ -235,12 +173,9 @@ export function createAiAgentDefinitionService(input: {
     actorId: string,
   ): Promise<AgentDefinitionDetail> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const current = requireRecord(id);
-      if (input.status === "enabled") {
-        await validateConfig(
-          parseAgentDefinitionConfig(current.configJson),
-          true,
-        );
+      const current = requireRecord(id)
+      if (input.status === 'enabled') {
+        await validateConfig(parseAgentDefinitionConfig(current.configJson), true)
       }
       try {
         const record = repository.updateStatus({
@@ -250,46 +185,31 @@ export function createAiAgentDefinitionService(input: {
           expectedStatus: current.status,
           updatedBy: actorId,
           now: new Date(),
-        });
-        if (!record) throw notFound();
-        return toAgentDefinitionDetail(record);
+        })
+        if (!record) throw notFound()
+        return toAgentDefinitionDetail(record)
       } catch (error) {
         if (error instanceof AiAgentDefinitionRevisionConflictError) {
-          if (attempt < 2) continue;
-          throw new AppError(
-            ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
-            "Agent 状态更新冲突，请重试",
-            500,
-          );
+          if (attempt < 2) continue
+          throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, 'Agent 状态更新冲突，请重试', 500)
         }
-        throw error;
+        throw error
       }
     }
 
-    throw new AppError(
-      ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
-      "Agent 状态更新冲突，请重试",
-      500,
-    );
+    throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, 'Agent 状态更新冲突，请重试', 500)
   }
 
-  async function resolve(
-    id: string,
-    access: RuntimeAccessContext,
-  ): Promise<ResolvedAgentDefinition> {
-    const record = requireRecord(id);
-    if (record.status !== "enabled") {
-      throw new AppError(
-        ApiErrorCodes.AI_AGENT_NOT_ENABLED,
-        "Agent 当前未启用",
-        409,
-      );
+  async function resolve(id: string, access: RuntimeAccessContext): Promise<ResolvedAgentDefinition> {
+    const record = requireRecord(id)
+    if (record.status !== 'enabled') {
+      throw new AppError(ApiErrorCodes.AI_AGENT_NOT_ENABLED, 'Agent 当前未启用', 409)
     }
-    const config = parseAgentDefinitionConfig(record.configJson);
-    const model = config.model;
-    const systemPromptId = config.systemPromptId;
-    if (!model || !systemPromptId) throw invalidConfig();
-    let core: ResolvedConfigCore;
+    const config = parseAgentDefinitionConfig(record.configJson)
+    const model = config.model
+    const systemPromptId = config.systemPromptId
+    if (!model || !systemPromptId) throw invalidConfig()
+    let core: ResolvedConfigCore
     try {
       core = await resolveConfigCore(
         {
@@ -301,17 +221,14 @@ export function createAiAgentDefinitionService(input: {
           outputContract: config.outputContract,
         },
         access,
-      );
+      )
     } catch (error) {
       // 预设 Agent 路径维持既有错误语义：模型引用无效统一 400，不泄漏 allowlist 判据。
       // 技能/工具/契约的 AppError 原样传播，错误码与资源信息不变。
-      if (
-        error instanceof AppError &&
-        error.code === ApiErrorCodes.AI_MODEL_NOT_ALLOWED
-      ) {
-        throw invalidConfig("model");
+      if (error instanceof AppError && error.code === ApiErrorCodes.AI_MODEL_NOT_ALLOWED) {
+        throw invalidConfig('model')
       }
-      throw error;
+      throw error
     }
     return {
       id: record.id,
@@ -320,19 +237,15 @@ export function createAiAgentDefinitionService(input: {
       ...core,
       thinkingLevel: config.thinkingLevel,
       maxTurns: config.maxTurns,
-    };
+    }
   }
 
   async function resolveInline(
     input: InlineAgentRunConfig,
     access: RuntimeAccessContext,
   ): Promise<ResolvedAgentDefinition> {
-    if (access.principal.kind === "product_app") {
-      throw new AppError(
-        ApiErrorCodes.AI_RUN_INLINE_CONFIG_FORBIDDEN,
-        "应用凭据主体不能使用内联 Agent 配置",
-        403,
-      );
+    if (access.principal.kind === 'product_app') {
+      throw new AppError(ApiErrorCodes.AI_RUN_INLINE_CONFIG_FORBIDDEN, '应用凭据主体不能使用内联 Agent 配置', 403)
     }
     const core = await resolveConfigCore(
       {
@@ -344,7 +257,7 @@ export function createAiAgentDefinitionService(input: {
         outputContract: input.outputContract,
       },
       access,
-    );
+    )
     const config: AgentDefinitionConfig = {
       schemaVersion: 2,
       model: core.model,
@@ -355,7 +268,7 @@ export function createAiAgentDefinitionService(input: {
       outputMode: input.outputMode,
       thinkingLevel: input.thinkingLevel,
       maxTurns: input.maxTurns,
-    };
+    }
     return {
       id: null,
       revision: null,
@@ -363,7 +276,7 @@ export function createAiAgentDefinitionService(input: {
       ...core,
       thinkingLevel: input.thinkingLevel,
       maxTurns: input.maxTurns,
-    };
+    }
   }
 
   /**
@@ -373,126 +286,116 @@ export function createAiAgentDefinitionService(input: {
    */
   async function resolveConfigCore(
     input: {
-      model: NonNullable<AgentDefinitionConfig["model"]>;
-      systemPromptId: string | null;
-      systemPromptText: string | null;
-      skillIds: string[];
-      toolRefs: AiToolRef[];
-      outputContract: AiOutputContractRef | null;
+      model: NonNullable<AgentDefinitionConfig['model']>
+      systemPromptId: string | null
+      systemPromptText: string | null
+      skillIds: string[]
+      toolRefs: AiToolRef[]
+      outputContract: AiOutputContractRef | null
     },
     access: RuntimeAccessContext,
   ): Promise<ResolvedConfigCore> {
-    const model = await resolveModel(input.model);
+    const model = await resolveModel(input.model)
     const rawSystemPrompt =
       input.systemPromptText !== null
         ? input.systemPromptText
         : input.systemPromptId !== null
           ? promptService.resolveSystemPromptContent(input.systemPromptId)
-          : null;
-    if (!rawSystemPrompt) throw invalidConfig("systemPrompt");
+          : null
+    if (!rawSystemPrompt) throw invalidConfig('systemPrompt')
     const skills = input.skillIds.map((id) => {
-      const skill = skillRepository.findSkillById(id);
-      if (!skill || !skill.enabled) throw invalidConfig("skill");
+      const skill = skillRepository.findSkillById(id)
+      if (!skill || !skill.enabled) throw invalidConfig('skill')
       return {
         id: skill.id,
         name: skill.name,
         description: skill.description,
-      };
-    });
-    const systemPrompt =
-      appendSkillDescriptions(rawSystemPrompt, skills) ?? rawSystemPrompt;
+      }
+    })
+    const systemPrompt = appendSkillDescriptions(rawSystemPrompt, skills) ?? rawSystemPrompt
     // 精确 ref 必须存在，且同一配置不能引用同名不同版本
     // （Pi 模型调用只携带 Tool name，没有第二个版本选择字段）。
-    const toolNames = new Set<string>();
+    const toolNames = new Set<string>()
     const tools = input.toolRefs.map((ref) => {
-      if (toolNames.has(ref.name) || ref.name === "emit_structured_output")
-        throw invalidConfig("tool");
-      toolNames.add(ref.name);
-      const tool = toolRegistry.find(ref);
+      if (toolNames.has(ref.name) || ref.name === 'emit_structured_output') throw invalidConfig('tool')
+      toolNames.add(ref.name)
+      const tool = toolRegistry.find(ref)
       if (!tool || !isAiToolAvailableInScope(tool, access.scope)) {
-        throw invalidConfig("tool");
+        throw invalidConfig('tool')
       }
-      return tool;
-    });
-    const outputContract = input.outputContract
-      ? resolveOutputContract(input.outputContract)
-      : null;
-    return { model, systemPrompt, skills, tools, outputContract };
+      return tool
+    })
+    const outputContract = input.outputContract ? resolveOutputContract(input.outputContract) : null
+    return { model, systemPrompt, skills, tools, outputContract }
   }
 
-  async function validateConfig(
-    config: AgentDefinitionConfig,
-    requireExecutable: boolean,
-  ): Promise<void> {
+  async function validateConfig(config: AgentDefinitionConfig, requireExecutable: boolean): Promise<void> {
     if (config.model) {
       try {
-        await resolveModel(config.model);
+        await resolveModel(config.model)
       } catch (error) {
-        if (error instanceof AppError) throw invalidConfig("model");
-        throw error;
+        if (error instanceof AppError) throw invalidConfig('model')
+        throw error
       }
     } else if (requireExecutable) {
-      throw invalidConfig("model");
+      throw invalidConfig('model')
     }
 
     if (config.systemPromptId) {
       try {
-        promptService.assertSystemPromptAvailable(config.systemPromptId);
+        promptService.assertSystemPromptAvailable(config.systemPromptId)
       } catch (error) {
-        if (error instanceof AppError) throw invalidConfig("systemPrompt");
-        throw error;
+        if (error instanceof AppError) throw invalidConfig('systemPrompt')
+        throw error
       }
     } else if (requireExecutable) {
-      throw invalidConfig("systemPrompt");
+      throw invalidConfig('systemPrompt')
     }
 
     for (const skillId of config.skillIds) {
-      const skill = skillRepository.findSkillById(skillId);
-      if (!skill || !skill.enabled) throw invalidConfig("skill");
+      const skill = skillRepository.findSkillById(skillId)
+      if (!skill || !skill.enabled) throw invalidConfig('skill')
     }
     // 精确 ref 必须存在，且同一个 Agent 不能引用同名不同版本
     // （Pi 模型调用只携带 Tool name，没有第二个版本选择字段）。
-    const toolNames = new Set<string>();
+    const toolNames = new Set<string>()
     for (const ref of config.toolRefs) {
-      if (toolNames.has(ref.name) || ref.name === "emit_structured_output")
-        throw invalidConfig("tool");
-      toolNames.add(ref.name);
+      if (toolNames.has(ref.name) || ref.name === 'emit_structured_output') throw invalidConfig('tool')
+      toolNames.add(ref.name)
       try {
-        toolRegistry.require(ref);
+        toolRegistry.require(ref)
       } catch {
-        throw invalidConfig("tool");
+        throw invalidConfig('tool')
       }
     }
-    if (config.outputContract) resolveOutputContract(config.outputContract);
+    if (config.outputContract) resolveOutputContract(config.outputContract)
   }
 
-  function resolveOutputContract(
-    ref: AiOutputContractRef,
-  ): ResolvedAiOutputContract {
+  function resolveOutputContract(ref: AiOutputContractRef): ResolvedAiOutputContract {
     try {
-      const contract = outputContractRegistry.resolve(ref);
+      const contract = outputContractRegistry.resolve(ref)
       if (
         contract.schemaHash !== ref.schemaHash ||
         contract.renderKind !== ref.renderKind ||
         contract.visibility !== ref.visibility ||
         contract.mode !== ref.mode
       ) {
-        throw new Error("Output Contract ref metadata mismatch");
+        throw new Error('Output Contract ref metadata mismatch')
       }
-      return contract;
+      return contract
     } catch {
-      throw invalidConfig("outputContract");
+      throw invalidConfig('outputContract')
     }
   }
 
   function requireRecord(id: string): AiAgentDefinitionRecord {
-    const record = repository.findById(id);
-    if (!record) throw notFound();
-    return record;
+    const record = repository.findById(id)
+    if (!record) throw notFound()
+    return record
   }
 
   function listTools(): AiToolSummary[] {
-    return [...toolRegistry.listPublic()];
+    return [...toolRegistry.listPublic()]
   }
 
   return {
@@ -506,42 +409,37 @@ export function createAiAgentDefinitionService(input: {
     resolve,
     resolveInline,
     listTools,
-  };
+  }
 }
 
 interface ResolvedConfigCore {
-  model: NonNullable<AgentDefinitionConfig["model"]>;
-  systemPrompt: string;
-  skills: Array<Pick<AiSkillRecord, "id" | "name" | "description">>;
-  tools: RegisteredAiTool[];
-  outputContract: ResolvedAiOutputContract | null;
+  model: NonNullable<AgentDefinitionConfig['model']>
+  systemPrompt: string
+  skills: Array<Pick<AiSkillRecord, 'id' | 'name' | 'description'>>
+  tools: RegisteredAiTool[]
+  outputContract: ResolvedAiOutputContract | null
 }
 
 function normalizeConfig(config: AgentDefinitionConfig): AgentDefinitionConfig {
-  const parsed = agentDefinitionConfigSchema.safeParse(config);
-  if (!parsed.success) throw invalidConfig();
+  const parsed = agentDefinitionConfigSchema.safeParse(config)
+  if (!parsed.success) throw invalidConfig()
   return {
     ...parsed.data,
     skillIds: [...parsed.data.skillIds].sort(),
     toolRefs: [...parsed.data.toolRefs].sort((left, right) =>
-      left.name === right.name
-        ? left.version.localeCompare(right.version)
-        : left.name.localeCompare(right.name),
+      left.name === right.name ? left.version.localeCompare(right.version) : left.name.localeCompare(right.name),
     ),
-  };
+  }
 }
 
-function sameConfig(
-  left: AgentDefinitionConfig,
-  right: AgentDefinitionConfig,
-): boolean {
-  const normalizedLeft = normalizeConfig(left);
-  const normalizedRight = normalizeConfig(right);
+function sameConfig(left: AgentDefinitionConfig, right: AgentDefinitionConfig): boolean {
+  const normalizedLeft = normalizeConfig(left)
+  const normalizedRight = normalizeConfig(right)
   const modelsEqual =
     normalizedLeft.model === null || normalizedRight.model === null
       ? normalizedLeft.model === normalizedRight.model
       : normalizedLeft.model.providerId === normalizedRight.model.providerId &&
-        normalizedLeft.model.modelId === normalizedRight.model.modelId;
+        normalizedLeft.model.modelId === normalizedRight.model.modelId
 
   return (
     normalizedLeft.schemaVersion === normalizedRight.schemaVersion &&
@@ -551,19 +449,13 @@ function sameConfig(
     sameToolRefs(normalizedLeft.toolRefs, normalizedRight.toolRefs) &&
     normalizedLeft.thinkingLevel === normalizedRight.thinkingLevel &&
     normalizedLeft.maxTurns === normalizedRight.maxTurns &&
-    sameOutputContractRefs(
-      normalizedLeft.outputContract,
-      normalizedRight.outputContract,
-    ) &&
+    sameOutputContractRefs(normalizedLeft.outputContract, normalizedRight.outputContract) &&
     normalizedLeft.outputMode === normalizedRight.outputMode
-  );
+  )
 }
 
-function sameOutputContractRefs(
-  left: AiOutputContractRef | null,
-  right: AiOutputContractRef | null,
-): boolean {
-  if (left === null || right === null) return left === right;
+function sameOutputContractRefs(left: AiOutputContractRef | null, right: AiOutputContractRef | null): boolean {
+  if (left === null || right === null) return left === right
   return (
     left.name === right.name &&
     left.version === right.version &&
@@ -571,55 +463,39 @@ function sameOutputContractRefs(
     left.renderKind === right.renderKind &&
     left.visibility === right.visibility &&
     left.mode === right.mode
-  );
+  )
 }
 
 function sameToolRefs(left: AiToolRef[], right: AiToolRef[]): boolean {
   return (
     left.length === right.length &&
     left.every((ref, index) => {
-      const other = right[index];
-      return (
-        other !== undefined &&
-        ref.name === other.name &&
-        ref.version === other.version
-      );
+      const other = right[index]
+      return other !== undefined && ref.name === other.name && ref.version === other.version
     })
-  );
+  )
 }
 
 function sameStringArray(left: string[], right: string[]): boolean {
-  return (
-    left.length === right.length &&
-    left.every((value, index) => value === right[index])
-  );
+  return left.length === right.length && left.every((value, index) => value === right[index])
 }
 
 function invalidConfig(resource?: string): AppError {
   return new AppError(
     ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
-    "Agent 配置引用无效或资源未启用",
+    'Agent 配置引用无效或资源未启用',
     400,
     resource ? { resource } : undefined,
-  );
+  )
 }
 
 function notFound(): AppError {
-  return new AppError(ApiErrorCodes.COMMON_NOT_FOUND, "Agent 不存在", 404);
+  return new AppError(ApiErrorCodes.COMMON_NOT_FOUND, 'Agent 不存在', 404)
 }
 
 function normalizeRepositoryError(error: unknown): unknown {
-  if (
-    error &&
-    typeof error === "object" &&
-    "name" in error &&
-    error.name === "AiAgentDefinitionNameConflictError"
-  ) {
-    return new AppError(
-      ApiErrorCodes.AI_AGENT_NAME_CONFLICT,
-      "Agent 名称已存在",
-      409,
-    );
+  if (error && typeof error === 'object' && 'name' in error && error.name === 'AiAgentDefinitionNameConflictError') {
+    return new AppError(ApiErrorCodes.AI_AGENT_NAME_CONFLICT, 'Agent 名称已存在', 409)
   }
-  return error;
+  return error
 }

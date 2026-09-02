@@ -43,7 +43,7 @@
     "format": "prettier --write . --ignore-path ../../.prettierignore",
     "lint": "eslint . --max-warnings 0",
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
-    "clean": "rm -rf dist"
+    "clean": "rimraf dist"
   },
   "peerDependencies": {
     "antd": "catalog:"
@@ -58,6 +58,7 @@
     "antd": "catalog:",
     "eslint": "catalog:",
     "prettier": "catalog:",
+    "rimraf": "catalog:",
     "tsup": "catalog:",
     "typescript": "catalog:"
   }

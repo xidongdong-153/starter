@@ -428,14 +428,7 @@
         },
         "ai_agent_sessions_scope_user_archived_idx": {
           "name": "ai_agent_sessions_scope_user_archived_idx",
-          "columns": [
-            "tenant_id",
-            "project_id",
-            "external_user_id",
-            "archived_at",
-            "updated_at",
-            "id"
-          ],
+          "columns": ["tenant_id", "project_id", "external_user_id", "archived_at", "updated_at", "id"],
           "isUnique": false
         },
         "ai_agent_sessions_app_idx": {
@@ -1174,13 +1167,7 @@
         },
         "ai_model_calls_scope_started_idx": {
           "name": "ai_model_calls_scope_started_idx",
-          "columns": [
-            "tenant_id",
-            "project_id",
-            "external_user_id",
-            "started_at",
-            "id"
-          ],
+          "columns": ["tenant_id", "project_id", "external_user_id", "started_at", "id"],
           "isUnique": false
         },
         "ai_model_calls_user_started_idx": {

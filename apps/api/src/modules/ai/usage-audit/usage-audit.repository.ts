@@ -4,73 +4,73 @@ import type {
   AiModelCallResult,
   AiToolExecutionAuditStatus,
   AiUsage,
-} from "@starter/contracts";
-import type { AppDatabase } from "@api/infra/db/client.js";
-import { and, count, desc, eq, gte, lte, sql } from "drizzle-orm";
+} from '@starter/contracts'
+import type { AppDatabase } from '@api/infra/db/client.js'
+import { and, count, desc, eq, gte, lte, sql } from 'drizzle-orm'
 
-import { aiModelCalls, aiToolExecutions } from "../ai.schema.js";
+import { aiModelCalls, aiToolExecutions } from '../ai.schema.js'
 
-export type AiModelCallRecord = typeof aiModelCalls.$inferSelect;
-export type AiToolExecutionRecord = typeof aiToolExecutions.$inferSelect;
+export type AiModelCallRecord = typeof aiModelCalls.$inferSelect
+export type AiToolExecutionRecord = typeof aiToolExecutions.$inferSelect
 
 export interface BeginAiModelCallInput {
-  id: string;
-  requestId: string;
-  userId: string;
-  appId?: string | null;
-  tenantId?: string;
-  projectId?: string;
-  externalUserId?: string | null;
-  principalKind?: string;
-  scenario: "model_test" | "agent_run" | "completion" | "legacy";
-  runId: string | null;
-  turnId?: string | null;
-  stepId?: string | null;
-  providerId: string;
-  modelId: string;
-  api?: string | null;
-  startedAt: Date;
-  timeoutMs: number;
+  id: string
+  requestId: string
+  userId: string
+  appId?: string | null
+  tenantId?: string
+  projectId?: string
+  externalUserId?: string | null
+  principalKind?: string
+  scenario: 'model_test' | 'agent_run' | 'completion' | 'legacy'
+  runId: string | null
+  turnId?: string | null
+  stepId?: string | null
+  providerId: string
+  modelId: string
+  api?: string | null
+  startedAt: Date
+  timeoutMs: number
 }
 
 export interface FinalizeAiModelCallInput {
-  id: string;
-  finishedAt: Date;
-  startedAt: Date;
-  result: Exclude<AiModelCallResult, "running">;
-  stopReason: AiModelCallRecord["stopReason"];
-  errorCode: string | null;
-  usage: AiUsage;
-  cost: AiCost | null;
+  id: string
+  finishedAt: Date
+  startedAt: Date
+  result: Exclude<AiModelCallResult, 'running'>
+  stopReason: AiModelCallRecord['stopReason']
+  errorCode: string | null
+  usage: AiUsage
+  cost: AiCost | null
   /** 首个模型输出相对请求开始的毫秒数；没有输出时为 null。 */
-  ttftMs?: number | null;
-  chunkCount?: number | null;
-  responseModel?: string | null;
-  responseId?: string | null;
-  httpStatus?: number | null;
+  ttftMs?: number | null
+  chunkCount?: number | null
+  responseModel?: string | null
+  responseId?: string | null
+  httpStatus?: number | null
 }
 
 export interface BeginAiToolExecutionInput {
-  id: string;
-  modelCallId: string;
-  runId?: string | null;
-  turnId?: string | null;
-  stepId?: string | null;
-  toolCallId?: string | null;
-  toolExecutionId?: string | null;
-  requestId?: string;
-  toolName: string;
-  toolVersion: string | null;
-  startedAt: Date;
-  timeoutMs: number;
+  id: string
+  modelCallId: string
+  runId?: string | null
+  turnId?: string | null
+  stepId?: string | null
+  toolCallId?: string | null
+  toolExecutionId?: string | null
+  requestId?: string
+  toolName: string
+  toolVersion: string | null
+  startedAt: Date
+  timeoutMs: number
 }
 
 export interface FinalizeAiToolExecutionInput {
-  id: string;
-  finishedAt: Date;
-  startedAt: Date;
-  status: Exclude<AiToolExecutionAuditStatus, "running">;
-  errorCode: string | null;
+  id: string
+  finishedAt: Date
+  startedAt: Date
+  status: Exclude<AiToolExecutionAuditStatus, 'running'>
+  errorCode: string | null
 }
 
 export function createAiUsageAuditRepository(db: AppDatabase) {
@@ -78,40 +78,40 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
     db.transaction((tx) => {
       tx.update(aiModelCalls)
         .set({
-          result: "interrupted",
-          stopReason: "deferred",
+          result: 'interrupted',
+          stopReason: 'deferred',
           finishedAt: now,
           durationMs: null,
           errorCode: null,
         })
         .where(
           and(
-            eq(aiModelCalls.result, "running"),
+            eq(aiModelCalls.result, 'running'),
             sql`${aiModelCalls.startedAt} + ${aiModelCalls.timeoutMs} + 5000 <= ${now.getTime()}`,
           ),
         )
-        .run();
+        .run()
       tx.update(aiToolExecutions)
         .set({
-          status: "interrupted",
+          status: 'interrupted',
           finishedAt: now,
           durationMs: null,
           errorCode: null,
         })
         .where(
           and(
-            eq(aiToolExecutions.status, "running"),
+            eq(aiToolExecutions.status, 'running'),
             sql`${aiToolExecutions.startedAt} + ${aiToolExecutions.timeoutMs} + 5000 <= ${now.getTime()}`,
           ),
         )
-        .run();
-    });
+        .run()
+    })
   }
 
   function beginModelCall(input: BeginAiModelCallInput): void {
     db.insert(aiModelCalls)
-      .values({ ...input, result: "running" })
-      .run();
+      .values({ ...input, result: 'running' })
+      .run()
   }
 
   function finalizeModelCall(input: FinalizeAiModelCallInput): void {
@@ -141,10 +141,8 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
         costTotal: input.cost?.total ?? null,
         costCurrency: input.cost?.currency ?? null,
       })
-      .where(
-        and(eq(aiModelCalls.id, input.id), eq(aiModelCalls.result, "running")),
-      )
-      .run();
+      .where(and(eq(aiModelCalls.id, input.id), eq(aiModelCalls.result, 'running')))
+      .run()
   }
 
   function beginToolExecution(input: BeginAiToolExecutionInput): void {
@@ -161,9 +159,9 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
         toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
         startedAt: input.startedAt,
-        status: "running",
+        status: 'running',
       })
-      .run();
+      .run()
   }
 
   function finalizeToolExecution(input: FinalizeAiToolExecutionInput): void {
@@ -174,42 +172,26 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
         finishedAt: input.finishedAt,
         durationMs: input.finishedAt.getTime() - input.startedAt.getTime(),
       })
-      .where(
-        and(
-          eq(aiToolExecutions.id, input.id),
-          eq(aiToolExecutions.status, "running"),
-        ),
-      )
-      .run();
+      .where(and(eq(aiToolExecutions.id, input.id), eq(aiToolExecutions.status, 'running')))
+      .run()
   }
 
   function listModelCalls(query: AiModelCallAuditQuery) {
-    const conditions = [];
-    if (query.userId) conditions.push(eq(aiModelCalls.userId, query.userId));
-    if (query.appId) conditions.push(eq(aiModelCalls.appId, query.appId));
-    if (query.tenantId)
-      conditions.push(eq(aiModelCalls.tenantId, query.tenantId));
-    if (query.projectId)
-      conditions.push(eq(aiModelCalls.projectId, query.projectId));
-    if (query.externalUserId)
-      conditions.push(eq(aiModelCalls.externalUserId, query.externalUserId));
-    if (query.providerId)
-      conditions.push(eq(aiModelCalls.providerId, query.providerId));
-    if (query.modelId) conditions.push(eq(aiModelCalls.modelId, query.modelId));
-    if (query.result) conditions.push(eq(aiModelCalls.result, query.result));
-    if (query.requestId)
-      conditions.push(eq(aiModelCalls.requestId, query.requestId));
-    if (query.from)
-      conditions.push(gte(aiModelCalls.startedAt, new Date(query.from)));
-    if (query.to)
-      conditions.push(lte(aiModelCalls.startedAt, new Date(query.to)));
-    const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
-    const countRow = db
-      .select({ value: count() })
-      .from(aiModelCalls)
-      .where(whereClause)
-      .get();
-    const total = countRow?.value ?? 0;
+    const conditions = []
+    if (query.userId) conditions.push(eq(aiModelCalls.userId, query.userId))
+    if (query.appId) conditions.push(eq(aiModelCalls.appId, query.appId))
+    if (query.tenantId) conditions.push(eq(aiModelCalls.tenantId, query.tenantId))
+    if (query.projectId) conditions.push(eq(aiModelCalls.projectId, query.projectId))
+    if (query.externalUserId) conditions.push(eq(aiModelCalls.externalUserId, query.externalUserId))
+    if (query.providerId) conditions.push(eq(aiModelCalls.providerId, query.providerId))
+    if (query.modelId) conditions.push(eq(aiModelCalls.modelId, query.modelId))
+    if (query.result) conditions.push(eq(aiModelCalls.result, query.result))
+    if (query.requestId) conditions.push(eq(aiModelCalls.requestId, query.requestId))
+    if (query.from) conditions.push(gte(aiModelCalls.startedAt, new Date(query.from)))
+    if (query.to) conditions.push(lte(aiModelCalls.startedAt, new Date(query.to)))
+    const whereClause = conditions.length > 0 ? and(...conditions) : undefined
+    const countRow = db.select({ value: count() }).from(aiModelCalls).where(whereClause).get()
+    const total = countRow?.value ?? 0
     const items = db
       .select()
       .from(aiModelCalls)
@@ -217,12 +199,12 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
       .orderBy(desc(aiModelCalls.startedAt), desc(aiModelCalls.id))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize)
-      .all();
-    return { items, total };
+      .all()
+    return { items, total }
   }
 
   function findModelCall(id: string): AiModelCallRecord | undefined {
-    return db.select().from(aiModelCalls).where(eq(aiModelCalls.id, id)).get();
+    return db.select().from(aiModelCalls).where(eq(aiModelCalls.id, id)).get()
   }
 
   function listToolExecutions(modelCallId: string): AiToolExecutionRecord[] {
@@ -231,7 +213,7 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
       .from(aiToolExecutions)
       .where(eq(aiToolExecutions.modelCallId, modelCallId))
       .orderBy(aiToolExecutions.startedAt, aiToolExecutions.id)
-      .all();
+      .all()
   }
 
   return {
@@ -243,9 +225,7 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
     listModelCalls,
     listToolExecutions,
     recoverInterrupted,
-  };
+  }
 }
 
-export type AiUsageAuditRepository = ReturnType<
-  typeof createAiUsageAuditRepository
->;
+export type AiUsageAuditRepository = ReturnType<typeof createAiUsageAuditRepository>

@@ -21,7 +21,6 @@
     "check-types": "tsc --noEmit",
     "format": "prettier --write . --ignore-path ../../.prettierignore",
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
-    "lint": "eslint . --max-warnings 0",
-    "clean": "rm -rf dist"
+    "lint": "eslint . --max-warnings 0"
   }
 }

@@ -1,74 +1,62 @@
-import type { AppRuntime } from "@api/bootstrap/create-runtime.js";
-import type { AiModelRef } from "@starter/contracts";
+import type { AppRuntime } from '@api/bootstrap/create-runtime.js'
+import type { AiModelRef } from '@starter/contracts'
 
-import {
-  createAiAgentDefinitionRepository,
-  createAiAgentDefinitionService,
-} from "./agent/index.js";
-import { createAuthorizationRepository } from "@api/modules/authorization/index.js";
-import { createPiAgentExecutor } from "@api/infra/agent/index.js";
-import {
-  createAiApplicationRepository,
-  createAiApplicationService,
-} from "./application/index.js";
+import { createAiAgentDefinitionRepository, createAiAgentDefinitionService } from './agent/index.js'
+import { createAuthorizationRepository } from '@api/modules/authorization/index.js'
+import { createPiAgentExecutor } from '@api/infra/agent/index.js'
+import { createAiApplicationRepository, createAiApplicationService } from './application/index.js'
 import {
   createAiAttachmentRepository,
   createAiAttachmentResolver,
   createAiAttachmentService,
-} from "./attachment/index.js";
-import { createAiCompletionService } from "./completion/index.js";
-import { createAiRepository } from "./configuration/configuration.repository.js";
-import { createAiCustomProviderRepository } from "./configuration/custom-provider.repository.js";
-import { createAiService } from "./configuration/configuration.service.js";
-import { createAiPromptRepository } from "./prompt/prompt.repository.js";
-import { createAiPromptService } from "./prompt/prompt.service.js";
-import { createAiSkillRepository } from "./skill/skill.repository.js";
-import { createAiSkillService } from "./skill/skill.service.js";
-import { createBuiltinAiToolRegistry } from "./tool/tool-catalog.js";
-import { createAiStructuredOutputRepository } from "./output/structured-output.repository.js";
+} from './attachment/index.js'
+import { createAiCompletionService } from './completion/index.js'
+import { createAiRepository } from './configuration/configuration.repository.js'
+import { createAiCustomProviderRepository } from './configuration/custom-provider.repository.js'
+import { createAiService } from './configuration/configuration.service.js'
+import { createAiPromptRepository } from './prompt/prompt.repository.js'
+import { createAiPromptService } from './prompt/prompt.service.js'
+import { createAiSkillRepository } from './skill/skill.repository.js'
+import { createAiSkillService } from './skill/skill.service.js'
+import { createBuiltinAiToolRegistry } from './tool/tool-catalog.js'
+import { createAiStructuredOutputRepository } from './output/structured-output.repository.js'
 
-import { createAiUsageAuditRepository } from "./usage-audit/usage-audit.repository.js";
-import {
-  createAiInvocationRunner,
-  createAiUsageAuditService,
-} from "./usage-audit/usage-audit.service.js";
-import { createAiUrlGuard } from "@api/infra/ai/index.js";
+import { createAiUsageAuditRepository } from './usage-audit/usage-audit.repository.js'
+import { createAiInvocationRunner, createAiUsageAuditService } from './usage-audit/usage-audit.service.js'
+import { createAiUrlGuard } from '@api/infra/ai/index.js'
 import {
   createAiWebhookDispatcher,
   createAiWebhookRepository,
   createAiWebhookService,
   createWebhookCrypto,
-} from "./webhook/index.js";
+} from './webhook/index.js'
 import {
   createAiAgentRunRepository,
   createAiRunEventRepository,
   createAiRunTraceRepository,
   createAiRunLifecycleRepository,
   createAiAgentRunService,
-} from "./run/index.js";
-import {
-  createAiAgentSessionRepository,
-  createAiAgentSessionService,
-} from "./session/index.js";
+} from './run/index.js'
+import { createAiAgentSessionRepository, createAiAgentSessionService } from './session/index.js'
 
 /**
  * AI 模块 service 集合。产品模块（chat / flow）经 `modules/ai/index.ts`
  * 进程内调用这些 service，不再绕行 `/api/ai/*` HTTP 面。
  */
 export interface AiServices {
-  applicationService: ReturnType<typeof createAiApplicationService>;
-  webhookService: ReturnType<typeof createAiWebhookService>;
-  usageAuditService: ReturnType<typeof createAiUsageAuditService>;
-  configurationService: ReturnType<typeof createAiService>;
-  promptService: ReturnType<typeof createAiPromptService>;
-  skillService: ReturnType<typeof createAiSkillService>;
-  agentDefinitionService: ReturnType<typeof createAiAgentDefinitionService>;
-  sessionService: ReturnType<typeof createAiAgentSessionService>;
-  runService: ReturnType<typeof createAiAgentRunService>;
-  completionService: ReturnType<typeof createAiCompletionService>;
-  attachmentService: ReturnType<typeof createAiAttachmentService>;
-  toolRegistry: ReturnType<typeof createBuiltinAiToolRegistry>;
-  invocationRunner: ReturnType<typeof createAiInvocationRunner>;
+  applicationService: ReturnType<typeof createAiApplicationService>
+  webhookService: ReturnType<typeof createAiWebhookService>
+  usageAuditService: ReturnType<typeof createAiUsageAuditService>
+  configurationService: ReturnType<typeof createAiService>
+  promptService: ReturnType<typeof createAiPromptService>
+  skillService: ReturnType<typeof createAiSkillService>
+  agentDefinitionService: ReturnType<typeof createAiAgentDefinitionService>
+  sessionService: ReturnType<typeof createAiAgentSessionService>
+  runService: ReturnType<typeof createAiAgentRunService>
+  completionService: ReturnType<typeof createAiCompletionService>
+  attachmentService: ReturnType<typeof createAiAttachmentService>
+  toolRegistry: ReturnType<typeof createBuiltinAiToolRegistry>
+  invocationRunner: ReturnType<typeof createAiInvocationRunner>
 }
 
 /**
@@ -79,57 +67,50 @@ export interface AiServices {
 export function createAiServices(runtime: AppRuntime): AiServices {
   const applicationService = createAiApplicationService({
     repository: createAiApplicationRepository(runtime.db),
-    logger: runtime.logger.child({ module: "ai-application" }),
-  });
-  const webhookRepository = createAiWebhookRepository(runtime.db);
-  const webhookCrypto = createWebhookCrypto(
-    runtime.env.AI_CREDENTIAL_ENCRYPTION_KEY,
-  );
+    logger: runtime.logger.child({ module: 'ai-application' }),
+  })
+  const webhookRepository = createAiWebhookRepository(runtime.db)
+  const webhookCrypto = createWebhookCrypto(runtime.env.AI_CREDENTIAL_ENCRYPTION_KEY)
   const webhookUrlGuard = createAiUrlGuard({
     appEnv: runtime.env.APP_ENV,
     allowedPrivateCidrs: runtime.env.aiPrivateCidrs,
     timeoutMs: runtime.env.AI_WEBHOOK_TIMEOUT_MS,
-  });
+  })
   const webhookService = createAiWebhookService({
     repository: webhookRepository,
     applicationRepository: createAiApplicationRepository(runtime.db),
     crypto: webhookCrypto,
     urlGuard: webhookUrlGuard,
-    logger: runtime.logger.child({ module: "ai-webhook" }),
-  });
+    logger: runtime.logger.child({ module: 'ai-webhook' }),
+  })
   if (runtime.env.AI_WEBHOOK_ENABLED) {
     const webhookDispatcher = createAiWebhookDispatcher({
       db: runtime.db,
       crypto: webhookCrypto,
       urlGuard: webhookUrlGuard,
-      logger: runtime.logger.child({ module: "ai-webhook" }),
+      logger: runtime.logger.child({ module: 'ai-webhook' }),
       settings: {
         sweepIntervalMs: runtime.env.AI_WEBHOOK_SWEEP_INTERVAL_MS,
         maxAttempts: runtime.env.AI_WEBHOOK_MAX_ATTEMPTS,
         backoffMs: runtime.env.aiWebhookBackoffMs,
       },
-    });
-    runtime.webhookDispatcher = webhookDispatcher;
-    webhookDispatcher.start();
+    })
+    runtime.webhookDispatcher = webhookDispatcher
+    webhookDispatcher.start()
   }
   const usageAuditService = createAiUsageAuditService(
     createAiUsageAuditRepository(runtime.db),
-    runtime.logger.child({ module: "ai-usage-audit" }),
-  );
-  const invocationRunner = createAiInvocationRunner(
-    runtime.aiGateway,
-    usageAuditService,
-  );
-  const authorizationRepository = createAuthorizationRepository(runtime.db);
-  const skillRepository = createAiSkillRepository(runtime.db);
+    runtime.logger.child({ module: 'ai-usage-audit' }),
+  )
+  const invocationRunner = createAiInvocationRunner(runtime.aiGateway, usageAuditService)
+  const authorizationRepository = createAuthorizationRepository(runtime.db)
+  const skillRepository = createAiSkillRepository(runtime.db)
   const toolRegistry = createBuiltinAiToolRegistry({
     injectedTools: runtime.aiTools.list(),
     skillRepository,
-  });
-  const outputContractRegistry = runtime.aiOutputContracts;
-  const structuredOutputRepository = createAiStructuredOutputRepository(
-    runtime.db,
-  );
+  })
+  const outputContractRegistry = runtime.aiOutputContracts
+  const structuredOutputRepository = createAiStructuredOutputRepository(runtime.db)
   const configurationService = createAiService(
     createAiRepository(runtime.db),
     runtime.ai,
@@ -138,15 +119,11 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     runtime.env.AI_REQUEST_TIMEOUT_MS,
     createAiCustomProviderRepository(
       runtime.db,
-      runtime.ai.providers
-        .filter((provider) => provider.kind === "built_in")
-        .map((provider) => provider.id),
+      runtime.ai.providers.filter((provider) => provider.kind === 'built_in').map((provider) => provider.id),
     ),
-  );
-  const promptService = createAiPromptService(
-    createAiPromptRepository(runtime.db),
-  );
-  const skillService = createAiSkillService(skillRepository);
+  )
+  const promptService = createAiPromptService(createAiPromptRepository(runtime.db))
+  const skillService = createAiSkillService(skillRepository)
   const agentDefinitionService = createAiAgentDefinitionService({
     repository: createAiAgentDefinitionRepository(runtime.db),
     resolveModel: configurationService.resolveAgentModel,
@@ -154,33 +131,32 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     skillRepository,
     toolRegistry,
     outputContractRegistry,
-  });
-  const sessionRepository = createAiAgentSessionRepository(runtime.db);
+  })
+  const sessionRepository = createAiAgentSessionRepository(runtime.db)
   const sessionService = createAiAgentSessionService({
     repository: sessionRepository,
     sessionStore: runtime.agentSessionStore,
-    logger: runtime.logger.child({ module: "ai-session" }),
+    logger: runtime.logger.child({ module: 'ai-session' }),
     structuredOutputRepository,
     outputContractRegistry,
-  });
+  })
   void sessionService
     .checkConsistency()
     .then((report) => {
-      const orphanCount =
-        report.missingInPi.length + report.missingInMain.length;
+      const orphanCount = report.missingInPi.length + report.missingInMain.length
       if (orphanCount > 0) {
         runtime.logger.warn(
           {
             missingInPiCount: report.missingInPi.length,
             missingInMainCount: report.missingInMain.length,
           },
-          "Agent Session 一致性检查发现孤儿记录",
-        );
+          'Agent Session 一致性检查发现孤儿记录',
+        )
       }
     })
     .catch((error: unknown) => {
-      runtime.logger.error({ err: error }, "Agent Session 一致性检查失败");
-    });
+      runtime.logger.error({ err: error }, 'Agent Session 一致性检查失败')
+    })
   const runExecutor =
     runtime.piAgentExecutor ??
     createPiAgentExecutor({
@@ -191,24 +167,20 @@ export function createAiServices(runtime: AppRuntime): AiServices {
       audit: usageAuditService.createAgentModelCallAudit(),
       toolAudit: usageAuditService.createAgentToolExecutionAudit(),
       lifecycle: createAiRunLifecycleRepository(runtime.db),
-      logger: runtime.logger.child({ module: "ai-executor" }),
+      logger: runtime.logger.child({ module: 'ai-executor' }),
       requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
       maxRunMs: runtime.env.AI_RUN_MAX_MS,
-    });
-  const attachmentRepository = createAiAttachmentRepository(runtime.db);
+    })
+  const attachmentRepository = createAiAttachmentRepository(runtime.db)
   const attachmentResolver = createAiAttachmentResolver({
     repository: attachmentRepository,
     storage: runtime.attachmentStorage,
-  });
+  })
   /** 图片能力统一查 runtime 模型表，不区分内置 / 自定义 Provider；查不到按不支持处理。 */
   function modelSupportsImageInput(model: AiModelRef): boolean {
     return runtime.ai
       .listModels(model.providerId)
-      .some(
-        (entry) =>
-          entry.modelId === model.modelId &&
-          entry.capabilities.supportsImageInput,
-      );
+      .some((entry) => entry.modelId === model.modelId && entry.capabilities.supportsImageInput)
   }
   const runService = createAiAgentRunService({
     repository: createAiAgentRunRepository(runtime.db, sessionRepository),
@@ -219,36 +191,36 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     agentService: agentDefinitionService,
     registry: runtime.activeRunRegistry,
     executor: runExecutor,
-    logger: runtime.logger.child({ module: "ai-run" }),
+    logger: runtime.logger.child({ module: 'ai-run' }),
     telemetry: runtime.aiTelemetry,
     structuredOutputRepository,
     outputContractRegistry,
     resolveAttachments: attachmentResolver.resolveForRequest,
     supportsImageInput: modelSupportsImageInput,
-  });
+  })
   const completionService = createAiCompletionService({
     invocationRunner,
     requireAllowedModel: configurationService.resolveAgentModel,
     resolveAttachments: attachmentResolver.resolveForRequest,
     supportsImageInput: modelSupportsImageInput,
     requestTimeoutMs: runtime.env.AI_REQUEST_TIMEOUT_MS,
-    logger: runtime.logger.child({ module: "ai-completion" }),
-  });
+    logger: runtime.logger.child({ module: 'ai-completion' }),
+  })
   const attachmentService = createAiAttachmentService({
     storage: runtime.attachmentStorage,
     repository: attachmentRepository,
     sessionRepository,
-  });
+  })
   void runService
     .recoverInterrupted()
     .then((report) => {
       if (report.scanned > 0) {
-        runtime.logger.info({ report }, "Agent Run 启动恢复扫描完成");
+        runtime.logger.info({ report }, 'Agent Run 启动恢复扫描完成')
       }
     })
     .catch((error: unknown) => {
-      runtime.logger.error({ err: error }, "Agent Run 启动恢复扫描失败");
-    });
+      runtime.logger.error({ err: error }, 'Agent Run 启动恢复扫描失败')
+    })
 
   return {
     applicationService,
@@ -264,5 +236,5 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     attachmentService,
     toolRegistry,
     invocationRunner,
-  };
+  }
 }

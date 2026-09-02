@@ -1,5 +1,5 @@
-import type { FileItem } from "@starter/contracts";
-import type { FileRecord } from "./files.repository.js";
+import type { FileItem } from '@starter/contracts'
+import type { FileRecord } from './files.repository.js'
 
 export function toFileItem(file: FileRecord): FileItem {
   return {
@@ -10,5 +10,5 @@ export function toFileItem(file: FileRecord): FileItem {
     createdAt: file.createdAt.toISOString(),
     updatedAt: file.updatedAt.toISOString(),
     contentUrl: `/api/files/${file.id}/content`,
-  } satisfies FileItem;
+  } satisfies FileItem
 }

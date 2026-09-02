@@ -1,58 +1,39 @@
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  gt,
-  isNotNull,
-  isNull,
-  lte,
-  or,
-  sql,
-} from "drizzle-orm";
-import type { AppDatabase } from "@api/infra/db/client.js";
-import {
-  aiAgentRuns,
-  aiAgentSessions,
-  aiWebhookDeliveries,
-  aiWebhookEndpoints,
-} from "@api/modules/ai/ai.schema.js";
-import type { AiWebhookDeliveryQuery } from "@starter/contracts";
+import { and, asc, count, desc, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
+import type { AppDatabase } from '@api/infra/db/client.js'
+import { aiAgentRuns, aiAgentSessions, aiWebhookDeliveries, aiWebhookEndpoints } from '@api/modules/ai/ai.schema.js'
+import type { AiWebhookDeliveryQuery } from '@starter/contracts'
 
-export type AiWebhookEndpointRecord = typeof aiWebhookEndpoints.$inferSelect;
-export type AiWebhookDeliveryRecord = typeof aiWebhookDeliveries.$inferSelect;
+export type AiWebhookEndpointRecord = typeof aiWebhookEndpoints.$inferSelect
+export type AiWebhookDeliveryRecord = typeof aiWebhookDeliveries.$inferSelect
 
 /** 补登扫描需要的终态 Run 投影；appId 来自 `ai_agent_sessions`。 */
 export interface TerminalProductAppRunRow {
-  id: string;
-  sessionId: string;
-  agentId: string;
-  lane: string;
-  status: string;
-  agentRevision: number;
-  errorCode: string | null;
-  finishedAt: Date;
-  appId: string;
+  id: string
+  sessionId: string
+  agentId: string
+  lane: string
+  status: string
+  agentRevision: number
+  errorCode: string | null
+  finishedAt: Date
+  appId: string
 }
 
 /** 到期待投递记录，带端点 url 与加密 secret，免去二次查询。 */
 export interface DueDeliveryRow {
-  delivery: AiWebhookDeliveryRecord;
-  url: string;
-  signingSecretEncrypted: string;
+  delivery: AiWebhookDeliveryRecord
+  url: string
+  signingSecretEncrypted: string
 }
 
 export interface DeliveryPage {
-  items: AiWebhookDeliveryRecord[];
-  total: number;
+  items: AiWebhookDeliveryRecord[]
+  total: number
 }
 
 export function createAiWebhookRepository(db: AppDatabase) {
-  function createEndpoint(
-    input: typeof aiWebhookEndpoints.$inferInsert,
-  ): AiWebhookEndpointRecord {
-    return db.insert(aiWebhookEndpoints).values(input).returning().get();
+  function createEndpoint(input: typeof aiWebhookEndpoints.$inferInsert): AiWebhookEndpointRecord {
+    return db.insert(aiWebhookEndpoints).values(input).returning().get()
   }
 
   function listEndpointsByApp(appId: string): AiWebhookEndpointRecord[] {
@@ -61,23 +42,15 @@ export function createAiWebhookRepository(db: AppDatabase) {
       .from(aiWebhookEndpoints)
       .where(eq(aiWebhookEndpoints.appId, appId))
       .orderBy(desc(aiWebhookEndpoints.createdAt), desc(aiWebhookEndpoints.id))
-      .all();
+      .all()
   }
 
   function findEndpointById(id: string): AiWebhookEndpointRecord | undefined {
-    return db
-      .select()
-      .from(aiWebhookEndpoints)
-      .where(eq(aiWebhookEndpoints.id, id))
-      .get();
+    return db.select().from(aiWebhookEndpoints).where(eq(aiWebhookEndpoints.id, id)).get()
   }
 
   function listEnabledEndpoints(): AiWebhookEndpointRecord[] {
-    return db
-      .select()
-      .from(aiWebhookEndpoints)
-      .where(eq(aiWebhookEndpoints.status, "enabled"))
-      .all();
+    return db.select().from(aiWebhookEndpoints).where(eq(aiWebhookEndpoints.status, 'enabled')).all()
   }
 
   function updateEndpoint(
@@ -96,7 +69,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
       })
       .where(eq(aiWebhookEndpoints.id, id))
       .returning()
-      .get();
+      .get()
   }
 
   function replaceEndpointSecret(
@@ -110,24 +83,19 @@ export function createAiWebhookRepository(db: AppDatabase) {
       .set({ signingSecretEncrypted, updatedBy: actorId, updatedAt: now })
       .where(eq(aiWebhookEndpoints.id, id))
       .returning()
-      .get();
+      .get()
   }
 
   function deleteEndpoint(id: string): void {
-    db.delete(aiWebhookEndpoints).where(eq(aiWebhookEndpoints.id, id)).run();
+    db.delete(aiWebhookEndpoints).where(eq(aiWebhookEndpoints.id, id)).run()
   }
 
   function touchLastDelivery(endpointId: string, now: Date): void {
-    db.update(aiWebhookEndpoints)
-      .set({ lastDeliveryAt: now })
-      .where(eq(aiWebhookEndpoints.id, endpointId))
-      .run();
+    db.update(aiWebhookEndpoints).set({ lastDeliveryAt: now }).where(eq(aiWebhookEndpoints.id, endpointId)).run()
   }
 
-  function insertDeliveryIgnore(
-    input: typeof aiWebhookDeliveries.$inferInsert,
-  ): void {
-    db.insert(aiWebhookDeliveries).values(input).onConflictDoNothing().run();
+  function insertDeliveryIgnore(input: typeof aiWebhookDeliveries.$inferInsert): void {
+    db.insert(aiWebhookDeliveries).values(input).onConflictDoNothing().run()
   }
 
   function listDueDeliveries(limit: number, now: Date): DueDeliveryRow[] {
@@ -138,29 +106,23 @@ export function createAiWebhookRepository(db: AppDatabase) {
         signingSecretEncrypted: aiWebhookEndpoints.signingSecretEncrypted,
       })
       .from(aiWebhookDeliveries)
-      .innerJoin(
-        aiWebhookEndpoints,
-        eq(aiWebhookDeliveries.endpointId, aiWebhookEndpoints.id),
-      )
+      .innerJoin(aiWebhookEndpoints, eq(aiWebhookDeliveries.endpointId, aiWebhookEndpoints.id))
       .where(
         and(
-          eq(aiWebhookDeliveries.status, "pending"),
-          eq(aiWebhookEndpoints.status, "enabled"),
-          or(
-            isNull(aiWebhookDeliveries.nextAttemptAt),
-            lte(aiWebhookDeliveries.nextAttemptAt, now),
-          ),
+          eq(aiWebhookDeliveries.status, 'pending'),
+          eq(aiWebhookEndpoints.status, 'enabled'),
+          or(isNull(aiWebhookDeliveries.nextAttemptAt), lte(aiWebhookDeliveries.nextAttemptAt, now)),
         ),
       )
       .orderBy(asc(aiWebhookDeliveries.createdAt), asc(aiWebhookDeliveries.id))
       .limit(limit)
-      .all();
+      .all()
   }
 
   function markDelivered(id: string, now: Date, responseCode: number): void {
     db.update(aiWebhookDeliveries)
       .set({
-        status: "delivered",
+        status: 'delivered',
         attempts: sql`${aiWebhookDeliveries.attempts} + 1`,
         nextAttemptAt: null,
         lastResponseCode: responseCode,
@@ -169,7 +131,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
-      .run();
+      .run()
   }
 
   function markRetry(
@@ -188,18 +150,13 @@ export function createAiWebhookRepository(db: AppDatabase) {
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
-      .run();
+      .run()
   }
 
-  function markDead(
-    id: string,
-    now: Date,
-    responseCode: number | null,
-    error: string | null,
-  ): void {
+  function markDead(id: string, now: Date, responseCode: number | null, error: string | null): void {
     db.update(aiWebhookDeliveries)
       .set({
-        status: "dead",
+        status: 'dead',
         attempts: sql`${aiWebhookDeliveries.attempts} + 1`,
         nextAttemptAt: null,
         lastResponseCode: responseCode,
@@ -208,7 +165,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
-      .run();
+      .run()
   }
 
   function listDeliveries(query: AiWebhookDeliveryQuery): DeliveryPage {
@@ -218,35 +175,23 @@ export function createAiWebhookRepository(db: AppDatabase) {
         : query.appId !== undefined
           ? eq(aiWebhookDeliveries.appId, query.appId)
           : undefined,
-      query.status !== undefined
-        ? eq(aiWebhookDeliveries.status, query.status)
-        : undefined,
-    ].filter((condition) => condition !== undefined);
-    const where = conditions.length > 0 ? and(...conditions) : undefined;
+      query.status !== undefined ? eq(aiWebhookDeliveries.status, query.status) : undefined,
+    ].filter((condition) => condition !== undefined)
+    const where = conditions.length > 0 ? and(...conditions) : undefined
 
     const items = db
       .select()
       .from(aiWebhookDeliveries)
       .where(where)
-      .orderBy(
-        desc(aiWebhookDeliveries.createdAt),
-        desc(aiWebhookDeliveries.id),
-      )
+      .orderBy(desc(aiWebhookDeliveries.createdAt), desc(aiWebhookDeliveries.id))
       .limit(query.pageSize)
       .offset((query.page - 1) * query.pageSize)
-      .all();
-    const totalRow = db
-      .select({ value: count() })
-      .from(aiWebhookDeliveries)
-      .where(where)
-      .get();
-    return { items, total: totalRow?.value ?? 0 };
+      .all()
+    const totalRow = db.select({ value: count() }).from(aiWebhookDeliveries).where(where).get()
+    return { items, total: totalRow?.value ?? 0 }
   }
 
-  function listTerminalProductAppRunsAfter(
-    watermarkMs: number,
-    limit: number,
-  ): TerminalProductAppRunRow[] {
+  function listTerminalProductAppRunsAfter(watermarkMs: number, limit: number): TerminalProductAppRunRow[] {
     const rows = db
       .select({
         id: aiAgentRuns.id,
@@ -263,7 +208,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
       .innerJoin(aiAgentSessions, eq(aiAgentRuns.sessionId, aiAgentSessions.id))
       .where(
         and(
-          eq(aiAgentSessions.principalKind, "product_app"),
+          eq(aiAgentSessions.principalKind, 'product_app'),
           isNotNull(aiAgentSessions.appId),
           sql`${aiAgentRuns.status} IN ('completed', 'failed', 'aborted', 'interrupted')`,
           gt(aiAgentRuns.finishedAt, new Date(watermarkMs)),
@@ -271,15 +216,12 @@ export function createAiWebhookRepository(db: AppDatabase) {
       )
       .orderBy(asc(aiAgentRuns.finishedAt), asc(aiAgentRuns.id))
       .limit(limit)
-      .all();
+      .all()
     // appId / finishedAt 列可空，但查询条件已排除 null；这里再收窄一次类型。
     // agent_id / agent_revision 在内联配置迁移后可空，但 product_app 主体
     // 不能使用内联配置，终态 Run 的这两列恒非空。
     return rows.flatMap((row) =>
-      row.appId !== null &&
-      row.finishedAt !== null &&
-      row.agentId !== null &&
-      row.agentRevision !== null
+      row.appId !== null && row.finishedAt !== null && row.agentId !== null && row.agentRevision !== null
         ? [
             {
               ...row,
@@ -290,7 +232,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
             },
           ]
         : [],
-    );
+    )
   }
 
   return {
@@ -309,7 +251,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
     markDead,
     listDeliveries,
     listTerminalProductAppRunsAfter,
-  };
+  }
 }
 
-export type AiWebhookRepository = ReturnType<typeof createAiWebhookRepository>;
+export type AiWebhookRepository = ReturnType<typeof createAiWebhookRepository>

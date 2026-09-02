@@ -7,11 +7,11 @@ export {
   createAiTelemetryContext,
   openAiSpanScope,
   startAiSpan,
-} from "./ai-telemetry.js";
+} from './ai-telemetry.js'
 export {
   type AiSpanEndAttributes,
   type AiSpanName,
   type AiSpanStartAttributes,
   STARTER_AI_TELEMETRY_SCHEMA,
   type StarterAiTelemetrySchema,
-} from "./ai-telemetry.schema.js";
+} from './ai-telemetry.schema.js'

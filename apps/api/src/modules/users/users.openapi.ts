@@ -5,24 +5,13 @@ import {
   userManagementUserDetailSchema as userManagementUserDetailSchemaBase,
   userManagementUserPageSchema as userManagementUserPageSchemaBase,
   userIdParamsSchema,
-} from "@starter/contracts";
-import { nameSchema } from "@api/openapi/name-schema.js";
+} from '@starter/contracts'
+import { nameSchema } from '@api/openapi/name-schema.js'
 
-export {
-  updateUserStatusSchema as updateUserStatusBodySchema,
-  userIdParamsSchema,
-  userManagementQuerySchema,
-};
+export { updateUserStatusSchema as updateUserStatusBodySchema, userIdParamsSchema, userManagementQuerySchema }
 
-export const updateUserStatusResponseSchema =
-  updateUserStatusResponseSchemaBase;
+export const updateUserStatusResponseSchema = updateUserStatusResponseSchemaBase
 
-export const userManagementUserPageSchema = nameSchema(
-  userManagementUserPageSchemaBase,
-  "UserManagementUserPage",
-);
+export const userManagementUserPageSchema = nameSchema(userManagementUserPageSchemaBase, 'UserManagementUserPage')
 
-export const userManagementUserDetailSchema = nameSchema(
-  userManagementUserDetailSchemaBase,
-  "UserManagementUserDetail",
-);
+export const userManagementUserDetailSchema = nameSchema(userManagementUserDetailSchemaBase, 'UserManagementUserDetail')

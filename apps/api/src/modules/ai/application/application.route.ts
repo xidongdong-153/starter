@@ -1,25 +1,25 @@
-import type { MiddlewareHandler } from "hono";
-import { OpenAPIHono } from "@hono/zod-openapi";
-import type { HonoEnv } from "@api/shared/hono-env.js";
-import { createSuccessResponse } from "@api/shared/response.js";
+import type { MiddlewareHandler } from 'hono'
+import { OpenAPIHono } from '@hono/zod-openapi'
+import type { HonoEnv } from '@api/shared/hono-env.js'
+import { createSuccessResponse } from '@api/shared/response.js'
 import {
   createAiApplicationRoute,
   listAiApplicationsRoute,
   registerAiApplicationOpenApiComponents,
   revokeAiApplicationRoute,
   rotateAiApplicationRoute,
-} from "./application.openapi.js";
-import type { createAiApplicationService } from "./application.service.js";
+} from './application.openapi.js'
+import type { createAiApplicationService } from './application.service.js'
 
-type AiRouteMiddleware = MiddlewareHandler<HonoEnv>;
+type AiRouteMiddleware = MiddlewareHandler<HonoEnv>
 
 export function createAiApplicationRouteGroup(deps: {
-  service: ReturnType<typeof createAiApplicationService>;
-  requireAuth: AiRouteMiddleware;
-  requireManage: AiRouteMiddleware;
+  service: ReturnType<typeof createAiApplicationService>
+  requireAuth: AiRouteMiddleware
+  requireManage: AiRouteMiddleware
 }) {
-  const { service, requireAuth, requireManage } = deps;
-  const middleware = [requireAuth, requireManage];
+  const { service, requireAuth, requireManage } = deps
+  const middleware = [requireAuth, requireManage]
 
   const app = new OpenAPIHono<HonoEnv>()
     .openapi({ ...listAiApplicationsRoute, middleware }, (c) =>
@@ -28,11 +28,7 @@ export function createAiApplicationRouteGroup(deps: {
     .openapi({ ...createAiApplicationRoute, middleware }, (c) =>
       c.json(
         createSuccessResponse(
-          service.create(
-            c.req.valid("json"),
-            c.var.currentUserId,
-            c.var.requestId,
-          ),
+          service.create(c.req.valid('json'), c.var.currentUserId, c.var.requestId),
           c.var.requestId,
         ),
         200,
@@ -41,11 +37,7 @@ export function createAiApplicationRouteGroup(deps: {
     .openapi({ ...rotateAiApplicationRoute, middleware }, (c) =>
       c.json(
         createSuccessResponse(
-          service.rotate(
-            c.req.valid("param").appId,
-            c.var.currentUserId,
-            c.var.requestId,
-          ),
+          service.rotate(c.req.valid('param').appId, c.var.currentUserId, c.var.requestId),
           c.var.requestId,
         ),
         200,
@@ -54,18 +46,14 @@ export function createAiApplicationRouteGroup(deps: {
     .openapi({ ...revokeAiApplicationRoute, middleware }, (c) =>
       c.json(
         createSuccessResponse(
-          service.revoke(
-            c.req.valid("param").appId,
-            c.var.currentUserId,
-            c.var.requestId,
-          ),
+          service.revoke(c.req.valid('param').appId, c.var.currentUserId, c.var.requestId),
           c.var.requestId,
         ),
         200,
       ),
-    );
+    )
 
-  registerAiApplicationOpenApiComponents(app);
+  registerAiApplicationOpenApiComponents(app)
 
-  return app;
+  return app
 }

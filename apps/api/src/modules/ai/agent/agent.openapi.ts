@@ -11,8 +11,8 @@ import {
   updateAgentDefinitionSchema,
   updateAgentDefinitionStatusSchema,
   uuidSchema,
-} from "@starter/contracts";
-import { createRoute, z } from "@hono/zod-openapi";
+} from '@starter/contracts'
+import { createRoute, z } from '@hono/zod-openapi'
 
 import {
   apiSuccessResponse,
@@ -22,162 +22,135 @@ import {
   invalidRequestResponse,
   notFoundResponse,
   unauthorizedResponse,
-} from "@api/openapi/responses.js";
+} from '@api/openapi/responses.js'
 
-const controlTags = ["AI Control"];
-const runtimeTags = ["AI Runtime"];
-const runtimeSecurity: Array<Record<string, string[]>> = [
-  { cookieAuth: [] },
-  { bearerAuth: [] },
-];
-const controlSecurity = [{ cookieAuth: [] }];
-const agentParams = z.strictObject({ agentId: uuidSchema });
-const agentQuery = agentDefinitionListQuerySchema;
+const controlTags = ['AI Control']
+const runtimeTags = ['AI Runtime']
+const runtimeSecurity: Array<Record<string, string[]>> = [{ cookieAuth: [] }, { bearerAuth: [] }]
+const controlSecurity = [{ cookieAuth: [] }]
+const agentParams = z.strictObject({ agentId: uuidSchema })
+const agentQuery = agentDefinitionListQuerySchema
 
 export const listPublicAgentDefinitionsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/agents",
+  method: 'get',
+  path: '/api/ai/agents',
   tags: runtimeTags,
   security: runtimeSecurity,
   request: { query: agentQuery },
   responses: {
     200: apiSuccessResponse(
       agentDefinitionSummaryListSchema,
-      "已启用的 Agent 列表",
-      "AgentDefinitionSummaryListResponse",
+      '已启用的 Agent 列表',
+      'AgentDefinitionSummaryListResponse',
     ),
     401: unauthorizedResponse,
   },
-});
+})
 
 export const getPublicAgentDefinitionRoute = createRoute({
-  method: "get",
-  path: "/api/ai/agents/{agentId}",
+  method: 'get',
+  path: '/api/ai/agents/{agentId}',
   tags: runtimeTags,
   security: runtimeSecurity,
   request: { params: agentParams },
   responses: {
-    200: apiSuccessResponse(
-      agentDefinitionSummarySchema,
-      "已启用的 Agent",
-      "AgentDefinitionSummaryResponse",
-    ),
+    200: apiSuccessResponse(agentDefinitionSummarySchema, '已启用的 Agent', 'AgentDefinitionSummaryResponse'),
     401: unauthorizedResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const listAdminAgentDefinitionsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/agents",
+  method: 'get',
+  path: '/api/ai/admin/agents',
   tags: controlTags,
   security: controlSecurity,
   request: { query: agentQuery },
   responses: {
     200: apiSuccessResponse(
       agentDefinitionDetailListSchema,
-      "Agent 配置列表",
-      "AdminAgentDefinitionDetailListResponse",
+      'Agent 配置列表',
+      'AdminAgentDefinitionDetailListResponse',
     ),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const listPublicAiToolsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/tools",
+  method: 'get',
+  path: '/api/ai/tools',
   tags: runtimeTags,
   security: [{ cookieAuth: [] }],
   responses: {
-    200: apiSuccessResponse(
-      z.array(aiToolSummarySchema),
-      "工具注册表列表（公开）",
-      "PublicAiToolSummaryListResponse",
-    ),
+    200: apiSuccessResponse(z.array(aiToolSummarySchema), '工具注册表列表（公开）', 'PublicAiToolSummaryListResponse'),
     401: unauthorizedResponse,
   },
-});
+})
 
 export const listAdminAiToolsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/tools",
+  method: 'get',
+  path: '/api/ai/admin/tools',
   tags: controlTags,
   security: controlSecurity,
   responses: {
-    200: apiSuccessResponse(
-      z.array(aiToolSummarySchema),
-      "工具注册表列表",
-      "AiToolSummaryListResponse",
-    ),
+    200: apiSuccessResponse(z.array(aiToolSummarySchema), '工具注册表列表', 'AiToolSummaryListResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
   },
-});
+})
 
 export const getAdminAgentDefinitionRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/agents/{agentId}",
+  method: 'get',
+  path: '/api/ai/admin/agents/{agentId}',
   tags: controlTags,
   security: controlSecurity,
   request: { params: agentParams },
   responses: {
-    200: apiSuccessResponse(
-      agentDefinitionDetailSchema,
-      "Agent 配置详情",
-      "AdminAgentDefinitionDetailResponse",
-    ),
+    200: apiSuccessResponse(agentDefinitionDetailSchema, 'Agent 配置详情', 'AdminAgentDefinitionDetailResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const createAdminAgentDefinitionRoute = createRoute({
-  method: "post",
-  path: "/api/ai/admin/agents",
+  method: 'post',
+  path: '/api/ai/admin/agents',
   tags: controlTags,
   security: controlSecurity,
   request: {
     body: {
-      content: { "application/json": { schema: createAgentDefinitionSchema } },
+      content: { 'application/json': { schema: createAgentDefinitionSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      agentDefinitionDetailSchema,
-      "创建 Agent 配置",
-      "CreatedAgentDefinitionResponse",
-    ),
+    200: apiSuccessResponse(agentDefinitionDetailSchema, '创建 Agent 配置', 'CreatedAgentDefinitionResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     409: conflictResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const updateAdminAgentDefinitionRoute = createRoute({
-  method: "patch",
-  path: "/api/ai/admin/agents/{agentId}",
+  method: 'patch',
+  path: '/api/ai/admin/agents/{agentId}',
   tags: controlTags,
   security: controlSecurity,
   request: {
     params: agentParams,
     body: {
-      content: { "application/json": { schema: updateAgentDefinitionSchema } },
+      content: { 'application/json': { schema: updateAgentDefinitionSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      agentDefinitionDetailSchema,
-      "更新 Agent 配置",
-      "UpdatedAgentDefinitionResponse",
-    ),
+    200: apiSuccessResponse(agentDefinitionDetailSchema, '更新 Agent 配置', 'UpdatedAgentDefinitionResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
@@ -185,28 +158,24 @@ export const updateAdminAgentDefinitionRoute = createRoute({
     409: conflictResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const updateAdminAgentDefinitionStatusRoute = createRoute({
-  method: "patch",
-  path: "/api/ai/admin/agents/{agentId}/status",
+  method: 'patch',
+  path: '/api/ai/admin/agents/{agentId}/status',
   tags: controlTags,
   security: controlSecurity,
   request: {
     params: agentParams,
     body: {
       content: {
-        "application/json": { schema: updateAgentDefinitionStatusSchema },
+        'application/json': { schema: updateAgentDefinitionStatusSchema },
       },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      agentDefinitionDetailSchema,
-      "更新 Agent 状态",
-      "UpdatedAgentDefinitionStatusResponse",
-    ),
+    200: apiSuccessResponse(agentDefinitionDetailSchema, '更新 Agent 状态', 'UpdatedAgentDefinitionStatusResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
@@ -214,6 +183,6 @@ export const updateAdminAgentDefinitionStatusRoute = createRoute({
     409: conflictResponse,
     500: internalErrorResponse,
   },
-});
+})
 
-export { agentDefinitionConfigSchema, agentDefinitionStatusSchema };
+export { agentDefinitionConfigSchema, agentDefinitionStatusSchema }

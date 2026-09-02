@@ -26,6 +26,13 @@ pnpm approve-builds better-sqlite3 esbuild sharp @prisma/client
 
 `@prisma/client` 只来自 Better Auth CLI 的开发依赖，应用运行时不使用 Prisma。
 
+### Windows
+
+- Node.js 22.19.0 或更高，与 macOS 要求一致。
+- `pnpm install` 后执行 `pnpm approve-builds better-sqlite3 esbuild sharp @prisma/client`，批准这几个包的构建脚本。
+- `better-sqlite3` 安装时从 GitHub Releases 下载预编译二进制，国内网络可能下载超时。超时会回退到 node-gyp 现场编译，需要 Visual Studio Build Tools 和 Python；给终端配置代理后重新执行 `pnpm install` 通常能直接下载成功。
+- 行尾已由 `.gitattributes` 统一为 LF，不需要改 `core.autocrlf`，也不需要改 pnpm 的 script-shell 设置，`pnpm build`、`pnpm clean` 等命令在 cmd 和 PowerShell 里直接可用。
+
 ## 环境变量
 
 先创建各应用的本地环境文件：

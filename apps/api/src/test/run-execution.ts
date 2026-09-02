@@ -1,8 +1,5 @@
-import {
-  createRunExecutionContext,
-  type RunExecutionContext,
-} from "@api/infra/agent/run-execution-context.js";
-import { generateId } from "@api/shared/id.js";
+import { createRunExecutionContext, type RunExecutionContext } from '@api/infra/agent/run-execution-context.js'
+import { generateId } from '@api/shared/id.js'
 
 /**
  * 测试用的 Run 关联上下文。
@@ -16,24 +13,24 @@ export function testRunExecution(
   return createRunExecutionContext({
     runId: generateId(),
     sessionId: generateId(),
-    lane: "main",
-    requestId: "request-1",
+    lane: 'main',
+    requestId: 'request-1',
     principal: {
-      kind: "starter_user",
-      principalId: "user-1",
-      tenantId: "starter",
-      projectId: "starter",
-      externalUserId: "user-1",
+      kind: 'starter_user',
+      principalId: 'user-1',
+      tenantId: 'starter',
+      projectId: 'starter',
+      externalUserId: 'user-1',
       appId: null,
     },
     scope: {
-      tenantId: "starter",
-      projectId: "starter",
+      tenantId: 'starter',
+      projectId: 'starter',
       subjectType: null,
       subjectId: null,
     },
     agentId: generateId(),
     agentRevision: 1,
     ...overrides,
-  });
+  })
 }

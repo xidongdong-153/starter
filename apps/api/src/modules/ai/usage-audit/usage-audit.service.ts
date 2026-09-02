@@ -1,51 +1,25 @@
-import type {
-  AiModelCallAuditQuery,
-  AiToolExecutionAuditStatus,
-  AiUsage,
-} from "@starter/contracts";
-import type { Logger } from "pino";
-import type {
-  AiGateway,
-  AiGatewayEvent,
-  AiGatewayInput,
-} from "@api/infra/ai/index.js";
-import { AiGatewayError } from "@api/infra/ai/index.js";
-import type { PiModelCallAudit } from "@api/infra/ai/pi-native-stream.js";
-import type { PiToolExecutionAudit } from "@api/infra/agent/pi-tool-adapter.js";
-import { ApiErrorCodes } from "@starter/contracts";
+import type { AiModelCallAuditQuery, AiToolExecutionAuditStatus, AiUsage } from '@starter/contracts'
+import type { Logger } from 'pino'
+import type { AiGateway, AiGatewayEvent, AiGatewayInput } from '@api/infra/ai/index.js'
+import { AiGatewayError } from '@api/infra/ai/index.js'
+import type { PiModelCallAudit } from '@api/infra/ai/pi-native-stream.js'
+import type { PiToolExecutionAudit } from '@api/infra/agent/pi-tool-adapter.js'
+import { ApiErrorCodes } from '@starter/contracts'
 
-import type {
-  PrincipalContext,
-  ResourceScope,
-} from "@api/modules/ai/principal.js";
-import { generateId } from "@api/shared/id.js";
+import type { PrincipalContext, ResourceScope } from '@api/modules/ai/principal.js'
+import { generateId } from '@api/shared/id.js'
 
-import {
-  toAiModelCallAudit,
-  toAiModelCallAuditDetail,
-} from "./usage-audit.presenter.js";
-import type { AiUsageAuditRepository } from "./usage-audit.repository.js";
+import { toAiModelCallAudit, toAiModelCallAuditDetail } from './usage-audit.presenter.js'
+import type { AiUsageAuditRepository } from './usage-audit.repository.js'
 
-const DEFAULT_UNKNOWN_TOOL_TIMEOUT_MS = 5000;
+const DEFAULT_UNKNOWN_TOOL_TIMEOUT_MS = 5000
 
-export function resolveModelCallTimeout(
-  requestTimeoutMs: number,
-  generationRemainingMs: number,
-): number {
-  return Math.max(1, Math.min(requestTimeoutMs, generationRemainingMs));
+export function resolveModelCallTimeout(requestTimeoutMs: number, generationRemainingMs: number): number {
+  return Math.max(1, Math.min(requestTimeoutMs, generationRemainingMs))
 }
 
-export function resolveToolExecutionTimeout(
-  toolTimeoutMs: number | undefined,
-  generationRemainingMs: number,
-): number {
-  return Math.max(
-    1,
-    Math.min(
-      toolTimeoutMs ?? DEFAULT_UNKNOWN_TOOL_TIMEOUT_MS,
-      generationRemainingMs,
-    ),
-  );
+export function resolveToolExecutionTimeout(toolTimeoutMs: number | undefined, generationRemainingMs: number): number {
+  return Math.max(1, Math.min(toolTimeoutMs ?? DEFAULT_UNKNOWN_TOOL_TIMEOUT_MS, generationRemainingMs))
 }
 
 const EMPTY_USAGE: AiUsage = {
@@ -56,106 +30,93 @@ const EMPTY_USAGE: AiUsage = {
   cacheWrite1hTokens: null,
   reasoningTokens: null,
   totalTokens: null,
-};
+}
 
 export interface AiModelCallAuditContext {
-  requestId: string;
-  userId: string;
-  scope?: ResourceScope;
-  appId?: string | null;
-  principalKind?: PrincipalContext["kind"];
-  externalUserId?: string | null;
-  scenario: "model_test" | "agent_run" | "completion" | "legacy";
-  runId?: string;
-  timeoutMs: number;
-  generationRemainingMs?: number;
-  onStarted?: (modelCallId: string | null) => void;
+  requestId: string
+  userId: string
+  scope?: ResourceScope
+  appId?: string | null
+  principalKind?: PrincipalContext['kind']
+  externalUserId?: string | null
+  scenario: 'model_test' | 'agent_run' | 'completion' | 'legacy'
+  runId?: string
+  timeoutMs: number
+  generationRemainingMs?: number
+  onStarted?: (modelCallId: string | null) => void
 }
 
 export interface AiToolExecutionAuditHandle {
-  id: string;
-  startedAt: Date;
-  requestId?: string;
-  runId?: string | null;
-  turnId?: string | null;
-  stepId?: string | null;
-  toolCallId?: string | null;
+  id: string
+  startedAt: Date
+  requestId?: string
+  runId?: string | null
+  turnId?: string | null
+  stepId?: string | null
+  toolCallId?: string | null
 }
 
-export function createAiUsageAuditService(
-  repository: AiUsageAuditRepository,
-  logger: Logger,
-) {
+export function createAiUsageAuditService(repository: AiUsageAuditRepository, logger: Logger) {
   try {
-    repository.recoverInterrupted(new Date());
+    repository.recoverInterrupted(new Date())
   } catch {
-    logFailure(logger, "recover");
+    logFailure(logger, 'recover')
   }
 
-  function beginModelCall(
-    context: AiModelCallAuditContext,
-    input: AiGatewayInput,
-    startedAt: Date,
-  ): string | null {
-    const id = generateId();
+  function beginModelCall(context: AiModelCallAuditContext, input: AiGatewayInput, startedAt: Date): string | null {
+    const id = generateId()
     try {
       repository.beginModelCall({
         id,
         requestId: context.requestId,
         userId: context.userId,
         appId: context.appId ?? null,
-        tenantId: context.scope?.tenantId ?? "starter",
-        projectId: context.scope?.projectId ?? "starter",
+        tenantId: context.scope?.tenantId ?? 'starter',
+        projectId: context.scope?.projectId ?? 'starter',
         externalUserId: context.externalUserId ?? null,
-        principalKind: context.principalKind ?? "starter_user",
+        principalKind: context.principalKind ?? 'starter_user',
         scenario: context.scenario,
         runId: context.runId ?? null,
         providerId: input.model.providerId,
         modelId: input.model.modelId,
         startedAt,
-        timeoutMs: resolveModelCallTimeout(
-          context.timeoutMs,
-          context.generationRemainingMs ?? context.timeoutMs,
-        ),
-      });
-      return id;
+        timeoutMs: resolveModelCallTimeout(context.timeoutMs, context.generationRemainingMs ?? context.timeoutMs),
+      })
+      return id
     } catch {
-      logFailure(logger, "begin_model_call", context.requestId);
-      return null;
+      logFailure(logger, 'begin_model_call', context.requestId)
+      return null
     }
   }
 
   function finalizeModelCall(
     id: string | null,
     startedAt: Date,
-    values: Omit<
-      Parameters<AiUsageAuditRepository["finalizeModelCall"]>[0],
-      "id" | "startedAt"
-    >,
+    values: Omit<Parameters<AiUsageAuditRepository['finalizeModelCall']>[0], 'id' | 'startedAt'>,
     requestId: string,
   ): void {
-    if (!id) return;
+    if (!id) return
     try {
-      repository.finalizeModelCall({ ...values, id, startedAt });
+      repository.finalizeModelCall({ ...values, id, startedAt })
     } catch {
-      logFailure(logger, "finalize_model_call", requestId, id);
+      logFailure(logger, 'finalize_model_call', requestId, id)
     }
   }
 
   function beginToolExecution(input: {
     /** 由 Tool adapter 在审计 begin 前生成。 */
-    id: string;
-    modelCallId: string | null;
-    requestId?: string;
-    runId?: string | null;
-    turnId?: string | null;
-    stepId?: string | null;
-    toolCallId?: string | null;
-    toolName: string;
-    toolVersion: string | null;
-    timeoutMs: number;
+    id: string
+    modelCallId: string | null
+    requestId?: string
+    runId?: string | null
+    turnId?: string | null
+    stepId?: string | null
+    toolCallId?: string | null
+    toolName: string
+    toolVersion: string | null
+    timeoutMs: number
   }): AiToolExecutionAuditHandle | null {
-    if (!input.modelCallId) return null;
+    if (!input.modelCallId) return null
     const handle: AiToolExecutionAuditHandle = {
       id: input.id,
       startedAt: new Date(),
@@ -164,7 +125,7 @@ export function createAiUsageAuditService(
       turnId: input.turnId,
       stepId: input.stepId,
       toolCallId: input.toolCallId,
-    };
+    }
     try {
       repository.beginToolExecution({
         id: handle.id,
@@ -178,35 +139,28 @@ export function createAiUsageAuditService(
         toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
         startedAt: handle.startedAt,
-      });
-      return handle;
+      })
+      return handle
     } catch {
-      logFailure(
-        logger,
-        "begin_tool_execution",
-        input.requestId,
-        input.modelCallId,
-      );
-      return null;
+      logFailure(logger, 'begin_tool_execution', input.requestId, input.modelCallId)
+      return null
     }
   }
 
-  function beginAgentModelCall(
-    input: Parameters<PiModelCallAudit["beginModelCall"]>[0],
-  ): string | null {
+  function beginAgentModelCall(input: Parameters<PiModelCallAudit['beginModelCall']>[0]): string | null {
     // ID 由调用方（原生模型流 / compaction 代理）在请求开始前生成。
-    const id = input.id;
+    const id = input.id
     try {
       repository.beginModelCall({
         id,
         requestId: input.requestId,
         userId: input.userId,
         appId: input.appId ?? null,
-        tenantId: input.scope?.tenantId ?? "starter",
-        projectId: input.scope?.projectId ?? "starter",
+        tenantId: input.scope?.tenantId ?? 'starter',
+        projectId: input.scope?.projectId ?? 'starter',
         externalUserId: input.externalUserId ?? null,
-        principalKind: input.principalKind ?? "starter_user",
-        scenario: "agent_run",
+        principalKind: input.principalKind ?? 'starter_user',
+        scenario: 'agent_run',
         runId: input.runId,
         turnId: input.turnId,
         stepId: input.stepId,
@@ -215,17 +169,15 @@ export function createAiUsageAuditService(
         api: input.api ?? null,
         startedAt: input.startedAt,
         timeoutMs: input.timeoutMs,
-      });
-      return id;
+      })
+      return id
     } catch {
-      logFailure(logger, "begin_agent_model_call", input.requestId, id);
-      return null;
+      logFailure(logger, 'begin_agent_model_call', input.requestId, id)
+      return null
     }
   }
 
-  function finalizeAgentModelCall(
-    input: Parameters<PiModelCallAudit["finalizeModelCall"]>[0],
-  ): void {
+  function finalizeAgentModelCall(input: Parameters<PiModelCallAudit['finalizeModelCall']>[0]): void {
     finalizeModelCall(
       input.id,
       input.startedAt,
@@ -243,30 +195,29 @@ export function createAiUsageAuditService(
         httpStatus: input.httpStatus ?? null,
       },
       input.requestId,
-    );
+    )
   }
 
   function createAgentModelCallAudit(): PiModelCallAudit {
     return {
       beginModelCall: beginAgentModelCall,
       finalizeModelCall: finalizeAgentModelCall,
-    };
+    }
   }
 
   function createAgentToolExecutionAudit(): PiToolExecutionAudit {
     return {
       beginToolExecution,
-      finalizeToolExecution: (handle, status, errorCode) =>
-        finalizeToolExecution(handle, status, errorCode),
-    };
+      finalizeToolExecution: (handle, status, errorCode) => finalizeToolExecution(handle, status, errorCode),
+    }
   }
 
   function finalizeToolExecution(
     handle: AiToolExecutionAuditHandle | null,
-    status: Exclude<AiToolExecutionAuditStatus, "running">,
+    status: Exclude<AiToolExecutionAuditStatus, 'running'>,
     errorCode: string | null,
   ): void {
-    if (!handle) return;
+    if (!handle) return
     try {
       repository.finalizeToolExecution({
         id: handle.id,
@@ -274,34 +225,26 @@ export function createAiUsageAuditService(
         finishedAt: new Date(),
         status,
         errorCode,
-      });
+      })
     } catch {
-      logFailure(
-        logger,
-        "finalize_tool_execution",
-        handle.requestId,
-        handle.id,
-      );
+      logFailure(logger, 'finalize_tool_execution', handle.requestId, handle.id)
     }
   }
 
   function listModelCalls(query: AiModelCallAuditQuery) {
-    const result = repository.listModelCalls(query);
+    const result = repository.listModelCalls(query)
     return {
       items: result.items.map(toAiModelCallAudit),
       total: result.total,
       page: query.page,
       pageSize: query.pageSize,
-    };
+    }
   }
 
   function getModelCall(id: string) {
-    const record = repository.findModelCall(id);
-    if (!record) return null;
-    return toAiModelCallAuditDetail(
-      record,
-      repository.listToolExecutions(record.id),
-    );
+    const record = repository.findModelCall(id)
+    if (!record) return null
+    return toAiModelCallAuditDetail(record, repository.listToolExecutions(record.id))
   }
 
   return {
@@ -315,57 +258,47 @@ export function createAiUsageAuditService(
     finalizeToolExecution,
     getModelCall,
     listModelCalls,
-  };
+  }
 }
 
-export type AiUsageAuditService = ReturnType<typeof createAiUsageAuditService>;
+export type AiUsageAuditService = ReturnType<typeof createAiUsageAuditService>
 
-export function createAiInvocationRunner(
-  gateway: AiGateway,
-  audit: AiUsageAuditService,
-) {
+export function createAiInvocationRunner(gateway: AiGateway, audit: AiUsageAuditService) {
   return {
-    async *stream(
-      context: AiModelCallAuditContext,
-      input: AiGatewayInput,
-    ): AsyncGenerator<AiGatewayEvent> {
-      const startedAt = new Date();
+    async *stream(context: AiModelCallAuditContext, input: AiGatewayInput): AsyncGenerator<AiGatewayEvent> {
+      const startedAt = new Date()
       const effectiveTimeoutMs = resolveModelCallTimeout(
         context.timeoutMs,
         context.generationRemainingMs ?? context.timeoutMs,
-      );
-      const gatewayInput = { ...input, timeoutMs: effectiveTimeoutMs };
-      const modelCallId = audit.beginModelCall(
-        { ...context, timeoutMs: effectiveTimeoutMs },
-        gatewayInput,
-        startedAt,
-      );
-      context.onStarted?.(modelCallId);
-      let finalized = false;
+      )
+      const gatewayInput = { ...input, timeoutMs: effectiveTimeoutMs }
+      const modelCallId = audit.beginModelCall({ ...context, timeoutMs: effectiveTimeoutMs }, gatewayInput, startedAt)
+      context.onStarted?.(modelCallId)
+      let finalized = false
       try {
         for await (const event of gateway.stream(gatewayInput)) {
-          if (event.type === "completed" && !finalized) {
-            finalized = true;
+          if (event.type === 'completed' && !finalized) {
+            finalized = true
             audit.finalizeModelCall(
               modelCallId,
               startedAt,
               {
                 finishedAt: new Date(),
-                result: "succeeded",
+                result: 'succeeded',
                 stopReason: event.stopReason,
                 errorCode: null,
                 usage: event.usage,
                 cost: event.cost,
               },
               context.requestId,
-            );
+            )
           }
-          yield event;
+          yield event
         }
       } catch (error) {
         if (!finalized) {
-          finalized = true;
-          const failure = toAuditFailure(error);
+          finalized = true
+          const failure = toAuditFailure(error)
           audit.finalizeModelCall(
             modelCallId,
             startedAt,
@@ -374,9 +307,9 @@ export function createAiInvocationRunner(
               ...failure,
             },
             context.requestId,
-          );
+          )
         }
-        throw error;
+        throw error
       } finally {
         if (!finalized) {
           audit.finalizeModelCall(
@@ -384,73 +317,57 @@ export function createAiInvocationRunner(
             startedAt,
             {
               finishedAt: new Date(),
-              result: gatewayInput.signal?.aborted
-                ? "cancelled"
-                : "interrupted",
-              stopReason: gatewayInput.signal?.aborted ? "aborted" : "deferred",
-              errorCode: gatewayInput.signal?.aborted
-                ? ApiErrorCodes.AI_REQUEST_ABORTED
-                : null,
+              result: gatewayInput.signal?.aborted ? 'cancelled' : 'interrupted',
+              stopReason: gatewayInput.signal?.aborted ? 'aborted' : 'deferred',
+              errorCode: gatewayInput.signal?.aborted ? ApiErrorCodes.AI_REQUEST_ABORTED : null,
               usage: EMPTY_USAGE,
               cost: null,
             },
             context.requestId,
-          );
+          )
         }
       }
     },
-  };
+  }
 }
 
-export type AiInvocationRunner = ReturnType<typeof createAiInvocationRunner>;
+export type AiInvocationRunner = ReturnType<typeof createAiInvocationRunner>
 
 function toAuditFailure(error: unknown) {
-  const gatewayError =
-    error instanceof AiGatewayError ? error : new AiGatewayError("upstream");
+  const gatewayError = error instanceof AiGatewayError ? error : new AiGatewayError('upstream')
   const base = {
     usage: gatewayError.usage ?? EMPTY_USAGE,
     cost: gatewayError.cost,
-    stopReason:
-      gatewayError.kind === "aborted"
-        ? ("aborted" as const)
-        : ("error" as const),
-  };
-  if (gatewayError.kind === "auth") {
+    stopReason: gatewayError.kind === 'aborted' ? ('aborted' as const) : ('error' as const),
+  }
+  if (gatewayError.kind === 'auth') {
     return {
       ...base,
-      result: "auth_failed" as const,
+      result: 'auth_failed' as const,
       errorCode: ApiErrorCodes.AI_PROVIDER_AUTH_FAILED,
-    };
+    }
   }
-  if (gatewayError.kind === "timeout") {
+  if (gatewayError.kind === 'timeout') {
     return {
       ...base,
-      result: "timed_out" as const,
+      result: 'timed_out' as const,
       errorCode: ApiErrorCodes.AI_UPSTREAM_TIMEOUT,
-    };
+    }
   }
-  if (gatewayError.kind === "aborted") {
+  if (gatewayError.kind === 'aborted') {
     return {
       ...base,
-      result: "cancelled" as const,
+      result: 'cancelled' as const,
       errorCode: ApiErrorCodes.AI_REQUEST_ABORTED,
-    };
+    }
   }
   return {
     ...base,
-    result: "upstream_failed" as const,
+    result: 'upstream_failed' as const,
     errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR,
-  };
+  }
 }
 
-function logFailure(
-  logger: Logger,
-  operation: string,
-  requestId?: string,
-  auditId?: string,
-) {
-  logger.error(
-    { operation, requestId, auditId },
-    "ai usage audit write failed",
-  );
+function logFailure(logger: Logger, operation: string, requestId?: string, auditId?: string) {
+  logger.error({ operation, requestId, auditId }, 'ai usage audit write failed')
 }

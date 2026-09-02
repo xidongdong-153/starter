@@ -19,8 +19,8 @@ import {
   updateAiPreferenceSchema,
   updateAiProviderConfigSchema,
   updateAiProviderStateSchema,
-} from "@starter/contracts";
-import { createRoute, z } from "@hono/zod-openapi";
+} from '@starter/contracts'
+import { createRoute, z } from '@hono/zod-openapi'
 
 import {
   apiSuccessResponse,
@@ -30,148 +30,120 @@ import {
   invalidRequestResponse,
   notFoundResponse,
   unauthorizedResponse,
-} from "@api/openapi/responses.js";
+} from '@api/openapi/responses.js'
 
-const controlTags = ["AI Control"];
-const compatibilityTags = ["AI Compatibility"];
-const tags = controlTags;
-const security = [{ cookieAuth: [] }];
-const providerResponse = apiSuccessResponse(
-  adminAiProviderSchema,
-  "AI Provider 配置",
-  "AdminAiProviderResponse",
-);
-const adminModelsResponse = apiSuccessResponse(
-  adminAiModelsResponseSchema,
-  "管理员模型目录",
-  "AdminAiModelsResponse",
-);
+const controlTags = ['AI Control']
+const compatibilityTags = ['AI Compatibility']
+const tags = controlTags
+const security = [{ cookieAuth: [] }]
+const providerResponse = apiSuccessResponse(adminAiProviderSchema, 'AI Provider 配置', 'AdminAiProviderResponse')
+const adminModelsResponse = apiSuccessResponse(adminAiModelsResponseSchema, '管理员模型目录', 'AdminAiModelsResponse')
 
 export const listCustomAiProvidersRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/custom-providers",
+  method: 'get',
+  path: '/api/ai/admin/custom-providers',
   tags,
   security,
   responses: {
-    200: apiSuccessResponse(
-      z.array(customAiProviderSchema),
-      "自定义 Provider 列表",
-      "CustomAiProvidersResponse",
-    ),
+    200: apiSuccessResponse(z.array(customAiProviderSchema), '自定义 Provider 列表', 'CustomAiProvidersResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
   },
-});
+})
 
 export const createCustomAiProviderRoute = createRoute({
-  method: "post",
-  path: "/api/ai/admin/custom-providers",
+  method: 'post',
+  path: '/api/ai/admin/custom-providers',
   tags,
   security,
   request: {
     body: {
-      content: { "application/json": { schema: createCustomAiProviderSchema } },
+      content: { 'application/json': { schema: createCustomAiProviderSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const getCustomAiProviderRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/custom-providers/{providerId}",
+  method: 'get',
+  path: '/api/ai/admin/custom-providers/{providerId}',
   tags,
   security,
   request: { params: aiProviderParamsSchema },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
   },
-});
+})
 
 export const updateCustomAiProviderRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/custom-providers/{providerId}",
+  method: 'put',
+  path: '/api/ai/admin/custom-providers/{providerId}',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: updateCustomAiProviderSchema } },
+      content: { 'application/json': { schema: updateCustomAiProviderSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const deleteCustomAiProviderRoute = createRoute({
-  method: "delete",
-  path: "/api/ai/admin/custom-providers/{providerId}",
+  method: 'delete',
+  path: '/api/ai/admin/custom-providers/{providerId}',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: deleteCustomAiProviderSchema } },
+      content: { 'application/json': { schema: deleteCustomAiProviderSchema } },
       required: true,
     },
   },
   responses: {
-    204: { description: "已删除" },
+    204: { description: '已删除' },
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const checkCustomAiProviderRoute = createRoute({
-  method: "post",
-  path: "/api/ai/admin/custom-providers/{providerId}/check",
+  method: 'post',
+  path: '/api/ai/admin/custom-providers/{providerId}/check',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: checkCustomAiProviderSchema } },
+      content: { 'application/json': { schema: checkCustomAiProviderSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
@@ -179,28 +151,24 @@ export const checkCustomAiProviderRoute = createRoute({
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const updateCustomAiProviderCredentialRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/custom-providers/{providerId}/credential",
+  method: 'put',
+  path: '/api/ai/admin/custom-providers/{providerId}/credential',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
       content: {
-        "application/json": { schema: updateCustomAiProviderCredentialSchema },
+        'application/json': { schema: updateCustomAiProviderCredentialSchema },
       },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
@@ -208,107 +176,91 @@ export const updateCustomAiProviderCredentialRoute = createRoute({
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const clearCustomAiProviderCredentialRoute = createRoute({
-  method: "delete",
-  path: "/api/ai/admin/custom-providers/{providerId}/credential",
+  method: 'delete',
+  path: '/api/ai/admin/custom-providers/{providerId}/credential',
   tags,
   security,
   request: { params: aiProviderParamsSchema },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const updateCustomAiProviderStateRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/custom-providers/{providerId}/state",
+  method: 'put',
+  path: '/api/ai/admin/custom-providers/{providerId}/state',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: updateAiProviderStateSchema } },
+      content: { 'application/json': { schema: updateAiProviderStateSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const replaceCustomAiProviderModelsRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/custom-providers/{providerId}/models",
+  method: 'put',
+  path: '/api/ai/admin/custom-providers/{providerId}/models',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
       content: {
-        "application/json": { schema: replaceCustomAiProviderModelsSchema },
+        'application/json': { schema: replaceCustomAiProviderModelsSchema },
       },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      customAiProviderSchema,
-      "自定义 Provider",
-      "CustomAiProviderResponse",
-    ),
+    200: apiSuccessResponse(customAiProviderSchema, '自定义 Provider', 'CustomAiProviderResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 export const listAiProvidersRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/providers",
+  method: 'get',
+  path: '/api/ai/admin/providers',
   tags,
   security,
   responses: {
-    200: apiSuccessResponse(
-      z.array(adminAiProviderSchema),
-      "AI Provider 列表",
-      "AdminAiProvidersResponse",
-    ),
+    200: apiSuccessResponse(z.array(adminAiProviderSchema), 'AI Provider 列表', 'AdminAiProvidersResponse'),
     401: unauthorizedResponse,
     403: forbiddenResponse,
     500: internalErrorResponse,
   },
-});
+})
 
 export const updateAiProviderConfigRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/providers/{providerId}/config",
+  method: 'put',
+  path: '/api/ai/admin/providers/{providerId}/config',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: updateAiProviderConfigSchema } },
+      content: { 'application/json': { schema: updateAiProviderConfigSchema } },
       required: true,
     },
   },
@@ -321,11 +273,11 @@ export const updateAiProviderConfigRoute = createRoute({
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const clearAiProviderCredentialRoute = createRoute({
-  method: "delete",
-  path: "/api/ai/admin/providers/{providerId}/credential",
+  method: 'delete',
+  path: '/api/ai/admin/providers/{providerId}/credential',
   tags,
   security,
   request: { params: aiProviderParamsSchema },
@@ -337,11 +289,11 @@ export const clearAiProviderCredentialRoute = createRoute({
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const checkAiProviderRoute = createRoute({
-  method: "post",
-  path: "/api/ai/admin/providers/{providerId}/check",
+  method: 'post',
+  path: '/api/ai/admin/providers/{providerId}/check',
   tags,
   security,
   request: { params: aiProviderParamsSchema },
@@ -353,17 +305,17 @@ export const checkAiProviderRoute = createRoute({
     409: conflictResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const updateAiProviderStateRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/providers/{providerId}/state",
+  method: 'put',
+  path: '/api/ai/admin/providers/{providerId}/state',
   tags,
   security,
   request: {
     params: aiProviderParamsSchema,
     body: {
-      content: { "application/json": { schema: updateAiProviderStateSchema } },
+      content: { 'application/json': { schema: updateAiProviderStateSchema } },
       required: true,
     },
   },
@@ -375,11 +327,11 @@ export const updateAiProviderStateRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const refreshAiProviderRoute = createRoute({
-  method: "post",
-  path: "/api/ai/admin/providers/{providerId}/refresh",
+  method: 'post',
+  path: '/api/ai/admin/providers/{providerId}/refresh',
   tags,
   security,
   request: { params: aiProviderParamsSchema },
@@ -391,11 +343,11 @@ export const refreshAiProviderRoute = createRoute({
     404: notFoundResponse,
     503: internalErrorResponse,
   },
-});
+})
 
 export const listAdminAiModelsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/admin/models",
+  method: 'get',
+  path: '/api/ai/admin/models',
   tags,
   security,
   responses: {
@@ -403,16 +355,16 @@ export const listAdminAiModelsRoute = createRoute({
     401: unauthorizedResponse,
     403: forbiddenResponse,
   },
-});
+})
 
 export const replaceAdminAiModelsRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/models",
+  method: 'put',
+  path: '/api/ai/admin/models',
   tags,
   security,
   request: {
     body: {
-      content: { "application/json": { schema: replaceAiEnabledModelsSchema } },
+      content: { 'application/json': { schema: replaceAiEnabledModelsSchema } },
       required: true,
     },
   },
@@ -424,16 +376,16 @@ export const replaceAdminAiModelsRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
   },
-});
+})
 
 export const updateAdminAiDefaultRoute = createRoute({
-  method: "put",
-  path: "/api/ai/admin/default-model",
+  method: 'put',
+  path: '/api/ai/admin/default-model',
   tags,
   security,
   request: {
     body: {
-      content: { "application/json": { schema: updateAiDefaultModelSchema } },
+      content: { 'application/json': { schema: updateAiDefaultModelSchema } },
       required: true,
     },
   },
@@ -443,82 +395,70 @@ export const updateAdminAiDefaultRoute = createRoute({
     401: unauthorizedResponse,
     403: forbiddenResponse,
   },
-});
+})
 
 export const listUserAiModelsRoute = createRoute({
-  method: "get",
-  path: "/api/ai/models",
+  method: 'get',
+  path: '/api/ai/models',
   tags: compatibilityTags,
   security,
   responses: {
-    200: apiSuccessResponse(
-      z.array(aiUserModelSchema),
-      "当前用户可用的模型",
-      "AiUserModelsResponse",
-    ),
+    200: apiSuccessResponse(z.array(aiUserModelSchema), '当前用户可用的模型', 'AiUserModelsResponse'),
     401: unauthorizedResponse,
   },
-});
+})
 
 export const getAiPreferenceRoute = createRoute({
-  method: "get",
-  path: "/api/ai/preferences",
+  method: 'get',
+  path: '/api/ai/preferences',
   tags: compatibilityTags,
   security,
   responses: {
-    200: apiSuccessResponse(
-      aiUserPreferenceSchema,
-      "当前用户 AI 偏好",
-      "AiUserPreferenceResponse",
-    ),
+    200: apiSuccessResponse(aiUserPreferenceSchema, '当前用户 AI 偏好', 'AiUserPreferenceResponse'),
     401: unauthorizedResponse,
   },
-});
+})
 
 export const updateAiPreferenceRoute = createRoute({
-  method: "put",
-  path: "/api/ai/preferences",
+  method: 'put',
+  path: '/api/ai/preferences',
   tags: compatibilityTags,
   security,
   request: {
     body: {
-      content: { "application/json": { schema: updateAiPreferenceSchema } },
+      content: { 'application/json': { schema: updateAiPreferenceSchema } },
       required: true,
     },
   },
   responses: {
-    200: apiSuccessResponse(
-      aiUserPreferenceSchema,
-      "更新后的 AI 偏好",
-      "UpdatedAiUserPreferenceResponse",
-    ),
+    200: apiSuccessResponse(aiUserPreferenceSchema, '更新后的 AI 偏好', 'UpdatedAiUserPreferenceResponse'),
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
   },
-});
+})
 
 export const testAiModelRoute = createRoute({
-  method: "post",
-  path: "/api/ai/test",
+  method: 'post',
+  path: '/api/ai/test',
   tags,
   security,
   request: {
     body: {
-      content: { "application/json": { schema: aiTestInputSchema } },
+      content: { 'application/json': { schema: aiTestInputSchema } },
       required: true,
     },
   },
   responses: {
     200: {
-      content: { "text/event-stream": { schema: z.string() } },
-      description: "模型测试 SSE 流",
+      content: { 'text/event-stream': { schema: z.string() } },
+      description: '模型测试 SSE 流',
     },
     400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     503: internalErrorResponse,
   },
-});
+})
 
-export { adminAiModelSchema, aiModelRefSchema };
+export { adminAiModelSchema, aiModelRefSchema }

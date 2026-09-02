@@ -1,55 +1,56 @@
 allowBuilds:
-  "@google/genai": true
-  "@prisma/client": true
+  '@google/genai': true
+  '@prisma/client': true
   better-sqlite3: true
   esbuild: true
   protobufjs: true
   sharp: true
 
 minimumReleaseAgeExclude:
-  - "@scalar/client-side-rendering@0.3.6"
-  - "@scalar/helpers@0.10.0"
-  - "@scalar/hono-api-reference@0.11.13"
-  - "@scalar/schemas@0.8.1"
-  - "@scalar/types@0.17.1"
+  - '@scalar/client-side-rendering@0.3.6'
+  - '@scalar/helpers@0.10.0'
+  - '@scalar/hono-api-reference@0.11.13'
+  - '@scalar/schemas@0.8.1'
+  - '@scalar/types@0.17.1'
 
 packages:
-  - "apps/*"
-  - "packages/*"
+  - 'apps/*'
+  - 'packages/*'
 
 catalog:
-  "@antfu/eslint-config": ^9.0.0
-  "@asteasolutions/zod-to-openapi": ^8.5.0
-  "@better-auth/cli": 1.4.21
-  "@earendil-works/pi-agent-core": 0.84.1
-  "@earendil-works/pi-ai": 0.84.1
-  "@earendil-works/pi-session-backend-sqlite-node": 0.84.1
-  "@earendil-works/pi-telemetry": 0.84.1
-  "@hono/node-server": ^1.19.6
-  "@hono/zod-openapi": ^1.5.1
-  "@hono/zod-validator": ^0.8.0
-  "@radix-ui/react-label": ^2.1.7
-  "@radix-ui/react-separator": ^1.1.7
-  "@radix-ui/react-slot": ^1.2.3
-  "@scalar/hono-api-reference": ^0.11.13
-  "@tailwindcss/postcss": ^4.2.2
-  "@tailwindcss/vite": ^4.2.2
-  "@tanstack/react-query": ^5.96.2
-  "@tanstack/react-router": ^1.168.10
-  "@testing-library/dom": ^10.4.1
-  "@testing-library/react": ^16.3.2
-  "@types/better-sqlite3": ^7.6.13
-  "@types/node": ^22.15.3
-  "@types/nodemailer": ^8.0.1
-  "@types/react": ^19.2.14
-  "@types/react-dom": ^19.2.3
-  "@vitejs/plugin-react": ^6.0.1
-  "@xyflow/react": ^12.11.5
+  '@antfu/eslint-config': ^9.0.0
+  '@asteasolutions/zod-to-openapi': ^8.5.0
+  '@better-auth/cli': 1.4.21
+  '@earendil-works/pi-agent-core': 0.84.1
+  '@earendil-works/pi-ai': 0.84.1
+  '@earendil-works/pi-session-backend-sqlite-node': 0.84.1
+  '@earendil-works/pi-telemetry': 0.84.1
+  '@hono/node-server': ^1.19.6
+  '@hono/zod-openapi': ^1.5.1
+  '@hono/zod-validator': ^0.8.0
+  '@radix-ui/react-label': ^2.1.7
+  '@radix-ui/react-separator': ^1.1.7
+  '@radix-ui/react-slot': ^1.2.3
+  '@scalar/hono-api-reference': ^0.11.13
+  '@tailwindcss/postcss': ^4.2.2
+  '@tailwindcss/vite': ^4.2.2
+  '@tanstack/react-query': ^5.96.2
+  '@tanstack/react-router': ^1.168.10
+  '@testing-library/dom': ^10.4.1
+  '@testing-library/react': ^16.3.2
+  '@types/better-sqlite3': ^7.6.13
+  '@types/node': ^22.15.3
+  '@types/nodemailer': ^8.0.1
+  '@types/react': ^19.2.14
+  '@types/react-dom': ^19.2.3
+  '@vitejs/plugin-react': ^6.0.1
+  '@xyflow/react': ^12.11.5
   antd: ^6.3.5
   better-auth: 1.6.16
   better-sqlite3: ^13.0.3
   class-variance-authority: ^0.7.1
   clsx: ^2.1.1
+  cross-env: ^7.0.3
   dayjs: ^1.11.20
   dotenv-cli: ^11.0.0
   drizzle-kit: ^0.31.10
@@ -72,6 +73,7 @@ catalog:
   react-i18next: ^17.0.2
   react-icons: ^5.6.0
   react-use: ^17.6.0
+  rimraf: ^6.0.1
   styled-components: ^6.3.12
   tailwind-merge: ^3.3.1
   tailwindcss: ^4.2.2
@@ -86,7 +88,7 @@ catalog:
   zustand: ^5.0.12
 
 onlyBuiltDependencies:
-  - "@google/genai"
+  - '@google/genai'
   - better-sqlite3
   - esbuild
   - protobufjs

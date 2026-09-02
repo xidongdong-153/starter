@@ -1,11 +1,7 @@
-import { asc, eq } from "drizzle-orm";
-import {
-  runTraceSchema,
-  type RunTrace,
-  type RunTraceNode,
-} from "@starter/contracts";
+import { asc, eq } from 'drizzle-orm'
+import { runTraceSchema, type RunTrace, type RunTraceNode } from '@starter/contracts'
 
-import type { AppDatabase } from "@api/infra/db/client.js";
+import type { AppDatabase } from '@api/infra/db/client.js'
 import {
   aiAgentRuns,
   aiModelCalls,
@@ -13,47 +9,41 @@ import {
   aiRunTurns,
   aiStructuredOutputs,
   aiToolExecutions,
-} from "../ai.schema.js";
+} from '../ai.schema.js'
 
 export interface AiRunTraceRepository {
-  findByRunId: (runId: string) => RunTrace | undefined;
+  findByRunId: (runId: string) => RunTrace | undefined
 }
 
-export function createAiRunTraceRepository(
-  db: AppDatabase,
-): AiRunTraceRepository {
+export function createAiRunTraceRepository(db: AppDatabase): AiRunTraceRepository {
   function findByRunId(runId: string): RunTrace | undefined {
-    const run = db
-      .select()
-      .from(aiAgentRuns)
-      .where(eq(aiAgentRuns.id, runId))
-      .get();
-    if (!run) return undefined;
+    const run = db.select().from(aiAgentRuns).where(eq(aiAgentRuns.id, runId)).get()
+    if (!run) return undefined
 
     const turns = db
       .select()
       .from(aiRunTurns)
       .where(eq(aiRunTurns.runId, runId))
       .orderBy(asc(aiRunTurns.turnIndex))
-      .all();
+      .all()
     const steps = db
       .select()
       .from(aiRunSteps)
       .where(eq(aiRunSteps.runId, runId))
       .orderBy(asc(aiRunSteps.startedAt), asc(aiRunSteps.id))
-      .all();
+      .all()
     const modelCalls = db
       .select()
       .from(aiModelCalls)
       .where(eq(aiModelCalls.runId, runId))
       .orderBy(asc(aiModelCalls.startedAt), asc(aiModelCalls.id))
-      .all();
+      .all()
     const tools = db
       .select()
       .from(aiToolExecutions)
       .where(eq(aiToolExecutions.runId, runId))
       .orderBy(asc(aiToolExecutions.startedAt), asc(aiToolExecutions.id))
-      .all();
+      .all()
 
     const outputs = db
       .select({
@@ -62,16 +52,14 @@ export function createAiRunTraceRepository(
       })
       .from(aiStructuredOutputs)
       .where(eq(aiStructuredOutputs.runId, runId))
-      .all();
-    const outputByStepId = new Map(
-      outputs.map((output) => [output.stepId, output.id]),
-    );
+      .all()
+    const outputByStepId = new Map(outputs.map((output) => [output.stepId, output.id]))
 
     const nodes: RunTraceNode[] = [
       {
         id: run.id,
         parentId: null,
-        kind: "run",
+        kind: 'run',
         status: runStatus(run.status),
         startedAt: (run.startedAt ?? run.createdAt).toISOString(),
         finishedAt: run.finishedAt?.toISOString() ?? null,
@@ -88,7 +76,7 @@ export function createAiRunTraceRepository(
       ...turns.map((turn): RunTraceNode => ({
         id: turn.id,
         parentId: run.id,
-        kind: "turn",
+        kind: 'turn',
         status: lifecycleStatus(turn.outcome),
         startedAt: turn.startedAt.toISOString(),
         finishedAt: turn.finishedAt?.toISOString() ?? null,
@@ -99,7 +87,7 @@ export function createAiRunTraceRepository(
       ...steps.map((step): RunTraceNode => ({
         id: step.id,
         parentId: step.turnId,
-        kind: "step",
+        kind: 'step',
         status: lifecycleStatus(step.outcome),
         startedAt: step.startedAt.toISOString(),
         finishedAt: step.finishedAt?.toISOString() ?? null,
@@ -109,9 +97,7 @@ export function createAiRunTraceRepository(
           kind: step.kind,
           attempt: String(step.attempt),
           ...(step.errorCode ? { errorCode: step.errorCode } : {}),
-          ...(outputByStepId.has(step.id)
-            ? { structuredOutputId: outputByStepId.get(step.id)! }
-            : {}),
+          ...(outputByStepId.has(step.id) ? { structuredOutputId: outputByStepId.get(step.id)! } : {}),
         },
       })),
       ...modelCalls.flatMap((call): RunTraceNode[] =>
@@ -120,7 +106,7 @@ export function createAiRunTraceRepository(
               {
                 id: call.id,
                 parentId: call.stepId,
-                kind: "model_call",
+                kind: 'model_call',
                 status: modelCallStatus(call.result),
                 startedAt: call.startedAt.toISOString(),
                 finishedAt: call.finishedAt?.toISOString() ?? null,
@@ -131,12 +117,8 @@ export function createAiRunTraceRepository(
                   modelId: call.modelId,
                   result: call.result,
                   ...(call.stopReason ? { stopReason: call.stopReason } : {}),
-                  ...(call.totalTokens === null
-                    ? {}
-                    : { totalTokens: String(call.totalTokens) }),
-                  ...(call.costTotal === null
-                    ? {}
-                    : { costTotal: String(call.costTotal) }),
+                  ...(call.totalTokens === null ? {} : { totalTokens: String(call.totalTokens) }),
+                  ...(call.costTotal === null ? {} : { costTotal: String(call.costTotal) }),
                 },
               },
             ]
@@ -148,7 +130,7 @@ export function createAiRunTraceRepository(
               {
                 id: tool.toolExecutionId ?? tool.id,
                 parentId: tool.stepId,
-                kind: "tool_execution",
+                kind: 'tool_execution',
                 status: toolStatus(tool.status),
                 startedAt: tool.startedAt.toISOString(),
                 finishedAt: tool.finishedAt?.toISOString() ?? null,
@@ -164,47 +146,45 @@ export function createAiRunTraceRepository(
             ]
           : [],
       ),
-    ];
+    ]
 
-    return runTraceSchema.parse({ runId, nodes });
+    return runTraceSchema.parse({ runId, nodes })
   }
 
-  return { findByRunId };
+  return { findByRunId }
 }
 
 function duration(startedAt: Date, finishedAt: Date | null): number | null {
-  return finishedAt
-    ? Math.max(0, finishedAt.getTime() - startedAt.getTime())
-    : null;
+  return finishedAt ? Math.max(0, finishedAt.getTime() - startedAt.getTime()) : null
 }
 
-function runStatus(status: string): RunTraceNode["status"] {
-  if (status === "completed") return "succeeded";
-  if (status === "aborted") return "aborted";
-  if (status === "failed" || status === "interrupted") return "failed";
-  return "running";
+function runStatus(status: string): RunTraceNode['status'] {
+  if (status === 'completed') return 'succeeded'
+  if (status === 'aborted') return 'aborted'
+  if (status === 'failed' || status === 'interrupted') return 'failed'
+  return 'running'
 }
 
-function lifecycleStatus(status: string): RunTraceNode["status"] {
-  if (status === "completed" || status === "succeeded") return "succeeded";
-  if (status === "aborted") return "aborted";
-  if (status === "retry" || status === "deferred" || status === "overflow") {
-    return status;
+function lifecycleStatus(status: string): RunTraceNode['status'] {
+  if (status === 'completed' || status === 'succeeded') return 'succeeded'
+  if (status === 'aborted') return 'aborted'
+  if (status === 'retry' || status === 'deferred' || status === 'overflow') {
+    return status
   }
-  if (status === "failed") return "failed";
-  return "running";
+  if (status === 'failed') return 'failed'
+  return 'running'
 }
 
-function modelCallStatus(result: string): RunTraceNode["status"] {
-  if (result === "succeeded") return "succeeded";
-  if (result === "cancelled") return "aborted";
-  if (result === "running") return "running";
-  return "failed";
+function modelCallStatus(result: string): RunTraceNode['status'] {
+  if (result === 'succeeded') return 'succeeded'
+  if (result === 'cancelled') return 'aborted'
+  if (result === 'running') return 'running'
+  return 'failed'
 }
 
-function toolStatus(status: string): RunTraceNode["status"] {
-  if (status === "succeeded") return "succeeded";
-  if (status === "cancelled") return "aborted";
-  if (status === "running") return "running";
-  return "failed";
+function toolStatus(status: string): RunTraceNode['status'] {
+  if (status === 'succeeded') return 'succeeded'
+  if (status === 'cancelled') return 'aborted'
+  if (status === 'running') return 'running'
+  return 'failed'
 }

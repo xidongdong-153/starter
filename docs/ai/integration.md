@@ -396,7 +396,7 @@ v1 = HMAC-SHA256("<t>." + body, signingSecret)
 Node.js 参考实现：
 
 ```ts
-import { createHmac, timingSafeEqual } from "node:crypto";
+import { createHmac, timingSafeEqual } from 'node:crypto'
 
 function verifyStarterWebhook(
   signingSecret: string,
@@ -404,14 +404,12 @@ function verifyStarterWebhook(
   signatureHeader: string, // X-Starter-Signature: "t=...,v1=..."
   rawBody: string,
 ): boolean {
-  const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(signatureHeader);
-  if (!match) return false;
-  const [, t, v1] = match;
-  if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false; // 5 分钟容忍
-  const expected = createHmac("sha256", signingSecret)
-    .update(`${t}.${rawBody}`, "utf8")
-    .digest("hex");
-  return timingSafeEqual(Buffer.from(expected, "hex"), Buffer.from(v1, "hex"));
+  const match = /^t=(\d+),v1=([0-9a-f]{64})$/.exec(signatureHeader)
+  if (!match) return false
+  const [, t, v1] = match
+  if (Math.abs(Date.now() / 1000 - Number(t)) > 300) return false // 5 分钟容忍
+  const expected = createHmac('sha256', signingSecret).update(`${t}.${rawBody}`, 'utf8').digest('hex')
+  return timingSafeEqual(Buffer.from(expected, 'hex'), Buffer.from(v1, 'hex'))
 }
 ```
 
@@ -540,15 +538,15 @@ OpenAPI 里这些运行面端点的 `security` 只声明了 `cookieAuth`（trans
 
 ```ts
 {
-  version: 1;
-  eventId: string; // SSE 的 id
-  sequence: number; // 单个 Run 内从 1 递增
-  sessionId: string;
-  runId: string;
-  lane: string;
-  createdAt: string; // ISO 时间
-  type: string; // SSE 的 event
-  data: object; // 随 type 变化
+  version: 1
+  eventId: string // SSE 的 id
+  sequence: number // 单个 Run 内从 1 递增
+  sessionId: string
+  runId: string
+  lane: string
+  createdAt: string // ISO 时间
+  type: string // SSE 的 event
+  data: object // 随 type 变化
 }
 ```
 
@@ -593,86 +591,79 @@ run.aborted
 ### 7.3 TypeScript 示例
 
 ```ts
-const base = process.env.AI_API_BASE!;
+const base = process.env.AI_API_BASE!
 
 function aiHeaders(extra?: Record<string, string>): Record<string, string> {
   return {
     Authorization: `Bearer ${process.env.AI_SECRET!}`,
-    "X-AI-External-User-Id": "u_1024",
-    "X-AI-Subject-Type": "ticket",
-    "X-AI-Subject-Id": "T-8899",
+    'X-AI-External-User-Id': 'u_1024',
+    'X-AI-Subject-Type': 'ticket',
+    'X-AI-Subject-Id': 'T-8899',
     ...extra,
-  };
+  }
 }
 
 async function aiJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${base}${path}`, {
     ...init,
-    headers: aiHeaders(
-      init?.body ? { "Content-Type": "application/json" } : {},
-    ),
-  });
+    headers: aiHeaders(init?.body ? { 'Content-Type': 'application/json' } : {}),
+  })
   const body = (await response.json()) as
-    | { ok: true; data: T }
-    | { ok: false; error: { code: string; message: string } };
-  if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`);
-  return body.data;
+    { ok: true; data: T } | { ok: false; error: { code: string; message: string } }
+  if (!body.ok) throw new Error(`${body.error.code}: ${body.error.message}`)
+  return body.data
 }
 
 // 1. 建会话
-const session = await aiJson<{ id: string }>("/api/ai/sessions", {
-  method: "POST",
-  body: JSON.stringify({ title: "工单 T-8899", defaultAgentId: agentId }),
-});
+const session = await aiJson<{ id: string }>('/api/ai/sessions', {
+  method: 'POST',
+  body: JSON.stringify({ title: '工单 T-8899', defaultAgentId: agentId }),
+})
 
 // 2. 启动 Run 并读事件
 function parseFrame(frame: string): unknown | undefined {
   const data = frame
     .split(/\r?\n/)
-    .filter((line) => line.startsWith("data:"))
+    .filter((line) => line.startsWith('data:'))
     .map((line) => line.slice(5).trim())
-    .join("\n");
-  if (!data) return undefined;
+    .join('\n')
+  if (!data) return undefined
   try {
-    return JSON.parse(data);
+    return JSON.parse(data)
   } catch {
-    return undefined; // 坏帧只丢这一帧
+    return undefined // 坏帧只丢这一帧
   }
 }
 
-async function* streamRun(
-  sessionId: string,
-  input: string,
-  signal: AbortSignal,
-) {
+async function* streamRun(sessionId: string, input: string, signal: AbortSignal) {
   const response = await fetch(`${base}/api/ai/sessions/${sessionId}/runs`, {
-    method: "POST",
+    method: 'POST',
     signal,
     headers: aiHeaders({
-      "Content-Type": "application/json",
-      Accept: "text/event-stream",
+      'Content-Type': 'application/json',
+      Accept: 'text/event-stream',
     }),
     body: JSON.stringify({ input }),
-  });
+  })
   if (!response.ok || !response.body) {
-    throw new Error(`启动 Run 失败：HTTP ${response.status}`);
+    throw new Error(`启动 Run 失败：HTTP ${response.status}`)
   }
-  const reader = response.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
   while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const frames = buffer.split(/\r?\n\r?\n/);
-    buffer = frames.pop() ?? "";
+    const { done, value } = await reader.read()
+    if (done) break
+    buffer += decoder.decode(value, { stream: true })
+    const frames = buffer.split(/\r?\n\r?\n/)
+    buffer = frames.pop() ?? ''
     for (const frame of frames) {
-      const event = parseFrame(frame);
-      if (event) yield event as HarnessEvent;
+      const event = parseFrame(frame)
+      if (event) yield event as HarnessEvent
     }
   }
-  const tail = parseFrame(buffer); // 末帧可能没有结尾空行
-  if (tail) yield tail as HarnessEvent;
+  const tail = parseFrame(buffer) // 末帧可能没有结尾空行
+  if (tail) yield tail as HarnessEvent
 }
 ```
 
@@ -680,38 +671,33 @@ async function* streamRun(
 
 ```ts
 async function waitForTerminal(sessionId: string, runId: string) {
-  const wait = (ms: number) =>
-    new Promise((resolve) => setTimeout(resolve, ms));
+  const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
   for (;;) {
-    const run = await aiJson<AgentRun>(
-      `/api/ai/sessions/${sessionId}/runs/${runId}`,
-    );
-    if (run.status !== "starting" && run.status !== "running") return run;
-    await wait(1000);
+    const run = await aiJson<AgentRun>(`/api/ai/sessions/${sessionId}/runs/${runId}`)
+    if (run.status !== 'starting' && run.status !== 'running') return run
+    await wait(1000)
   }
 }
 
 async function run(sessionId: string, input: string) {
-  const controller = new AbortController();
-  let runId: string | undefined;
-  let received = 0;
-  let lastSequence = 0;
+  const controller = new AbortController()
+  let runId: string | undefined
+  let received = 0
+  let lastSequence = 0
   try {
     for await (const event of streamRun(sessionId, input, controller.signal)) {
-      if (event.sequence <= lastSequence) continue; // 去重
-      lastSequence = event.sequence;
-      received += 1;
-      runId ??= event.runId;
+      if (event.sequence <= lastSequence) continue // 去重
+      lastSequence = event.sequence
+      received += 1
+      runId ??= event.runId
       // 这里按 type 更新自己的视图
     }
   } catch (error) {
-    if (received === 0) throw error; // 一个事件都没收到才算启动失败
+    if (received === 0) throw error // 一个事件都没收到才算启动失败
   }
-  if (!runId) throw new Error("Run 没有产生任何事件");
-  await waitForTerminal(sessionId, runId);
-  return aiJson<{ items: unknown[] }>(
-    `/api/ai/sessions/${sessionId}/transcript?lane=main&limit=50`,
-  );
+  if (!runId) throw new Error('Run 没有产生任何事件')
+  await waitForTerminal(sessionId, runId)
+  return aiJson<{ items: unknown[] }>(`/api/ai/sessions/${sessionId}/transcript?lane=main&limit=50`)
 }
 ```
 

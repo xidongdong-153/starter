@@ -23,7 +23,7 @@
     }
   },
   "scripts": {
-    "build": "NODE_OPTIONS=--max-old-space-size=8192 tsup src/index.ts src/app.ts src/rpc.ts src/rpc/chat.ts src/rpc/flow.ts --format esm --dts --out-dir dist --clean",
+    "build": "cross-env NODE_OPTIONS=--max-old-space-size=8192 tsup src/index.ts src/app.ts src/rpc.ts src/rpc/chat.ts src/rpc/flow.ts --format esm --dts --out-dir dist --clean",
     "check": "pnpm check-types && pnpm lint && pnpm format:check",
     "check-types": "tsc --noEmit",
     "dev": "dotenv -e .env.development -- tsx watch src/index.ts",
@@ -39,7 +39,7 @@
     "db:migrate": "dotenv -e .env.development -- drizzle-kit migrate",
     "db:check": "dotenv -e .env.development -- drizzle-kit check",
     "db:studio": "dotenv -e .env.development -- drizzle-kit studio",
-    "clean": "rm -rf dist"
+    "clean": "rimraf dist"
   },
   "dependencies": {
     "@asteasolutions/zod-to-openapi": "catalog:",
@@ -69,11 +69,13 @@
     "@types/better-sqlite3": "catalog:",
     "@types/node": "catalog:",
     "@types/nodemailer": "catalog:",
+    "cross-env": "catalog:",
     "dotenv-cli": "catalog:",
     "drizzle-kit": "catalog:",
     "eslint": "catalog:",
     "pino-pretty": "catalog:",
     "prettier": "catalog:",
+    "rimraf": "catalog:",
     "tsup": "catalog:",
     "tsx": "catalog:",
     "typescript": "catalog:",

@@ -8,7 +8,7 @@ import type {
   AuthorizationUser,
   CurrentPermissions,
   Permission,
-} from "@starter/contracts";
+} from '@starter/contracts'
 import type {
   AuthorizationAuditEventRecord,
   AuthorizationPermissionRecord,
@@ -16,7 +16,7 @@ import type {
   AuthorizationUserRecord,
   RolePermissionRecord,
   UserRoleRecord,
-} from "./authorization.repository.js";
+} from './authorization.repository.js'
 import {
   ApiErrorCodes,
   AuditActions,
@@ -30,57 +30,41 @@ import {
   auditRoleMetadataPayloadSchema,
   auditUserStatusPayloadSchema,
   permissionSchema,
-} from "@starter/contracts";
-import { AppError } from "@api/shared/app-error.js";
-import { createHash } from "node:crypto";
-import type { z } from "zod";
+} from '@starter/contracts'
+import { AppError } from '@api/shared/app-error.js'
+import { createHash } from 'node:crypto'
+import type { z } from 'zod'
 
 function toPermissions(permissionKeys: string[]): Permission[] {
-  return [...new Set(permissionKeys)]
-    .sort()
-    .map((permission) => permissionSchema.parse(permission));
+  return [...new Set(permissionKeys)].sort().map((permission) => permissionSchema.parse(permission))
 }
 
-export function toCurrentPermissions(
-  roleKeys: string[],
-  permissionKeys: string[],
-): CurrentPermissions {
-  const roles = [...new Set(roleKeys)].sort();
-  const permissions = toPermissions(permissionKeys);
-  const version = createHash("sha256")
-    .update(JSON.stringify({ roles, permissions }))
-    .digest("hex")
-    .slice(0, 16);
-  return { roles, permissions, version };
+export function toCurrentPermissions(roleKeys: string[], permissionKeys: string[]): CurrentPermissions {
+  const roles = [...new Set(roleKeys)].sort()
+  const permissions = toPermissions(permissionKeys)
+  const version = createHash('sha256').update(JSON.stringify({ roles, permissions })).digest('hex').slice(0, 16)
+  return { roles, permissions, version }
 }
 
-export function toAuthorizationUser(
-  user: AuthorizationUserRecord,
-  roleKeys: string[],
-): AuthorizationUser {
-  return { ...user, roleKeys: [...new Set(roleKeys)].sort() };
+export function toAuthorizationUser(user: AuthorizationUserRecord, roleKeys: string[]): AuthorizationUser {
+  return { ...user, roleKeys: [...new Set(roleKeys)].sort() }
 }
 
 export function toAuthorizationUsers(
   users: AuthorizationUserRecord[],
   assignments: UserRoleRecord[],
 ): AuthorizationUser[] {
-  const roleKeysByUser = new Map<string, string[]>();
+  const roleKeysByUser = new Map<string, string[]>()
   for (const assignment of assignments) {
-    const roleKeys = roleKeysByUser.get(assignment.userId) ?? [];
-    roleKeys.push(assignment.roleKey);
-    roleKeysByUser.set(assignment.userId, roleKeys);
+    const roleKeys = roleKeysByUser.get(assignment.userId) ?? []
+    roleKeys.push(assignment.roleKey)
+    roleKeysByUser.set(assignment.userId, roleKeys)
   }
-  return users.map((user) =>
-    toAuthorizationUser(user, roleKeysByUser.get(user.id) ?? []),
-  );
+  return users.map((user) => toAuthorizationUser(user, roleKeysByUser.get(user.id) ?? []))
 }
 
-export function toAuthorizationRole(
-  role: AuthorizationRoleRecord,
-  permissionKeys: string[],
-): AuthorizationRole {
-  const archived = role.archivedAt !== null;
+export function toAuthorizationRole(role: AuthorizationRoleRecord, permissionKeys: string[]): AuthorizationRole {
+  const archived = role.archivedAt !== null
   return {
     key: role.key,
     name: role.name,
@@ -91,14 +75,11 @@ export function toAuthorizationRole(
     permissionsEditable: role.key !== RoleKeys.ADMIN && !archived,
     lifecycleEditable: !role.isSystem,
     permissionKeys: toPermissions(permissionKeys),
-  };
+  }
 }
 
-export function toAuthorizationRoleImpact(
-  roleKey: string,
-  assignedUserCount: number,
-): AuthorizationRoleImpact {
-  return { roleKey, assignedUserCount };
+export function toAuthorizationRoleImpact(roleKey: string, assignedUserCount: number): AuthorizationRoleImpact {
+  return { roleKey, assignedUserCount }
 }
 
 export function toAuthorizationPermissionImpact(
@@ -110,7 +91,7 @@ export function toAuthorizationPermissionImpact(
     permissionKey,
     roleKeys: [...new Set(roleKeys)].sort(),
     affectedUserCount,
-  };
+  }
 }
 
 export function toAuthorizationRoleCatalog(
@@ -118,21 +99,19 @@ export function toAuthorizationRoleCatalog(
   permissions: AuthorizationPermissionRecord[],
   assignments: RolePermissionRecord[],
 ): AuthorizationRoleCatalog {
-  const permissionKeysByRole = new Map<string, string[]>();
+  const permissionKeysByRole = new Map<string, string[]>()
   for (const assignment of assignments) {
-    const permissionKeys = permissionKeysByRole.get(assignment.roleKey) ?? [];
-    permissionKeys.push(assignment.permissionKey);
-    permissionKeysByRole.set(assignment.roleKey, permissionKeys);
+    const permissionKeys = permissionKeysByRole.get(assignment.roleKey) ?? []
+    permissionKeys.push(assignment.permissionKey)
+    permissionKeysByRole.set(assignment.roleKey, permissionKeys)
   }
 
-  const activePermissionKeys = permissions.map((permission) => permission.key);
+  const activePermissionKeys = permissions.map((permission) => permission.key)
   return {
     roles: roles.map((role) =>
       toAuthorizationRole(
         role,
-        role.key === RoleKeys.ADMIN
-          ? activePermissionKeys
-          : (permissionKeysByRole.get(role.key) ?? []),
+        role.key === RoleKeys.ADMIN ? activePermissionKeys : (permissionKeysByRole.get(role.key) ?? []),
       ),
     ),
     permissions: permissions.map((permission): AuthorizationPermission => ({
@@ -141,15 +120,11 @@ export function toAuthorizationRoleCatalog(
       action: permission.action,
       description: permission.description,
     })),
-  };
+  }
 }
 
 function corruptedAuditEvent(): AppError {
-  return new AppError(
-    ApiErrorCodes.SYSTEM_INTERNAL_ERROR,
-    "审计事件数据损坏",
-    500,
-  );
+  return new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, '审计事件数据损坏', 500)
 }
 
 /**
@@ -161,47 +136,43 @@ function corruptedAuditEvent(): AppError {
  */
 function parseAuditJson(json: string): unknown {
   try {
-    return JSON.parse(json);
+    return JSON.parse(json)
   } catch {
-    throw corruptedAuditEvent();
+    throw corruptedAuditEvent()
   }
 }
 
 function parseRoleKeysPayload(json: string) {
-  const result = auditRoleKeysPayloadSchema.safeParse(parseAuditJson(json));
-  if (!result.success) throw corruptedAuditEvent();
-  return result.data;
+  const result = auditRoleKeysPayloadSchema.safeParse(parseAuditJson(json))
+  if (!result.success) throw corruptedAuditEvent()
+  return result.data
 }
 
 function parsePermissionKeysPayload(json: string) {
-  const result = auditPermissionKeysPayloadSchema.safeParse(
-    parseAuditJson(json),
-  );
-  if (!result.success) throw corruptedAuditEvent();
-  return result.data;
+  const result = auditPermissionKeysPayloadSchema.safeParse(parseAuditJson(json))
+  if (!result.success) throw corruptedAuditEvent()
+  return result.data
 }
 
 function parseWithSchema<T extends z.ZodType>(schema: T, json: string) {
-  const result = schema.safeParse(parseAuditJson(json));
-  if (!result.success) throw corruptedAuditEvent();
-  return result.data as z.infer<T>;
+  const result = schema.safeParse(parseAuditJson(json))
+  if (!result.success) throw corruptedAuditEvent()
+  return result.data as z.infer<T>
 }
 
-function parseActorType(value: string): "user" | "system" {
-  if (value !== "user" && value !== "system") throw corruptedAuditEvent();
-  return value;
+function parseActorType(value: string): 'user' | 'system' {
+  if (value !== 'user' && value !== 'system') throw corruptedAuditEvent()
+  return value
 }
 
-function parseTargetType(value: string): "user" | "role" {
-  if (value !== "user" && value !== "role") throw corruptedAuditEvent();
-  return value;
+function parseTargetType(value: string): 'user' | 'role' {
+  if (value !== 'user' && value !== 'role') throw corruptedAuditEvent()
+  return value
 }
 
-export function toAuthorizationAuditEvent(
-  record: AuthorizationAuditEventRecord,
-): AuthorizationAuditEvent {
-  const action = auditActionSchema.safeParse(record.action);
-  if (!action.success) throw corruptedAuditEvent();
+export function toAuthorizationAuditEvent(record: AuthorizationAuditEventRecord): AuthorizationAuditEvent {
+  const action = auditActionSchema.safeParse(record.action)
+  if (!action.success) throw corruptedAuditEvent()
 
   const base = {
     id: record.id,
@@ -211,78 +182,69 @@ export function toAuthorizationAuditEvent(
     reason: record.reason,
     requestId: record.requestId,
     createdAt: record.createdAt.toISOString(),
-  };
-  const targetType = parseTargetType(record.targetType);
+  }
+  const targetType = parseTargetType(record.targetType)
   if (action.data === AuditActions.ROLE_PERMISSIONS_REPLACED) {
-    if (targetType !== "role") throw corruptedAuditEvent();
+    if (targetType !== 'role') throw corruptedAuditEvent()
     return {
       ...base,
       action: action.data,
       targetType,
       before: parsePermissionKeysPayload(record.beforeJson),
       after: parsePermissionKeysPayload(record.afterJson),
-    };
+    }
   }
 
   if (action.data === AuditActions.ROLE_CREATED) {
-    if (targetType !== "role") throw corruptedAuditEvent();
+    if (targetType !== 'role') throw corruptedAuditEvent()
     return {
       ...base,
       action: action.data,
       targetType,
       before: parseWithSchema(auditRoleCreatedBeforeSchema, record.beforeJson),
       after: parseWithSchema(auditRoleCreatedAfterSchema, record.afterJson),
-    };
+    }
   }
 
   if (action.data === AuditActions.ROLE_UPDATED) {
-    if (targetType !== "role") throw corruptedAuditEvent();
+    if (targetType !== 'role') throw corruptedAuditEvent()
     return {
       ...base,
       action: action.data,
       targetType,
-      before: parseWithSchema(
-        auditRoleMetadataPayloadSchema,
-        record.beforeJson,
-      ),
+      before: parseWithSchema(auditRoleMetadataPayloadSchema, record.beforeJson),
       after: parseWithSchema(auditRoleMetadataPayloadSchema, record.afterJson),
-    };
+    }
   }
 
-  if (
-    action.data === AuditActions.ROLE_ARCHIVED ||
-    action.data === AuditActions.ROLE_RESTORED
-  ) {
-    if (targetType !== "role") throw corruptedAuditEvent();
+  if (action.data === AuditActions.ROLE_ARCHIVED || action.data === AuditActions.ROLE_RESTORED) {
+    if (targetType !== 'role') throw corruptedAuditEvent()
     return {
       ...base,
       action: action.data,
       targetType,
-      before: parseWithSchema(
-        auditRoleLifecyclePayloadSchema,
-        record.beforeJson,
-      ),
+      before: parseWithSchema(auditRoleLifecyclePayloadSchema, record.beforeJson),
       after: parseWithSchema(auditRoleLifecyclePayloadSchema, record.afterJson),
-    };
+    }
   }
 
   if (action.data === AuditActions.USER_STATUS_CHANGED) {
-    if (targetType !== "user") throw corruptedAuditEvent();
+    if (targetType !== 'user') throw corruptedAuditEvent()
     return {
       ...base,
       action: action.data,
       targetType,
       before: parseWithSchema(auditUserStatusPayloadSchema, record.beforeJson),
       after: parseWithSchema(auditUserStatusPayloadSchema, record.afterJson),
-    };
+    }
   }
 
-  if (targetType !== "user") throw corruptedAuditEvent();
+  if (targetType !== 'user') throw corruptedAuditEvent()
   return {
     ...base,
     action: action.data,
     targetType,
     before: parseRoleKeysPayload(record.beforeJson),
     after: parseRoleKeysPayload(record.afterJson),
-  };
+  }
 }

@@ -1,10 +1,6 @@
-import type { AiSkillRepository } from "../skill/skill.repository.js";
-import { createReadSkillTool } from "../skill/skill-tools.js";
-import {
-  createAiToolRegistry,
-  type AiToolRegistry,
-  type RegisteredAiTool,
-} from "./tool-registry.js";
+import type { AiSkillRepository } from '../skill/skill.repository.js'
+import { createReadSkillTool } from '../skill/skill-tools.js'
+import { createAiToolRegistry, type AiToolRegistry, type RegisteredAiTool } from './tool-registry.js'
 
 /**
  * API 内置 Tool Catalog 的唯一显式组装入口。
@@ -14,11 +10,8 @@ import {
  * handler 名称、不动态 import 请求参数，也不执行 Admin 上传的代码。
  */
 export function createBuiltinAiToolRegistry(input: {
-  injectedTools: readonly RegisteredAiTool[];
-  skillRepository: AiSkillRepository;
+  injectedTools: readonly RegisteredAiTool[]
+  skillRepository: AiSkillRepository
 }): AiToolRegistry {
-  return createAiToolRegistry([
-    ...input.injectedTools,
-    createReadSkillTool(input.skillRepository),
-  ]);
+  return createAiToolRegistry([...input.injectedTools, createReadSkillTool(input.skillRepository)])
 }

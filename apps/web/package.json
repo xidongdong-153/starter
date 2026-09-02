@@ -13,7 +13,7 @@
     "format:check": "prettier --check . --ignore-path ../../.prettierignore",
     "start": "next start -p 4399",
     "test": "vitest run",
-    "clean": "rm -rf .next"
+    "clean": "rimraf .next"
   },
   "dependencies": {
     "@radix-ui/react-label": "catalog:",
@@ -42,6 +42,7 @@
     "@types/react-dom": "catalog:",
     "eslint": "catalog:",
     "prettier": "catalog:",
+    "rimraf": "catalog:",
     "tailwindcss": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:"

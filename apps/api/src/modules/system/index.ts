@@ -1,1 +1,1 @@
-export { createSystemRoute } from "./system.route.js";
+export { createSystemRoute } from './system.route.js'

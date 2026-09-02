@@ -1,17 +1,17 @@
-import type { AccountProfile, PublicProfile } from "@starter/contracts";
-import type { ProfileRecord } from "./profile.repository.js";
-import type { FileRecord } from "@api/modules/files/files.repository.js";
+import type { AccountProfile, PublicProfile } from '@starter/contracts'
+import type { ProfileRecord } from './profile.repository.js'
+import type { FileRecord } from '@api/modules/files/files.repository.js'
 
 interface ProfilePresenterInput extends ProfileRecord {
-  avatar: FileRecord | null;
+  avatar: FileRecord | null
 }
 
 export function toPublicProfile(input: ProfilePresenterInput): PublicProfile {
-  let socialLinks: string[] = [];
+  let socialLinks: string[] = []
   try {
-    socialLinks = JSON.parse(input.profile.socialLinks) as string[];
+    socialLinks = JSON.parse(input.profile.socialLinks) as string[]
   } catch {
-    socialLinks = [];
+    socialLinks = []
   }
 
   return {
@@ -24,16 +24,13 @@ export function toPublicProfile(input: ProfilePresenterInput): PublicProfile {
     socialLinks,
     avatarUrl: input.avatar ? `/api/profiles/${input.user.id}/avatar` : null,
     updatedAt: input.profile.updatedAt.toISOString(),
-  } satisfies PublicProfile;
+  } satisfies PublicProfile
 }
 
-export function toAccountProfile(
-  input: ProfilePresenterInput,
-  providers: string[],
-): AccountProfile {
+export function toAccountProfile(input: ProfilePresenterInput, providers: string[]): AccountProfile {
   return {
     ...toPublicProfile(input),
     email: input.user.email,
     providers,
-  } satisfies AccountProfile;
+  } satisfies AccountProfile
 }

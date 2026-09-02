@@ -1,1 +1,1 @@
-export { registerOpenApi } from "./api-docs.js";
+export { registerOpenApi } from './api-docs.js'

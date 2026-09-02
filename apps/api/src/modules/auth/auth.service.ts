@@ -1,27 +1,23 @@
-import type { AppAuth } from "./auth.config.js";
-import { ApiErrorCodes } from "@starter/contracts";
-import { AppError } from "@api/shared/app-error.js";
+import type { AppAuth } from './auth.config.js'
+import { ApiErrorCodes } from '@starter/contracts'
+import { AppError } from '@api/shared/app-error.js'
 
 export async function getCurrentSession(auth: AppAuth, headers: Headers) {
   try {
-    return await auth.api.getSession({ headers });
+    return await auth.api.getSession({ headers })
   } catch {
-    throw new AppError(
-      ApiErrorCodes.AUTH_SESSION_INVALID,
-      "当前登录状态无效",
-      401,
-    );
+    throw new AppError(ApiErrorCodes.AUTH_SESSION_INVALID, '当前登录状态无效', 401)
   }
 }
 
 export async function requireSession(auth: AppAuth, headers: Headers) {
-  const session = await getCurrentSession(auth, headers);
+  const session = await getCurrentSession(auth, headers)
   if (!session) {
-    throw new AppError(ApiErrorCodes.AUTH_UNAUTHENTICATED, "请先登录", 401);
+    throw new AppError(ApiErrorCodes.AUTH_UNAUTHENTICATED, '请先登录', 401)
   }
-  const status = session.user.status;
-  if (status === "suspended") {
-    throw new AppError(ApiErrorCodes.AUTH_USER_SUSPENDED, "账号已被禁用", 401);
+  const status = session.user.status
+  if (status === 'suspended') {
+    throw new AppError(ApiErrorCodes.AUTH_USER_SUSPENDED, '账号已被禁用', 401)
   }
-  return session;
+  return session
 }
