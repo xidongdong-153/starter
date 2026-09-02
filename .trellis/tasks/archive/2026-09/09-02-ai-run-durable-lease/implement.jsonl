@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端分层、质量检查与 AI 专项规范入口"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Agent Run 生命周期、并发、恢复与 SSE 契约，阶段 A 直接修改这些语义的判定来源"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "Pi executor、Tool adapter、Session 与事件映射边界，续租失败中止要走现有 abort 路径"}
+{"file": ".trellis/tasks/09-02-api-ai-agent-architecture-research/research/current-api-ai-gap-analysis.md", "reason": "现有执行链源码证据与 P0-1/P0-3 缺口细节（含行号）"}
+{"file": ".trellis/tasks/09-02-api-ai-agent-architecture-research/research/pi-reuse-assessment.md", "reason": "Pi SQLite backend 单 session 单写者租约行为，双 runtime 测试设计依据"}
