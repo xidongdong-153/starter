@@ -1,0 +1,2 @@
+{"file": ".trellis/spec/eslint-config/frontend/quality-guidelines.md", "reason": "检查阶段需按该规范运行 lint/format/type-check 命令组合"}
+{"file": ".trellis/spec/eslint-config/frontend/index.md", "reason": "验证 eslint-config 包改动后入口与薄封装约定未被破坏"}
