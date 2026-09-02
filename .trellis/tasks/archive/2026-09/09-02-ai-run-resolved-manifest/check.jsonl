@@ -1,0 +1,3 @@
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "检查 Run 契约与 lease 衔接未被 manifest 改动破坏"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "检查 contracts 变更符合共享包规范"}
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端质量检查命令"}

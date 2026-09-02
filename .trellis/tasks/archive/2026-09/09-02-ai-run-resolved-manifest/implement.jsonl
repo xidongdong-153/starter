@@ -1,0 +1,5 @@
+{"file": ".trellis/spec/api/backend/index.md", "reason": "API 后端分层与质量检查规范入口"}
+{"file": ".trellis/spec/api/backend/agent-run-guidelines.md", "reason": "Run 生命周期契约，阶段 A 已更新 lane lease 语义，manifest 写入顺序要与 lease 衔接"}
+{"file": ".trellis/spec/api/backend/pi-agent-execution-guidelines.md", "reason": "executor 启动边界，manifest 必须在 executor 启动前落库"}
+{"file": ".trellis/spec/contracts/backend/index.md", "reason": "共享 Zod 契约变更要求，manifest schema 要进 packages/contracts"}
+{"file": ".trellis/tasks/09-02-api-ai-agent-architecture-research/research/current-api-ai-gap-analysis.md", "reason": "P0-2 缺口源码证据（snapshot 只存 ID、Prompt/Skill 无 revision、内联不落库）"}
