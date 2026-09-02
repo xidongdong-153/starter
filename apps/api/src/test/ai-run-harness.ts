@@ -1,6 +1,10 @@
+import { mkdtempSync } from 'node:fs'
+import { rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai'
 import type { Api, AssistantMessage, Model, Models } from '@earendil-works/pi-ai'
-import type { CompactionSettings } from '@earendil-works/pi-agent-core'
+import type { CompactionSettings, StreamFn } from '@earendil-works/pi-agent-core'
 import type { TelemetryContext } from '@earendil-works/pi-telemetry'
 import type { AgentThinkingLevel } from '@starter/contracts'
 import { expect } from 'vitest'
@@ -8,7 +12,7 @@ import { z } from 'zod'
 
 import { createPiAgentExecutor } from '@api/infra/agent/index.js'
 import type { AppLogger } from '@api/infra/log/index.js'
-import type { createPiSessionStore } from '@api/infra/agent/pi-session-store.js'
+import { createPiSessionStore } from '@api/infra/agent/pi-session-store.js'
 import { aiAgentDefinitions, aiEnabledModels, aiProviderConfigs, aiSystemPrompts } from '@api/infra/db/schema/index.js'
 import { createAiRunLifecycleRepository } from '@api/modules/ai/run/index.js'
 import { createAiToolRegistry, defineAiTool } from '@api/modules/ai/tool/tool-registry.js'
@@ -334,6 +338,62 @@ export function runTestApp(input: {
       },
     },
   )
+}
+
+export interface DualRuntimeApp {
+  app: ReturnType<typeof createTestApp>['app']
+  runtime: ReturnType<typeof createTestApp>['runtime']
+}
+
+/**
+ * 双 runtime 共享主库的测试底座。
+ *
+ * 两个 app 各自打开同一个 Starter SQLite（不同连接、不同 APP_INSTANCE_ID），
+ * lane lease 的跨实例语义在这条链路上验证。Pi Session store 共享同一个
+ * 实例：Pi SQLite backend 对同一 session 只允许一个写者，两个 repository
+ * 各自打开同一文件会在 session open 处互相拒绝，与本底座要验证的
+ * Starter lease 粒度无关。
+ */
+export function runDualRuntimeApps(input: { streamFn: StreamFn }): {
+  a: DualRuntimeApp
+  b: DualRuntimeApp
+  cleanup: () => Promise<void>
+} {
+  const sharedDir = mkdtempSync(join(tmpdir(), 'starter-dual-runtime-'))
+  const store = createPiSessionStore({
+    cwd: sharedDir,
+    databasePath: join(sharedDir, 'agent-sessions.db'),
+  })
+  const build = (instanceId: string) =>
+    createTestApp(
+      { DATABASE_PATH: join(sharedDir, 'app.db'), APP_INSTANCE_ID: instanceId },
+      {
+        agentSessionStore: store,
+        piAgentExecutorFactory: (runtime) =>
+          createPiAgentExecutor({
+            sessionStore: store,
+            resolveModel: () => streamModel,
+            streamFn: input.streamFn,
+            hasPermission: async () => true,
+            lifecycle: createAiRunLifecycleRepository(runtime.db),
+          }),
+      },
+    )
+  const a = build('instance-a')
+  const b = build('instance-b')
+  let closed = false
+  return {
+    a: { app: a.app, runtime: a.runtime },
+    b: { app: b.app, runtime: b.runtime },
+    async cleanup() {
+      if (closed) return
+      closed = true
+      a.cleanup()
+      b.cleanup()
+      await store.close()
+      await rm(sharedDir, { recursive: true, force: true })
+    },
+  }
 }
 
 export function lookupTool() {

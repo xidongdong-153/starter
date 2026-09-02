@@ -388,6 +388,8 @@ export const aiAgentRuns = sqliteTable(
     idempotencyScope: text('idempotency_scope'),
     finalEntryId: text('final_entry_id'),
     errorCode: text('error_code'),
+    /** acquire lane lease 时拿到的 fencing token；终态事务用它校验执行所有权。历史行为 NULL，跳过校验。 */
+    executionFencingToken: integer('execution_fencing_token'),
     createdAt: timestamp('created_at').notNull(),
     startedAt: timestamp('started_at'),
     finishedAt: timestamp('finished_at'),
@@ -409,6 +411,31 @@ export const aiAgentRuns = sqliteTable(
     check('ai_agent_runs_revision_check', sql`${table.agentRevision} >= 1`),
     check('ai_agent_runs_agent_pair_check', sql`(${table.agentId} IS NULL) = (${table.agentRevision} IS NULL)`),
     check('ai_agent_runs_snapshot_json_check', sql`json_valid(${table.snapshotJson})`),
+  ],
+)
+
+/**
+ * Session lane 的执行所有权 lease：一行代表一个 lane 的当前持有者。
+ * 排他与接管的权威数据源，进程内 ActiveRunRegistry 只是同进程快速路径。
+ * 时间列是 epoch 毫秒整型（不用 timestamp mode）：条件 SQL 直接与 Date.now() 比较。
+ * TTL 90s、续租 30s 是代码常量，见 run/lane-lease.ts，不提供环境变量。
+ */
+export const aiAgentLaneLeases = sqliteTable(
+  'ai_agent_lane_leases',
+  {
+    sessionId: text('session_id').notNull(),
+    lane: text('lane').notNull(),
+    ownerId: text('owner_id').notNull(),
+    /** 按 lane 单调递增，每次接管 +1；终态提交用它识别过期 owner。 */
+    fencingToken: integer('fencing_token').notNull(),
+    /** epoch 毫秒；小于当前时间视为过期，可被新 owner 接管。 */
+    leaseUntil: integer('lease_until').notNull(),
+    heartbeatAt: integer('heartbeat_at').notNull(),
+    acquiredAt: integer('acquired_at').notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.sessionId, table.lane] }),
+    check('ai_agent_lane_leases_fencing_token_check', sql`${table.fencingToken} >= 1`),
   ],
 )
 

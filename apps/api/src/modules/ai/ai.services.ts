@@ -53,6 +53,11 @@ export interface AiServices {
   agentDefinitionService: ReturnType<typeof createAiAgentDefinitionService>
   sessionService: ReturnType<typeof createAiAgentSessionService>
   runService: ReturnType<typeof createAiAgentRunService>
+  /**
+   * AI readiness 门禁：Run 恢复扫描完成后 resolve。
+   * startRun 在入口 await 它；诊断型 session 一致性检查不阻塞它。
+   */
+  readiness: Promise<void>
   completionService: ReturnType<typeof createAiCompletionService>
   attachmentService: ReturnType<typeof createAiAttachmentService>
   toolRegistry: ReturnType<typeof createBuiltinAiToolRegistry>
@@ -182,6 +187,11 @@ export function createAiServices(runtime: AppRuntime): AiServices {
       .listModels(model.providerId)
       .some((entry) => entry.modelId === model.modelId && entry.capabilities.supportsImageInput)
   }
+  // readiness deferred：service 构造需要先拿到 promise，恢复扫描随后触发并 resolve。
+  let markReadiness!: () => void
+  const readiness = new Promise<void>((resolve) => {
+    markReadiness = resolve
+  })
   const runService = createAiAgentRunService({
     repository: createAiAgentRunRepository(runtime.db, sessionRepository),
     eventRepository: createAiRunEventRepository(runtime.db),
@@ -197,6 +207,9 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     outputContractRegistry,
     resolveAttachments: attachmentResolver.resolveForRequest,
     supportsImageInput: modelSupportsImageInput,
+    laneLeaseStore: runtime.laneLeaseStore,
+    instanceId: runtime.env.APP_INSTANCE_ID,
+    readiness,
   })
   const completionService = createAiCompletionService({
     invocationRunner,
@@ -221,6 +234,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     .catch((error: unknown) => {
       runtime.logger.error({ err: error }, 'Agent Run 启动恢复扫描失败')
     })
+    .finally(() => markReadiness())
 
   return {
     applicationService,
@@ -232,6 +246,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     agentDefinitionService,
     sessionService,
     runService,
+    readiness,
     completionService,
     attachmentService,
     toolRegistry,

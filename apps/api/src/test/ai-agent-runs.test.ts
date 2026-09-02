@@ -35,6 +35,7 @@ import {
   createAiAgentRunService,
   createAiRunEventRepository,
   createAiRunLifecycleRepository,
+  createLaneLeaseStore,
 } from '@api/modules/ai/run/index.js'
 import { createAiAgentSessionRepository } from '@api/modules/ai/session/index.js'
 import { createAiUsageAuditRepository } from '@api/modules/ai/usage-audit/usage-audit.repository.js'
@@ -991,6 +992,8 @@ it('启动恢复：无 terminal entry 标记 interrupted，唯一合法 entry �
       outputContractRegistry: createAiOutputContractRegistry(),
       resolveAttachments: async () => [],
       supportsImageInput: () => false,
+      laneLeaseStore: createLaneLeaseStore(runtime.db),
+      instanceId: 'test-recovery',
     })
 
     // 无 terminal entry -> interrupted
@@ -1088,6 +1091,8 @@ it('启动恢复：唯一合法 entry 投影终态；重复 entry 标记 interru
       outputContractRegistry: createAiOutputContractRegistry(),
       resolveAttachments: async () => [],
       supportsImageInput: () => false,
+      laneLeaseStore: createLaneLeaseStore(runtime.db),
+      instanceId: 'test-recovery',
     })
     const report = await service.recoverInterrupted()
     expect(report.recoveredFromEntry).toBe(1)
@@ -1225,6 +1230,8 @@ it('启动恢复：schema 解析失败标记 AI.RUN_INTERRUPTED', async () => {
       outputContractRegistry: createAiOutputContractRegistry(),
       resolveAttachments: async () => [],
       supportsImageInput: () => false,
+      laneLeaseStore: createLaneLeaseStore(runtime.db),
+      instanceId: 'test-recovery',
     })
     const report = await service.recoverInterrupted()
     expect(report.corrupted).toBe(1)

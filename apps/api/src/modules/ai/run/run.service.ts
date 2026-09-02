@@ -43,6 +43,7 @@ import type { AiOutputContractRegistry } from '../output/output-contract-registr
 import { toStructuredOutputContractRef } from '../output/output-contract-registry.js'
 import type { AiStructuredOutputRepository } from '../output/structured-output.repository.js'
 import type { AiAgentSessionRepository } from '../session/session.repository.js'
+import type { LaneLeaseOwner, LaneLeaseStore } from './lane-lease.js'
 import type { RunLiveSnapshotState } from './run.live-snapshot.js'
 import { applyRunEvent, createRunLiveSnapshot, toAgentRunLiveSnapshot } from './run.live-snapshot.js'
 import { toAgentRun, toStarterRunData } from './run.presenter.js'
@@ -115,6 +116,10 @@ export interface AiAgentRunService {
 interface RunContext {
   execution: RunExecutionContext
   lease: ActiveRunLease
+  /** db lease 凭据：续租、释放与终态 fencing 校验都用它。 */
+  laneLease: LaneLeaseOwner
+  /** 周期续租定时器；终态清理时统一清除。 */
+  renewTimer: ReturnType<typeof setInterval> | null
   outputMode: 'optional' | 'required'
   /** Publisher 写库失败后的确定出口标记；终态强制为存储失败。 */
   storageFailed: boolean
@@ -142,6 +147,15 @@ export function createAiAgentRunService(input: {
   resolveAttachments: AiAttachmentResolver['resolveForRequest']
   /** 模型能力查询：目标模型是否支持图片输入，统一查 runtime 模型表。 */
   supportsImageInput: (model: AiModelRef) => boolean
+  /** lane 执行所有权的持久 lease：排他与 fencing 的权威数据源。 */
+  laneLeaseStore: LaneLeaseStore
+  /** lease ownerId：当前实例的 APP_INSTANCE_ID。 */
+  instanceId: string
+  /**
+   * AI readiness 门禁：启动恢复扫描完成前 startRun 在入口等待。
+   * 默认 resolved，直连构造（测试 / 恢复扫描）不接门禁。
+   */
+  readiness?: Promise<void>
   /** Run span 的根上下文；默认 no-op。 */
   telemetry?: TelemetryContext
 }): AiAgentRunService {
@@ -155,7 +169,10 @@ export function createAiAgentRunService(input: {
     logger,
     resolveAttachments,
     supportsImageInput,
+    laneLeaseStore,
+    instanceId,
   } = input
+  const readiness = input.readiness ?? Promise.resolve()
   const structuredOutputRepository = input.structuredOutputRepository
   const outputContractRegistry = input.outputContractRegistry
   const eventRepository = input.eventRepository
@@ -192,6 +209,8 @@ export function createAiAgentRunService(input: {
     requestId: string
   }): Promise<StartRunResult> {
     const { access, sessionId, requestId } = startInput
+    // readiness 门禁：启动恢复扫描完成前等待新请求，不拒绝也不并行执行。
+    await readiness
     const session = requireActiveSession(access, sessionId)
     // 内联配置与预设 Agent 二选一（schema 层互斥）；都不传时回落 Session 默认 Agent。
     const resolved = startInput.input.config
@@ -234,16 +253,35 @@ export function createAiAgentRunService(input: {
       throw error
     }
 
+    // 排他权威是持久 lease：内存 miss 时 acquire，失败同样 AI.SESSION_BUSY。
+    // 同 owner 未过期重复 acquire 也返回 busy：内存快速路径未拦住说明是异常重入。
+    let laneLease: LaneLeaseOwner
+    try {
+      const acquired = laneLeaseStore.acquire({ sessionId, lane, ownerId: instanceId })
+      if (acquired === 'busy') {
+        throw new AppError(ApiErrorCodes.AI_SESSION_BUSY, '该 Session lane 已有 Run 在运行', 409)
+      }
+      laneLease = acquired
+    } catch (error) {
+      registry.release(lease)
+      if (error instanceof AppError) throw error
+      logger.error({ err: error, sessionId, lane, requestId }, 'Agent Run lane lease 领取失败')
+      throw new AppError(ApiErrorCodes.SYSTEM_INTERNAL_ERROR, '创建 Agent Run 失败', 500)
+    }
+
     // Pi 只自动创建 main lane；非 main lane 需要显式创建（幂等：已存在时忽略）。
     try {
       await ensureLane(sessionStore, sessionId, lane)
     } catch (cause) {
       registry.release(lease)
+      laneLeaseStore.release({ sessionId, lane, owner: laneLease })
       logger.error({ err: cause, sessionId, lane, requestId }, 'Agent Run lane 创建失败')
       throw new AppError(ApiErrorCodes.AI_SESSION_STORAGE_FAILED, 'Agent Session lane 创建失败', 500)
     }
 
     if (!eventRepository) {
+      registry.release(lease)
+      laneLeaseStore.release({ sessionId, lane, owner: laneLease })
       throw new Error('Run Event repository 未配置')
     }
     const events = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS)
@@ -285,6 +323,8 @@ export function createAiAgentRunService(input: {
     const context: RunContext = {
       execution,
       lease,
+      laneLease,
+      renewTimer: null,
       outputMode: resolved.outputContract?.mode ?? resolved.config.outputMode,
       storageFailed: false,
       events,
@@ -320,10 +360,12 @@ export function createAiAgentRunService(input: {
         snapshotJson: JSON.stringify(snapshot),
         requestId,
         now: new Date(),
+        executionFencingToken: laneLease.fencingToken,
         ...(idempotencyKey !== undefined && idempotencyScope !== undefined ? { idempotencyKey, idempotencyScope } : {}),
       })
     } catch (cause) {
       registry.release(lease)
+      laneLeaseStore.release({ sessionId, lane, owner: laneLease })
       contexts.delete(runId)
       liveSnapshots.delete(runId)
       // 并发竞争：另一个同 key 请求先创建了 Run，命中部分唯一索引。
@@ -450,6 +492,22 @@ export function createAiAgentRunService(input: {
       void finalizeRun(context, storageFailureTerminal())
       return { runId, events }
     }
+
+    // 执行期间周期续租；续租失败（被接管或过期）走现有 abort 路径，
+    // 终态事务的 fencing 校验会把结果落成 interrupted，不发明新错误码。
+    context.renewTimer = setInterval(() => {
+      let renewed: boolean
+      try {
+        renewed = laneLeaseStore.renew({ sessionId, lane, owner: context.laneLease })
+      } catch (error) {
+        logger.error({ err: error, runId, sessionId, requestId }, 'Agent Run lane lease 续租查询失败')
+        return
+      }
+      if (!renewed) {
+        logger.warn({ runId, sessionId, lane, requestId }, 'Agent Run lane lease 已失效，中止执行')
+        registry.get(runId)?.abort()
+      }
+    }, laneLeaseStore.renewIntervalMs)
 
     void prepared.start().catch((cause) => {
       logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Executor start 失败')
@@ -699,7 +757,10 @@ export function createAiAgentRunService(input: {
       interrupted: 0,
       corrupted: 0,
     }
+    // 扫描到的 lane 集合：恢复完成后清理它们的过期 lease。
+    const scannedLanes = new Map<string, { sessionId: string; lane: string }>()
     for (const run of runs) {
+      scannedLanes.set(`${run.sessionId}\u0000${run.lane}`, { sessionId: run.sessionId, lane: run.lane })
       const runId = run.id
       if (registry.getBySessionLane(run.sessionId, run.lane)) continue
 
@@ -833,6 +894,11 @@ export function createAiAgentRunService(input: {
       )
       markInterrupted(run)
     }
+    // 只删过期行：未过期的 lease 可能属于仍在执行的其他实例；
+    // 并发接管只会把行换成未过期新行，这里的条件删除不会误删。
+    if (scannedLanes.size > 0) {
+      laneLeaseStore.releaseExpired([...scannedLanes.values()])
+    }
     return report
   }
 
@@ -925,6 +991,7 @@ export function createAiAgentRunService(input: {
       errorCode: terminal.errorCode,
       finishedAt: new Date(),
       event: terminalEvent({ runId, sessionId, lane }, terminal),
+      lease: { ownerId: context.laneLease.ownerId },
     })
     if (committed) {
       context.publisher.publishPersisted(committed)
@@ -935,12 +1002,18 @@ export function createAiAgentRunService(input: {
       attributes: runSpanEndAttributes(terminal, committed !== false),
       ...(terminal.status === 'completed' && committed !== false ? {} : { status: { status: 'error' as const } }),
     })
-    // Run 结束：清掉合并定时器，不留悬挂 timer。
+    // Run 结束：清掉合并定时器与续租定时器，不留悬挂 timer。
     context.publisher.close()
+    if (context.renewTimer) {
+      clearInterval(context.renewTimer)
+      context.renewTimer = null
+    }
     for (const subscriber of context.subscribers) subscriber.end()
     context.subscribers.clear()
     contexts.delete(runId)
     liveSnapshots.delete(runId)
+    // 释放顺序固定：终态事务之后先 db lease 再 registry。
+    laneLeaseStore.release({ sessionId, lane, owner: context.laneLease })
     release(registry, runId, context.lease)
   }
 

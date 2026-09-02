@@ -14,6 +14,8 @@ import { createAiToolRegistry } from '@api/modules/ai/tool/tool-registry.js'
 import type { AiOutputContractRegistry } from '@api/modules/ai/output/output-contract-registry.js'
 import { createAiOutputContractRegistry } from '@api/modules/ai/output/output-contract-registry.js'
 import { createTestAiTools } from '@api/modules/ai/tool/test-tools.js'
+import type { LaneLeaseStore, LaneLeaseStoreOptions } from '@api/modules/ai/run/lane-lease.js'
+import { createLaneLeaseStore } from '@api/modules/ai/run/lane-lease.js'
 import type { AppAuth } from '@api/modules/auth/auth.config.js'
 import type { AiWebhookDispatcher } from '@api/modules/ai/webhook/webhook.dispatcher.js'
 import { createAiCrypto, createAiGateway, createAiRuntime } from '@api/infra/ai/index.js'
@@ -34,6 +36,8 @@ export interface AppRuntime {
   aiTelemetry: TelemetryContext
   agentSessionStore: AgentSessionStore
   activeRunRegistry: ActiveRunRegistry
+  /** Session lane 执行所有权 lease：排他与 fencing 的权威数据源。 */
+  laneLeaseStore: LaneLeaseStore
   /** Run 模块可注入的 executor；未注入时由 ai.route 层创建。 */
   piAgentExecutor?: PiAgentExecutor
   /** Webhook 投递器；AI_WEBHOOK_ENABLED=true 时由 ai.route 层创建并启动。 */
@@ -61,6 +65,8 @@ export interface RuntimeDeps {
   agentSessionStore?: AgentSessionStore
   /** 测试时替换 active Run registry，隔离 lane 冲突。 */
   activeRunRegistry?: ActiveRunRegistry
+  /** 测试时注入短 TTL / 续租间隔，验证过期接管与续租失败路径。 */
+  laneLeaseOptions?: LaneLeaseStoreOptions
   /** 测试时注入 fake executor，控制模型/工具行为。 */
   piAgentExecutor?: PiAgentExecutor
 }
@@ -102,6 +108,7 @@ export function createRuntime(input: NodeJS.ProcessEnv = process.env, deps: Runt
     onFailure: (failure) => createChildLogger(logger, 'ai-telemetry').warn(failure, 'AI telemetry 记录失败，已忽略'),
   })
   const activeRunRegistry = deps.activeRunRegistry ?? createActiveRunRegistry()
+  const laneLeaseStore = createLaneLeaseStore(database.db, deps.laneLeaseOptions)
   const auth = createAuth(database.db, env, createChildLogger(logger, 'auth'), mailer)
 
   const runtime: AppRuntime = {
@@ -112,6 +119,7 @@ export function createRuntime(input: NodeJS.ProcessEnv = process.env, deps: Runt
     aiTelemetry,
     agentSessionStore,
     activeRunRegistry,
+    laneLeaseStore,
     piAgentExecutor: deps.piAgentExecutor,
     auth,
     database,

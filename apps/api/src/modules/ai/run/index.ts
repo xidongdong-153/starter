@@ -1,3 +1,10 @@
+export {
+  createLaneLeaseStore,
+  type LaneLeaseOwner,
+  type LaneLeaseStore,
+  LEASE_TTL_MS,
+  RENEW_INTERVAL_MS,
+} from './lane-lease.js'
 export { RunEventPublisher, type RunEventPublisherOptions } from './run-event.publisher.js'
 export { type AiRunEventRepository, createAiRunEventRepository, type RunEventDraft } from './run-event.repository.js'
 export { type AiRunLifecycleRepository, createAiRunLifecycleRepository } from './run-lifecycle.repository.js'

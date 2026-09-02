@@ -219,12 +219,13 @@ it('ai_agent_runs 已经等于目标形态，不需要 replacement migration', (
         'idempotency_scope',
         'final_entry_id',
         'error_code',
+        'execution_fencing_token',
         'created_at',
         'started_at',
         'finished_at',
       ].sort(),
     )
-    // 终态关系字段、幂等键和内联配置的 agent 标识允许为空，其余业务字段必须非空
+    // 终态关系字段、幂等键、内联配置的 agent 标识和 fencing token（历史行为 NULL）允许为空
     expect(
       columns
         .filter((column) => column.notnull === 0)
@@ -234,6 +235,7 @@ it('ai_agent_runs 已经等于目标形态，不需要 replacement migration', (
       [
         'final_entry_id',
         'error_code',
+        'execution_fencing_token',
         'started_at',
         'finished_at',
         'idempotency_key',

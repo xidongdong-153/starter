@@ -1,11 +1,12 @@
 import { and, desc, eq, sql } from 'drizzle-orm'
-import { runEventSchema, type RunEvent } from '@starter/contracts'
+import { ApiErrorCodes, runEventSchema, type RunEvent } from '@starter/contracts'
 import { generateId } from '@api/shared/id.js'
+import { toAiErrorCategory, isAiRetryableErrorCode } from '@api/modules/ai/ai-error.js'
 import type { RunEventDraft } from './run-event.repository.js'
 
 import type { AppDatabase } from '@api/infra/db/client.js'
 import type { RuntimeAccessContext } from '@api/modules/ai/principal.js'
-import { aiAgentRuns, aiAgentSessions, aiRunEvents } from '@api/modules/ai/ai.schema.js'
+import { aiAgentLaneLeases, aiAgentRuns, aiAgentSessions, aiRunEvents } from '@api/modules/ai/ai.schema.js'
 import type { AiAgentSessionRepository } from '../session/session.repository.js'
 
 export type AiAgentRunRecord = typeof aiAgentRuns.$inferSelect
@@ -22,6 +23,8 @@ export interface AiAgentRunCreateInput {
   now: Date
   idempotencyKey?: string
   idempotencyScope?: string
+  /** acquire lane lease 时拿到的 fencing token；执行路径必传。 */
+  executionFencingToken?: number
 }
 
 export interface AiAgentRunTerminalInput {
@@ -30,6 +33,12 @@ export interface AiAgentRunTerminalInput {
   finalEntryId: string | null
   errorCode: string | null
   finishedAt: Date
+  /**
+   * 执行路径的 lease 归属校验：传入时在同一事务内比对 lease 行的
+   * owner、token 与未过期状态，失配则终态强制 interrupted。
+   * 恢复扫描路径不传（历史行 token 为 NULL 也跳过校验）。
+   */
+  lease?: { ownerId: string }
 }
 
 export interface AiAgentRunRepository {
@@ -66,6 +75,7 @@ export function createAiAgentRunRepository(
               idempotencyScope: input.idempotencyScope,
             }
           : {}),
+        ...(input.executionFencingToken !== undefined ? { executionFencingToken: input.executionFencingToken } : {}),
       })
       .run()
     return findById(input.id)!
@@ -130,12 +140,25 @@ export function createAiAgentRunRepository(
 
   function completeWithTerminalEvent(input: AiAgentRunTerminalInput & { event: RunEventDraft }): RunEvent | false {
     return db.transaction((tx) => {
+      const run = tx.select().from(aiAgentRuns).where(eq(aiAgentRuns.id, input.id)).get()
+      if (!run) return false
+      let status = input.status
+      let finalEntryId = input.finalEntryId
+      let errorCode = input.errorCode
+      let eventDraft = input.event
+      // 执行路径的 fencing 校验：lease 已被接管或过期时，过期 owner 只能写 interrupted。
+      if (input.lease && run.executionFencingToken !== null && !ownsActiveLaneLease(tx, run, input.lease)) {
+        status = 'interrupted'
+        finalEntryId = null
+        errorCode = ApiErrorCodes.AI_RUN_INTERRUPTED
+        eventDraft = fencedTerminalEvent(run)
+      }
       const updated = tx
         .update(aiAgentRuns)
         .set({
-          status: input.status,
-          finalEntryId: input.finalEntryId,
-          errorCode: input.errorCode,
+          status,
+          finalEntryId,
+          errorCode,
           finishedAt: input.finishedAt,
         })
         .where(and(eq(aiAgentRuns.id, input.id), sql`${aiAgentRuns.status} IN ('starting', 'running')`))
@@ -149,10 +172,10 @@ export function createAiAgentRunRepository(
         .where(eq(aiRunEvents.runId, input.id))
         .get()
       const event = runEventSchema.parse({
-        ...input.event,
-        eventId: input.event.eventId ?? generateId(),
+        ...eventDraft,
+        eventId: eventDraft.eventId ?? generateId(),
         sequence: sequenceRow?.value ?? 1,
-        occurredAt: input.event.occurredAt ?? input.finishedAt.toISOString(),
+        occurredAt: eventDraft.occurredAt ?? input.finishedAt.toISOString(),
       })
       tx.insert(aiRunEvents)
         .values({
@@ -185,5 +208,48 @@ export function createAiAgentRunRepository(
     markRunning,
     completeWithTerminalEvent,
     listNonTerminal,
+  }
+}
+
+/** lease 行仍是该 owner 持有且未过期：owner、token 都匹配才通过。 */
+function ownsActiveLaneLease(
+  tx: Pick<AppDatabase, 'select'>,
+  run: AiAgentRunRecord,
+  expected: { ownerId: string },
+): boolean {
+  const lease = tx
+    .select()
+    .from(aiAgentLaneLeases)
+    .where(and(eq(aiAgentLaneLeases.sessionId, run.sessionId), eq(aiAgentLaneLeases.lane, run.lane)))
+    .get()
+  return (
+    lease !== undefined &&
+    lease.ownerId === expected.ownerId &&
+    lease.fencingToken === run.executionFencingToken &&
+    lease.leaseUntil > Date.now()
+  )
+}
+
+/** 被接管 owner 的终态事件：固定 run.failed + AI_RUN_INTERRUPTED，丢弃实际执行结果。 */
+function fencedTerminalEvent(run: AiAgentRunRecord): RunEventDraft {
+  return {
+    runId: run.id,
+    sessionId: run.sessionId,
+    lane: run.lane,
+    turnIndex: null,
+    stepId: null,
+    modelCallId: null,
+    messageId: null,
+    toolCallId: null,
+    toolExecutionId: null,
+    type: 'run.failed',
+    data: {
+      error: {
+        code: ApiErrorCodes.AI_RUN_INTERRUPTED,
+        category: toAiErrorCategory(ApiErrorCodes.AI_RUN_INTERRUPTED),
+        retryable: isAiRetryableErrorCode(ApiErrorCodes.AI_RUN_INTERRUPTED),
+      },
+      finalEntryId: null,
+    },
   }
 }
