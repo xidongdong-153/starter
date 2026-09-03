@@ -210,7 +210,13 @@ it('两轮模型调用和一次 Tool 的事件关联与 SQLite 执行记录一�
       const modelRows = runtime.db.select().from(aiModelCalls).where(eq(aiModelCalls.runId, runId)).all()
       const toolRows = runtime.db.select().from(aiToolExecutions).where(eq(aiToolExecutions.runId, runId)).all()
       expect(turnRows).toHaveLength(2)
-      expect(stepRows).toHaveLength(2)
+      // 两轮 assistant Step 加一条顶层 agent Step（不属于任何 turn，不发事件）
+      expect(stepRows.filter((row) => row.kind === 'agent')).toHaveLength(1)
+      expect(stepRows.filter((row) => row.kind === 'assistant')).toHaveLength(2)
+      const agentStep = stepRows.find((row) => row.kind === 'agent')
+      expect(agentStep?.turnId).toBeNull()
+      expect(agentStep?.attemptNo).toBe(1)
+      expect(agentStep?.outcome).toBe('succeeded')
       expect(modelRows).toHaveLength(2)
       expect(toolRows).toHaveLength(1)
 
@@ -397,6 +403,7 @@ it('message delta 合并后 sequence 连续，事件行数不随 token 数线性
 it('tool 失败、tool 超时、模型失败、max turns 和 compaction 结束后都没有 running 执行记录', async () => {
   const failingTools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Always fails',
@@ -411,6 +418,7 @@ it('tool 失败、tool 超时、模型失败、max turns 和 compaction 结束�
   ])
   const slowTools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Times out',
@@ -675,14 +683,18 @@ it('step 事件与 ai_run_steps 一一对应，assistant 和 compaction Step 都
       const startedEvents = events.filter((event) => event.type === 'step.started')
       const completedEvents = events.filter((event) => event.type === 'step.completed')
 
-      // 两轮模型调用各一个 assistant Step，加上至少一个 compaction Step
+      // 两轮模型调用各一个 assistant Step，加上至少一个 compaction Step；
+      // 另有一条顶层 agent Step 不发布事件，不在事件对应范围内
+      expect(stepRows.filter((row) => row.kind === 'agent')).toHaveLength(1)
       expect(stepRows.filter((row) => row.kind === 'assistant')).toHaveLength(2)
       expect(stepRows.filter((row) => row.kind === 'compaction').length).toBeGreaterThanOrEqual(1)
+      expect(stepRows.find((row) => row.kind === 'agent')?.turnId).toBeNull()
+      const publishedStepRows = stepRows.filter((row) => row.kind !== 'agent')
       // 事件数量与库里行数一致，成对出现
-      expect(startedEvents).toHaveLength(stepRows.length)
-      expect(completedEvents).toHaveLength(stepRows.length)
+      expect(startedEvents).toHaveLength(publishedStepRows.length)
+      expect(completedEvents).toHaveLength(publishedStepRows.length)
 
-      for (const row of stepRows) {
+      for (const row of publishedStepRows) {
         const startedIndex = events.findIndex((event) => event.type === 'step.started' && event.stepId === row.id)
         const completedIndex = events.findIndex((event) => event.type === 'step.completed' && event.stepId === row.id)
         expect(startedIndex).toBeGreaterThanOrEqual(0)
@@ -724,8 +736,13 @@ it('失败 Run 的 step.completed 带失败 outcome 和稳定错误码', async (
     },
     ({ runtime, runId, events }) => {
       const stepRows = runtime.db.select().from(aiRunSteps).where(eq(aiRunSteps.runId, runId)).all()
-      expect(stepRows).toHaveLength(1)
-      const row = stepRows[0]
+      // 一条 assistant Step 加一条顶层 agent Step，都落失败终态
+      expect(stepRows).toHaveLength(2)
+      const agentStep = stepRows.find((row) => row.kind === 'agent')
+      expect(agentStep?.turnId).toBeNull()
+      expect(agentStep?.outcome).toBe('failed')
+      expect(agentStep?.errorCode).toBe(ApiErrorCodes.AI_UPSTREAM_ERROR)
+      const row = stepRows.find((candidate) => candidate.kind === 'assistant')
       if (!row) throw new Error('缺少 Step 记录')
       expect(row.outcome).toBe('failed')
       expect(row.errorCode).toBe(ApiErrorCodes.AI_UPSTREAM_ERROR)
@@ -752,6 +769,7 @@ it('失败 Run 的 step.completed 带失败 outcome 和稳定错误码', async (
 function sourceReportingTools(sources: readonly unknown[]): ReturnType<typeof createAiToolRegistry> {
   return createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Look up a value and report sources',

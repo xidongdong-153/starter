@@ -1,10 +1,11 @@
 import { asc, eq } from 'drizzle-orm'
-import { runTraceSchema, type RunTrace, type RunTraceNode } from '@starter/contracts'
+import { runTraceSchema, type RunTrace, type RunTraceAttempt, type RunTraceNode } from '@starter/contracts'
 
 import type { AppDatabase } from '@api/infra/db/client.js'
 import {
   aiAgentRuns,
   aiModelCalls,
+  aiRunAttempts,
   aiRunSteps,
   aiRunTurns,
   aiStructuredOutputs,
@@ -44,6 +45,12 @@ export function createAiRunTraceRepository(db: AppDatabase): AiRunTraceRepositor
       .where(eq(aiToolExecutions.runId, runId))
       .orderBy(asc(aiToolExecutions.startedAt), asc(aiToolExecutions.id))
       .all()
+    const attempts = db
+      .select()
+      .from(aiRunAttempts)
+      .where(eq(aiRunAttempts.runId, runId))
+      .orderBy(asc(aiRunAttempts.attemptNo))
+      .all()
 
     const outputs = db
       .select({
@@ -82,11 +89,12 @@ export function createAiRunTraceRepository(db: AppDatabase): AiRunTraceRepositor
         finishedAt: turn.finishedAt?.toISOString() ?? null,
         durationMs: duration(turn.startedAt, turn.finishedAt),
         error: null,
-        attributes: { turnIndex: String(turn.turnIndex) },
+        attributes: { turnIndex: String(turn.turnIndex), attemptNo: String(turn.attemptNo) },
       })),
       ...steps.map((step): RunTraceNode => ({
+        // 顶层 agent Step 不属于任何 turn，直接挂在 Run 下。
         id: step.id,
-        parentId: step.turnId,
+        parentId: step.turnId ?? run.id,
         kind: 'step',
         status: lifecycleStatus(step.outcome),
         startedAt: step.startedAt.toISOString(),
@@ -96,6 +104,7 @@ export function createAiRunTraceRepository(db: AppDatabase): AiRunTraceRepositor
         attributes: {
           kind: step.kind,
           attempt: String(step.attempt),
+          attemptNo: String(step.attemptNo),
           ...(step.errorCode ? { errorCode: step.errorCode } : {}),
           ...(outputByStepId.has(step.id) ? { structuredOutputId: outputByStepId.get(step.id)! } : {}),
         },
@@ -148,7 +157,16 @@ export function createAiRunTraceRepository(db: AppDatabase): AiRunTraceRepositor
       ),
     ]
 
-    return runTraceSchema.parse({ runId, nodes })
+    const attemptsProjection: RunTraceAttempt[] = attempts.map((attempt) => ({
+      attemptNo: attempt.attemptNo,
+      trigger: attempt.trigger as RunTraceAttempt['trigger'],
+      status: attempt.status as RunTraceAttempt['status'],
+      errorCode: attempt.errorCode as RunTraceAttempt['errorCode'],
+      startedAt: attempt.startedAt.toISOString(),
+      finishedAt: attempt.finishedAt?.toISOString() ?? null,
+    }))
+
+    return runTraceSchema.parse({ runId, nodes, attempts: attemptsProjection })
   }
 
   return { findByRunId }
@@ -171,7 +189,7 @@ function lifecycleStatus(status: string): RunTraceNode['status'] {
   if (status === 'retry' || status === 'deferred' || status === 'overflow') {
     return status
   }
-  if (status === 'failed') return 'failed'
+  if (status === 'failed' || status === 'interrupted') return 'failed'
   return 'running'
 }
 

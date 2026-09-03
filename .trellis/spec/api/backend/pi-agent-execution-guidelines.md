@@ -36,6 +36,10 @@ S1 Session adapter 的内部写入 port 必须支持调用方指定 message entr
 ## 3. Contracts
 
 - Pi `Agent` 负责 prompt、Tool loop、并行/串行执行、steer、follow-up 和 abort；Starter 不复制这些循环。
+- 每次 executor 启动（含 auto retry 的 Attempt 2+）创建一条 `kind='agent'` 顶层 Step（`turn_id` NULL、`attempt_no` 为当前尝试号），在 finally 收尾自身终态，终态事务内按最终 status 强制改写（fenced→interrupted、存储重写）；agent Step 只走 lifecycle begin/complete，不发布公开 `step.*` 事件，也不开 telemetry span。turn 序号跨 attempt 连续（不重置 turnIndex），attempt 归属由 `attempt_no` 列表达。`ai_run_steps.attempt` 与 `attempt_no` 双列同值（前者是事件/公开面字段，后者是 DB 关联列）。
+- Tool 幂等 token 在 adapter 创建审计行时生成：`sha256Hex(canonicalJson({ runId, attemptNo, toolExecutionId }))`，lifecycle 阶段与 execute 阶段两处计算输入一致；token 经 `AiToolExecutionContext.idempotencyToken` 传给 handler，由 handler 或下游做幂等去重，平台不维护 token→结果映射。
+- 超时 modelText 按 Tool 副作用分类：`non_idempotent_write` 声明「操作可能已在外部执行，结果未知」；`read_only` / `idempotent_write` 维持现有带 timeout 毫秒数的措辞。Tool 定义必填 `sideEffect`（`read_only` / `idempotent_write` / `non_idempotent_write`，类型与运行时双重强制，无默认值），进 `AiToolSummary`、resolved manifest tools 与 manifestHash 输入。
+- auto retry 重建 executor 时用 `registry.replace(runId, controls)` 只替换控制面，不动 lease；旧 controls 引用由闭包变量与 `registry.get` 同步指向新实例，prepare→replace 同步执行无异步交错窗口。已知边界：attempt 重建后 prepare 抛错时，新 attempt 行以原上游错误码收尾而非重建失败原因（终态一致、无悬挂）；structured output 跨 attempt 可能产生两行记录（stepId 不同，只增事实语义）；`read_skill` 执行期仍读主表当前内容而非 pinned revision（后续阶段处理）。
 - `PiEventMapper` 是 Pi `AgentEvent` 到内部 `RunEventDraft` 的唯一转换位置。assistant message 在 `message_start` 预生成 entry ID，Tool 在写入 result entry 后发布 `tool.completed`；sequence 由 `RunEventPublisher` 在持久化时分配。
 - 原生 stream adapter 只使用现有 `Models` 的模型、Provider auth、provider env、timeout 和 AbortSignal；失败编码为 Pi `error`/`aborted` event。旧 `AiGatewayEvent` 不能作为 `StreamFn` 输入 Agent。
 - `ai_model_calls` 的新记录使用 `scenario='agent_run'`、`run_id=<runId>`。审计 begin/finalize 是 best-effort，不能把 secret、原始错误、prompt 或 response 写入日志或事件。

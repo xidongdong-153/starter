@@ -745,6 +745,7 @@ it('describeResolvedManifest 读回的 DTO 无 secret、无 Prompt 正文、无 
 
 it('tool manifestHash 稳定：相同定义重复注册 hash 不变，定义变化 hash 变化', () => {
   const definition = {
+    sideEffect: 'read_only' as const,
     name: 'manifest_probe',
     version: '1.0.0',
     description: 'Probe tool',

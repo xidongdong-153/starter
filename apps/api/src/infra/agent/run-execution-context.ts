@@ -6,7 +6,6 @@ import type { PrincipalContext, ResourceScope } from '@api/modules/ai/principal.
 import { generateId } from '@api/shared/id.js'
 
 export type RunStepKind = 'assistant' | 'compaction' | 'branch_summary'
-
 export type RunStepState = {
   readonly id: string
   readonly kind: RunStepKind
@@ -60,6 +59,8 @@ export interface RunExecutionContext {
   readonly outputContract: ResolvedAiOutputContract | null
   /** 审计用的调用者 ID，由 principal 推导，不单独传参。 */
   readonly userId: string
+  /** 当前执行 attempt 序号；事件 envelope 与 Turn/Step 关联都用它。 */
+  readonly attemptNo: number
   readonly turnIndex: number | null
   readonly turnId: string | null
   readonly step: RunStepState | null
@@ -70,10 +71,15 @@ export interface RunExecutionContext {
   beginTurn: (turnIndex: number) => string
   /** 结束当前 Turn，返回被关闭的 turnId；`turnIndex` 保留给 turn 终态事件使用。 */
   endTurn: () => string | null
-  /** 开始一个 Step，返回新生成的 stepId。 */
+  /** 开始一个 Step，返回新生成的 stepId；`attempt` 传当前执行 attempt 序号。 */
   beginStep: (kind: RunStepKind, attempt: number) => string
   /** 结束当前 Step，返回被关闭的 Step，并清空 Model Call 与 Tool 关联。 */
   endStep: () => RunStepState | null
+  /**
+   * auto retry 重建 executor 前切换 attempt；同时清空上一轮遗留的
+   * Turn/Step/Tool 关联（turn 序号不重置，跨 attempt 连续编号）。
+   */
+  setAttemptNo: (attemptNo: number) => void
   setModelCall: (modelCallId: string) => void
   /** Tool 开始时登记 callId -> executionId，事件 envelope 按 callId 取 executionId。 */
   setTool: (callId: string, executionId: string) => void
@@ -93,6 +99,7 @@ export function createRunExecutionContext(input: {
   outputContract?: ResolvedAiOutputContract | null
 }): RunExecutionContext {
   const state = {
+    attemptNo: 1,
     turnIndex: null as number | null,
     turnId: null as string | null,
     step: null as RunStepState | null,
@@ -113,6 +120,9 @@ export function createRunExecutionContext(input: {
     agentRevision: input.agentRevision,
     outputContract: input.outputContract ?? null,
     userId: input.principal.externalUserId ?? input.principal.principalId,
+    get attemptNo() {
+      return state.attemptNo
+    },
     get turnIndex() {
       return state.turnIndex
     },
@@ -149,6 +159,15 @@ export function createRunExecutionContext(input: {
       state.tool = null
       toolExecutions.clear()
       return step
+    },
+    setAttemptNo(attemptNo) {
+      state.attemptNo = attemptNo
+      // 上一轮 attempt 的执行关联全部失效；turn 序号保留，跨 attempt 连续编号。
+      state.turnId = null
+      state.step = null
+      state.modelCallId = null
+      state.tool = null
+      toolExecutions.clear()
     },
     setModelCall(modelCallId) {
       state.modelCallId = modelCallId
@@ -187,6 +206,7 @@ export function createRunEventDraft<T extends RunEvent['type']>(
     sessionId: execution.sessionId,
     lane: execution.lane,
     ...execution.associations(associationInput),
+    attemptNo: execution.attemptNo,
     ...(stepId === undefined ? {} : { stepId }),
     type,
     data,

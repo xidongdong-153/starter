@@ -6,7 +6,14 @@ import type { RunEventDraft } from './run-event.repository.js'
 
 import type { AppDatabase } from '@api/infra/db/client.js'
 import type { RuntimeAccessContext } from '@api/modules/ai/principal.js'
-import { aiAgentLaneLeases, aiAgentRuns, aiAgentSessions, aiRunEvents } from '@api/modules/ai/ai.schema.js'
+import {
+  aiAgentLaneLeases,
+  aiAgentRuns,
+  aiAgentSessions,
+  aiRunAttempts,
+  aiRunEvents,
+  aiRunSteps,
+} from '@api/modules/ai/ai.schema.js'
 import type { AiAgentSessionRepository } from '../session/session.repository.js'
 
 export type AiAgentRunRecord = typeof aiAgentRuns.$inferSelect
@@ -39,6 +46,8 @@ export interface AiAgentRunTerminalInput {
    * 恢复扫描路径不传（历史行 token 为 NULL 也跳过校验）。
    */
   lease?: { ownerId: string }
+  /** 终态事务内同步收尾的当前 attempt（行 + agent Step）；执行与恢复路径都传。 */
+  attempt?: { attemptNo: number }
 }
 
 export interface AiAgentRunRepository {
@@ -50,6 +59,8 @@ export interface AiAgentRunRepository {
   findByIdempotencyKey: (scope: string, key: string) => AiAgentRunRecord | undefined
   markRunning: (id: string, now: Date) => boolean
   completeWithTerminalEvent: (input: AiAgentRunTerminalInput & { event: RunEventDraft }) => RunEvent | false
+  /** auto retry 追加 attempt 后同步 Run 行指针；仅非终态 Run 可更新。 */
+  updateCurrentAttemptNo: (id: string, attemptNo: number) => boolean
   listNonTerminal: () => AiAgentRunRecord[]
 }
 
@@ -164,6 +175,50 @@ export function createAiAgentRunRepository(
         .where(and(eq(aiAgentRuns.id, input.id), sql`${aiAgentRuns.status} IN ('starting', 'running')`))
         .run()
       if (updated.changes === 0) return false
+      // 同一事务内收尾当前 attempt 行与它的顶层 agent Step：
+      // fenced 改写后的 interrupted 也在这里落，保证 outcome 与 Run 终态一致。
+      if (input.attempt) {
+        const attemptStatus = status === 'completed' ? 'succeeded' : status
+        tx.update(aiRunAttempts)
+          .set({ status: attemptStatus, errorCode, finishedAt: input.finishedAt })
+          .where(
+            and(
+              eq(aiRunAttempts.runId, input.id),
+              eq(aiRunAttempts.attemptNo, input.attempt.attemptNo),
+              eq(aiRunAttempts.status, 'running'),
+            ),
+          )
+          .run()
+        tx.update(aiRunSteps)
+          .set({ outcome: attemptStatus, errorCode, finishedAt: input.finishedAt })
+          .where(
+            and(
+              eq(aiRunSteps.runId, input.id),
+              eq(aiRunSteps.attemptNo, input.attempt.attemptNo),
+              eq(aiRunSteps.kind, 'agent'),
+            ),
+          )
+          .run()
+      }
+      if (status === 'interrupted') {
+        // 兜底扫尾：其余 running attempt 行与 running agent Step 一并落 interrupted。
+        tx.update(aiRunAttempts)
+          .set({
+            status: 'interrupted',
+            errorCode: ApiErrorCodes.AI_RUN_INTERRUPTED,
+            finishedAt: input.finishedAt,
+          })
+          .where(and(eq(aiRunAttempts.runId, input.id), eq(aiRunAttempts.status, 'running')))
+          .run()
+        tx.update(aiRunSteps)
+          .set({
+            outcome: 'interrupted',
+            errorCode: ApiErrorCodes.AI_RUN_INTERRUPTED,
+            finishedAt: input.finishedAt,
+          })
+          .where(and(eq(aiRunSteps.runId, input.id), eq(aiRunSteps.kind, 'agent'), eq(aiRunSteps.outcome, 'running')))
+          .run()
+      }
       const sequenceRow = tx
         .select({
           value: sql<number>`coalesce(max(${aiRunEvents.sequence}), 0) + 1`,
@@ -199,6 +254,15 @@ export function createAiAgentRunRepository(
       .all()
   }
 
+  function updateCurrentAttemptNo(id: string, attemptNo: number): boolean {
+    const result = db
+      .update(aiAgentRuns)
+      .set({ currentAttemptNo: attemptNo })
+      .where(and(eq(aiAgentRuns.id, id), sql`${aiAgentRuns.status} IN ('starting', 'running')`))
+      .run()
+    return result.changes > 0
+  }
+
   return {
     create,
     findInScope,
@@ -207,6 +271,7 @@ export function createAiAgentRunRepository(
     findByIdempotencyKey,
     markRunning,
     completeWithTerminalEvent,
+    updateCurrentAttemptNo,
     listNonTerminal,
   }
 }
@@ -236,6 +301,7 @@ function fencedTerminalEvent(run: AiAgentRunRecord): RunEventDraft {
     runId: run.id,
     sessionId: run.sessionId,
     lane: run.lane,
+    attemptNo: run.currentAttemptNo,
     turnIndex: null,
     stepId: null,
     modelCallId: null,

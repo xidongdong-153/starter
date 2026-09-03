@@ -36,6 +36,7 @@ export function createStructuredOutputTool(
     inputSchema: contract.schema,
     timeoutMs: 5_000,
     scope: 'platform',
+    sideEffect: 'idempotent_write',
     requiredPermission: null,
     internal: true,
     execute: async (context, input) => {

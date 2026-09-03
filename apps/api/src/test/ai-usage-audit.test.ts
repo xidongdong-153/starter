@@ -386,6 +386,7 @@ describe('agent run audit ports', () => {
       const toolPort = audit.createAgentToolExecutionAudit()
       const toolHandle = toolPort.beginToolExecution({
         id: generateId(),
+        idempotencyToken: 'idem-tool-1',
         modelCallId,
         toolName: 'lookup',
         toolVersion: '1.0.0',
@@ -446,6 +447,7 @@ describe('audit projection 字段白名单', () => {
       })
       const toolHandle = service.beginToolExecution({
         id: generateId(),
+        idempotencyToken: 'idem-projection-tool',
         modelCallId,
         requestId: 'projection-request',
         runId: ids.runId,

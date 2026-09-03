@@ -63,6 +63,8 @@ export interface BeginAiToolExecutionInput {
   toolVersion: string | null
   startedAt: Date
   timeoutMs: number
+  /** 稳定幂等 token：sha256(canonicalJson({runId, attemptNo, toolExecutionId}))。 */
+  idempotencyToken?: string | null
 }
 
 export interface FinalizeAiToolExecutionInput {
@@ -157,6 +159,7 @@ export function createAiUsageAuditRepository(db: AppDatabase) {
         modelCallId: input.modelCallId,
         toolName: input.toolName,
         toolVersion: input.toolVersion,
+        idempotencyToken: input.idempotencyToken ?? null,
         timeoutMs: input.timeoutMs,
         startedAt: input.startedAt,
         status: 'running',

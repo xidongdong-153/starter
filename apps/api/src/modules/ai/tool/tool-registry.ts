@@ -1,4 +1,10 @@
-import { PermissionKeys, type AiToolRef, type AiToolSummary, type Permission } from '@starter/contracts'
+import {
+  PermissionKeys,
+  type AiToolRef,
+  type AiToolSideEffect,
+  type AiToolSummary,
+  type Permission,
+} from '@starter/contracts'
 import { z, type ZodType } from 'zod'
 import type { PrincipalContext, ResourceScope } from '@api/modules/ai/principal.js'
 import { canonicalJson, sha256Hex } from '@api/modules/ai/run/resolved-manifest.js'
@@ -23,6 +29,8 @@ export interface AiToolExecutionContext {
   toolCallId?: string
   toolExecutionId?: string | null
   turnIndex?: number | null
+  /** 稳定幂等 token：sha256(canonicalJson({runId, attemptNo, toolExecutionId}))；handler/下游用它做幂等去重。 */
+  idempotencyToken?: string
 }
 
 /** 工具上报 source 的输入；`uri` 和 `excerpt` 省略时按 null 处理。 */
@@ -50,6 +58,8 @@ export interface AiToolDefinitionInput<TInput> {
   inputSchema: ZodType<TInput>
   timeoutMs: number
   scope: AiToolScope
+  /** 副作用声明：决定 auto retry 门禁与超时措辞，必填无默认。 */
+  sideEffect: AiToolSideEffect
   requiredPermission: Permission | null
   internal?: boolean
   execute: (context: AiToolExecutionContext, input: TInput) => Promise<AiToolResult>
@@ -62,9 +72,10 @@ export interface RegisteredAiTool {
   inputSchema: ZodType<unknown>
   timeoutMs: number
   scope: AiToolScope
+  sideEffect: AiToolSideEffect
   requiredPermission: Permission | null
   internal?: boolean
-  /** 注册时对 name/version/description/timeoutMs/inputSchema 计算的 canonical SHA-256；相同定义重复注册不变。 */
+  /** 注册时对 name/version/description/timeoutMs/inputSchema/sideEffect 计算的 canonical SHA-256；相同定义重复注册不变。 */
   manifestHash: string
   execute: (context: AiToolExecutionContext, input: unknown) => Promise<AiToolResult>
 }
@@ -90,6 +101,7 @@ export function defineAiTool<TInput>(input: AiToolDefinitionInput<TInput>): Regi
     inputSchema: input.inputSchema as ZodType<unknown>,
     timeoutMs: input.timeoutMs,
     scope: input.scope,
+    sideEffect: input.sideEffect,
     requiredPermission: input.requiredPermission,
     internal: input.internal,
     manifestHash: toolManifestHash({
@@ -98,6 +110,7 @@ export function defineAiTool<TInput>(input: AiToolDefinitionInput<TInput>): Regi
       description: input.description,
       timeoutMs: input.timeoutMs,
       inputSchema: schemaJson,
+      sideEffect: input.sideEffect,
     }),
     execute: (context: AiToolExecutionContext, value: unknown) => input.execute(context, value as TInput),
   })
@@ -110,6 +123,7 @@ export function toolManifestHash(input: {
   description: string
   timeoutMs: number
   inputSchema: unknown
+  sideEffect: AiToolSideEffect
 }): string {
   return sha256Hex(canonicalJson(input))
 }
@@ -135,11 +149,12 @@ export function createAiToolRegistry(tools: readonly RegisteredAiTool[]): AiTool
       return tool
     },
     listPublic: () =>
-      [...byRef.values()].map(({ name, version, description, scope }) => ({
+      [...byRef.values()].map(({ name, version, description, scope, sideEffect }) => ({
         name,
         version,
         description,
         scope,
+        sideEffect,
       })),
   })
 }
@@ -159,7 +174,15 @@ function toolRefKey(tool: { name: string; version: string }): string {
 function validateToolDefinition(
   tool: Pick<
     RegisteredAiTool,
-    'name' | 'version' | 'description' | 'inputSchema' | 'timeoutMs' | 'scope' | 'requiredPermission' | 'internal'
+    | 'name'
+    | 'version'
+    | 'description'
+    | 'inputSchema'
+    | 'timeoutMs'
+    | 'scope'
+    | 'sideEffect'
+    | 'requiredPermission'
+    | 'internal'
   >,
 ): Record<string, unknown> {
   if (!/^[a-z][a-z0-9_-]{0,63}$/.test(tool.name)) {
@@ -176,6 +199,13 @@ function validateToolDefinition(
   }
   if (!Number.isInteger(tool.timeoutMs) || tool.timeoutMs < 100 || tool.timeoutMs > 30_000) {
     throw new Error(`AI 工具超时无效: ${tool.name}`)
+  }
+  if (
+    tool.sideEffect !== 'read_only' &&
+    tool.sideEffect !== 'idempotent_write' &&
+    tool.sideEffect !== 'non_idempotent_write'
+  ) {
+    throw new Error(`AI 工具副作用声明无效: ${tool.name}`)
   }
   if (tool.scope !== 'platform' && (!tool.scope.tenantId || !tool.scope.projectId)) {
     throw new Error(`AI 工具范围无效: ${tool.name}`)

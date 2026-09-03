@@ -217,6 +217,7 @@ it('ai_agent_runs 已经等于目标形态，不需要 replacement migration', (
         'request_id',
         'idempotency_key',
         'idempotency_scope',
+        'current_attempt_no',
         'final_entry_id',
         'error_code',
         'execution_fencing_token',

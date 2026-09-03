@@ -309,6 +309,7 @@ it('agentDefinition 拒绝无效资源，并阻止被引用的 System Prompt 删
 
 it('同一个 Agent 不能引用同名不同版本的 Tool，返回稳定配置错误', async () => {
   const lookupV1 = defineAiTool({
+    sideEffect: 'read_only',
     name: 'lookup',
     version: '1.0.0',
     description: 'Lookup v1',
@@ -321,6 +322,7 @@ it('同一个 Agent 不能引用同名不同版本的 Tool，返回稳定配置�
     },
   })
   const lookupV2 = defineAiTool({
+    sideEffect: 'read_only',
     name: 'lookup',
     version: '2.0.0',
     description: 'Lookup v2',
@@ -379,7 +381,7 @@ it('agent 工具列表只返回名称和描述，不返回 schema 或 handler', 
     const body = await readSuccess<Array<Record<string, unknown>>>(response)
     expect(body.data.some((tool) => tool.name === 'read_skill')).toBe(true)
     for (const tool of body.data) {
-      expect(Object.keys(tool).sort()).toEqual(['description', 'name', 'scope', 'version'])
+      expect(Object.keys(tool).sort()).toEqual(['description', 'name', 'scope', 'sideEffect', 'version'])
       expect(tool).not.toHaveProperty('inputSchema')
       expect(tool).not.toHaveProperty('execute')
     }

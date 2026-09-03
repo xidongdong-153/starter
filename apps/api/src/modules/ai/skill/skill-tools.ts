@@ -20,6 +20,7 @@ export function createReadSkillTool(repository: AiSkillRepository): RegisteredAi
     }),
     timeoutMs: 5000,
     scope: 'platform',
+    sideEffect: 'read_only',
     requiredPermission: null,
     async execute(_context, input) {
       const skill = repository.findEnabledSkillByName(input.name)

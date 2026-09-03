@@ -207,6 +207,16 @@ describe('runEvent contract', () => {
     expect(
       runTraceSchema.parse({
         runId: ids.run,
+        attempts: [
+          {
+            attemptNo: 1,
+            trigger: 'initial',
+            status: 'succeeded',
+            errorCode: null,
+            startedAt: base.occurredAt,
+            finishedAt: base.occurredAt,
+          },
+        ],
         nodes: [
           {
             id: ids.run,
@@ -233,5 +243,21 @@ describe('runEvent contract', () => {
         ],
       }).nodes[1]?.parentId,
     ).toBe(ids.run)
+    expect(
+      runTraceSchema.safeParse({
+        runId: ids.run,
+        nodes: [],
+        attempts: [
+          {
+            attemptNo: 2,
+            trigger: 'auto_retry',
+            status: 'failed',
+            errorCode: 'AI.UPSTREAM_ERROR',
+            startedAt: base.occurredAt,
+            finishedAt: null,
+          },
+        ],
+      }).success,
+    ).toBe(true)
   })
 })

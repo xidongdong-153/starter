@@ -20,6 +20,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       }),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute(_context, input) {
         return {
@@ -35,6 +36,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       inputSchema: z.object({}),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute() {
         return {
@@ -53,6 +55,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       }),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute(_context, input) {
         return {
@@ -76,6 +79,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
         }),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute(_context, input) {
         const span = input.max - input.min + 1
@@ -93,6 +97,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       inputSchema: z.object({}),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute() {
         throw new Error('fail_tool 故意失败')
@@ -107,6 +112,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       }),
       timeoutMs: 3000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: null,
       async execute(_context, input) {
         for (let elapsed = 1; elapsed <= input.seconds; elapsed += 1) {
@@ -136,6 +142,7 @@ export function createTestAiTools(): RegisteredAiTool[] {
       inputSchema: z.object({}),
       timeoutMs: 5000,
       scope: 'platform',
+      sideEffect: 'read_only',
       requiredPermission: PermissionKeys.AI_CONFIG_MANAGE,
       async execute() {
         return {

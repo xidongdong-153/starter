@@ -49,6 +49,7 @@ import type { RunLiveSnapshotState } from './run.live-snapshot.js'
 import { applyRunEvent, createRunLiveSnapshot, toAgentRunLiveSnapshot } from './run.live-snapshot.js'
 import { toAgentRun, toStarterRunData } from './run.presenter.js'
 import type { AiAgentRunRecord, AiAgentRunRepository } from './run.repository.js'
+import type { AiRunAttemptRepository } from './run-attempt.repository.js'
 import type { AiRunEventRepository, RunEventDraft } from './run-event.repository.js'
 import type { AiRunResolvedManifestRepository } from './run-resolved-manifest.repository.js'
 import type { AiRunTraceRepository } from './run-trace.repository.js'
@@ -58,6 +59,12 @@ import { RunEventPublisher } from './run-event.publisher.js'
 
 /** 对外 SSE 订阅队列的有界缓冲；超限时关闭 transport，不阻塞 Agent loop。 */
 const MAX_PENDING_EVENTS = 1024
+
+/** auto retry 只对模型上游失败与超时生效；auth/参数/abort/存储失败不重试。 */
+const AUTO_RETRY_ERROR_CODES: ReadonlySet<string> = new Set([
+  ApiErrorCodes.AI_UPSTREAM_ERROR,
+  ApiErrorCodes.AI_UPSTREAM_TIMEOUT,
+])
 
 export interface StartRunResult {
   runId: string
@@ -133,6 +140,10 @@ interface RunContext {
   publisher: RunEventPublisher
   telemetry: AiSpanScope<'starter.ai.run'>
   live: RunLiveSnapshotState
+  /** 当前执行 attempt 序号；auto retry 追加后递增。 */
+  currentAttemptNo: number
+  /** auto retry 判定输入：maxAttempts（缺省 1）与副作用门禁。 */
+  retry: { maxAttempts: number; blockedBySideEffect: boolean }
 }
 
 export function createAiAgentRunService(input: {
@@ -150,6 +161,8 @@ export function createAiAgentRunService(input: {
   outputContractRegistry: AiOutputContractRegistry
   /** resolved manifest 持久化；startRun 必需。 */
   resolvedManifestRepository?: AiRunResolvedManifestRepository
+  /** attempt 行 CRUD 与条件终态更新；startRun 与 auto retry 必需。 */
+  attemptRepository?: AiRunAttemptRepository
   /** 附件解析：归属校验 + 读字节转 base64；带附件的输入必需。 */
   resolveAttachments: AiAttachmentResolver['resolveForRequest']
   /** 模型能力查询：目标模型是否支持图片输入，统一查 runtime 模型表。 */
@@ -183,6 +196,7 @@ export function createAiAgentRunService(input: {
   const structuredOutputRepository = input.structuredOutputRepository
   const outputContractRegistry = input.outputContractRegistry
   const resolvedManifestRepository = input.resolvedManifestRepository
+  const attemptRepository = input.attemptRepository
   const eventRepository = input.eventRepository
   const telemetry = input.telemetry ?? NOOP_TELEMETRY_CONTEXT
   /** 活跃 Run 的进程内快照，Run 终态后立即移除。 */
@@ -250,6 +264,9 @@ export function createAiAgentRunService(input: {
 
     const runId = generateId()
     const snapshot = buildSnapshot(resolved)
+    // auto retry 判定输入：缺省 maxAttempts=1 不重试；manifest 含非幂等写 Tool 时整体禁用。
+    const retryMaxAttempts = resolved.config.retryPolicy?.maxAttempts ?? 1
+    const retryBlockedBySideEffect = resolved.tools.some((tool) => tool.sideEffect === 'non_idempotent_write')
 
     let lease: ActiveRunLease
     try {
@@ -296,6 +313,11 @@ export function createAiAgentRunService(input: {
       registry.release(lease)
       laneLeaseStore.release({ sessionId, lane, owner: laneLease })
       throw new Error('Run resolved manifest repository 未配置')
+    }
+    if (!attemptRepository) {
+      registry.release(lease)
+      laneLeaseStore.release({ sessionId, lane, owner: laneLease })
+      throw new Error('Run attempt repository 未配置')
     }
     const events = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS)
     // 关联上下文由 Run Service 创建，向下传给 Executor、事件映射、模型流和 Tool adapter。
@@ -359,6 +381,8 @@ export function createAiAgentRunService(input: {
       }),
       telemetry: runTelemetry,
       live: createRunLiveSnapshot(resolved.maxTurns),
+      currentAttemptNo: 1,
+      retry: { maxAttempts: retryMaxAttempts, blockedBySideEffect: retryBlockedBySideEffect },
     }
     contexts.set(runId, context)
     liveSnapshots.set(runId, context.live)
@@ -422,6 +446,36 @@ export function createAiAgentRunService(input: {
       outputContract: resolved.outputContract,
     })
 
+    // attempt 1 在 run row 之后创建（trigger=initial，owner/token 来自 lease）；
+    // 写入失败与 manifest 失败同路径收尾，不存在无 attempt 行的 starting/running Run。
+    try {
+      attemptRepository.create({
+        id: generateId(),
+        runId,
+        attemptNo: 1,
+        trigger: 'initial',
+        ownerId: laneLease.ownerId,
+        fencingToken: laneLease.fencingToken,
+        startedAt: new Date(),
+      })
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Run attempt 行创建失败')
+      runTelemetry.close({
+        attributes: {
+          'starter.ai.run.outcome': 'failed',
+          'starter.ai.error.code': ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+          'starter.ai.error.category': 'storage',
+        },
+        status: { status: 'error' },
+      })
+      void finalizeRun(context, {
+        status: 'failed',
+        finalEntryId: null,
+        errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+      })
+      return { runId, events }
+    }
+
     try {
       resolvedManifestRepository.create({
         runId,
@@ -447,9 +501,9 @@ export function createAiAgentRunService(input: {
       return { runId, events }
     }
 
-    let prepared: PreparedAgentExecution
-    try {
-      prepared = executor.prepare({
+    // executor prepare 的统一入口：attempt 1 与 auto retry 重建共用同一配置。
+    const prepareExecution = (): PreparedAgentExecution =>
+      executor.prepare({
         execution,
         input: startInput.input.input,
         ...(images ? { images } : {}),
@@ -495,6 +549,10 @@ export function createAiAgentRunService(input: {
               : undefined,
         },
       })
+
+    let prepared: PreparedAgentExecution
+    try {
+      prepared = prepareExecution()
     } catch (cause) {
       logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Run prepare 失败')
       void finalizeRun(context, {
@@ -565,8 +623,20 @@ export function createAiAgentRunService(input: {
       logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Executor start 失败')
     })
 
-    const pump = pumpExecutorEvents(prepared, context, publish)
-    void runToTerminal(context, prepared, pump)
+    // auto retry 重建 executor：attempt 行就位后由 runToTerminal 的重试循环调用；
+    // registry 控制面替换为新 controls，abort/steer/followUp 继续可用。
+    const startNextAttempt = (attemptNo: number): PreparedAgentExecution => {
+      execution.setAttemptNo(attemptNo)
+      const next = prepareExecution()
+      registry.replace(runId, next.controls)
+      controls = next.controls
+      void next.start().catch((cause) => {
+        logger.error({ err: cause, runId, sessionId, requestId, attemptNo }, 'Agent Executor start 失败')
+      })
+      return next
+    }
+
+    void runToTerminal(context, prepared, startNextAttempt)
     return { runId, events }
   }
 
@@ -915,6 +985,7 @@ export function createAiAgentRunService(input: {
             errorCode: data.errorCode,
             finishedAt: new Date(data.finishedAt),
             event: terminalEventForRecord(run, data.status, data.finalEntryId, data.errorCode),
+            attempt: { attemptNo: run.currentAttemptNo },
           })
         ) {
           report.recoveredFromEntry += 1
@@ -967,25 +1038,108 @@ export function createAiAgentRunService(input: {
       errorCode: ApiErrorCodes.AI_RUN_INTERRUPTED,
       finishedAt: new Date(),
       event: terminalEventForRecord(run, 'failed', run.finalEntryId, ApiErrorCodes.AI_RUN_INTERRUPTED),
+      attempt: { attemptNo: run.currentAttemptNo },
     })
   }
 
+  /**
+   * 执行到终态的主循环：executor result 先判定 auto retry（可重试错误 +
+   * 未撞上限 + 无非幂等写门禁），命中就关闭旧 attempt、创建新 attempt 并
+   * 重建 executor 继续；否则走 finalize。lease 不释放不重取，续租持续。
+   */
   async function runToTerminal(
     context: RunContext,
-    prepared: PreparedAgentExecution,
-    pump: Promise<void>,
+    first: PreparedAgentExecution,
+    startNextAttempt: (attemptNo: number) => PreparedAgentExecution,
   ): Promise<void> {
     const { runId, sessionId, requestId } = context.execution
-    let terminal: ExecutorTerminalResult
-    try {
-      const [result] = await Promise.all([prepared.result, pump])
-      terminal = result
-    } catch (cause) {
-      prepared.controls.abort()
-      logger.error({ err: cause, runId, sessionId, requestId }, 'Run 事件持久化失败，转入存储失败终态')
-      terminal = storageFailureTerminal()
+    let prepared = first
+    let pump = pumpExecutorEvents(prepared, context, publish)
+    while (true) {
+      let terminal: ExecutorTerminalResult
+      try {
+        const [result] = await Promise.all([prepared.result, pump])
+        terminal = result
+      } catch (cause) {
+        prepared.controls.abort()
+        logger.error({ err: cause, runId, sessionId, requestId }, 'Run 事件持久化失败，转入存储失败终态')
+        terminal = storageFailureTerminal()
+      }
+      const next = maybeRetryAttempt(context, terminal, startNextAttempt)
+      if (next) {
+        prepared = next
+        pump = pumpExecutorEvents(prepared, context, publish)
+        continue
+      }
+      await finalizeRun(context, terminal)
+      return
     }
-    await finalizeRun(context, terminal)
+  }
+
+  function shouldAutoRetry(context: RunContext, terminal: ExecutorTerminalResult): boolean {
+    if (terminal.status !== 'failed' || terminal.errorCode === null) return false
+    if (!AUTO_RETRY_ERROR_CODES.has(terminal.errorCode)) return false
+    if (context.storageFailed) return false
+    if (context.retry.blockedBySideEffect) return false
+    return context.currentAttemptNo < context.retry.maxAttempts
+  }
+
+  /**
+   * auto retry 的 attempt 调度：旧 attempt 行落 failed，创建下一 attempt 行
+   * （trigger=auto_retry，retry_reason 记录触发错误码），更新 Run 行指针并
+   * 重建 executor。任何写入或重建失败都回落到原终态收尾，不产生悬挂状态。
+   */
+  function maybeRetryAttempt(
+    context: RunContext,
+    terminal: ExecutorTerminalResult,
+    startNextAttempt: (attemptNo: number) => PreparedAgentExecution,
+  ): PreparedAgentExecution | null {
+    if (!shouldAutoRetry(context, terminal)) return null
+    if (!attemptRepository) return null
+    const { runId, sessionId, requestId } = context.execution
+    const finishedAt = new Date()
+    const nextAttemptNo = context.currentAttemptNo + 1
+    try {
+      const closed = attemptRepository.complete({
+        runId,
+        attemptNo: context.currentAttemptNo,
+        status: 'failed',
+        errorCode: terminal.errorCode,
+        finishedAt,
+      })
+      if (!closed) return null
+      attemptRepository.create({
+        id: generateId(),
+        runId,
+        attemptNo: nextAttemptNo,
+        trigger: 'auto_retry',
+        retryReason: terminal.errorCode ?? undefined,
+        ownerId: context.laneLease.ownerId,
+        fencingToken: context.laneLease.fencingToken,
+        startedAt: finishedAt,
+      })
+      if (!repository.updateCurrentAttemptNo(runId, nextAttemptNo)) {
+        throw new Error('ai_agent_runs.current_attempt_no 更新失败')
+      }
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Agent Run auto retry attempt 行写入失败')
+      return null
+    }
+    context.currentAttemptNo = nextAttemptNo
+    context.execution.setAttemptNo(nextAttemptNo)
+    logger.warn(
+      { runId, sessionId, requestId, attemptNo: nextAttemptNo, errorCode: terminal.errorCode },
+      'Agent Run auto retry：创建新 Attempt 继续执行',
+    )
+    try {
+      return startNextAttempt(nextAttemptNo)
+    } catch (cause) {
+      logger.error(
+        { err: cause, runId, sessionId, requestId, attemptNo: nextAttemptNo },
+        'Agent Run auto retry executor 重建失败',
+      )
+      return null
+    }
   }
 
   async function finalizeRun(context: RunContext, terminal: ExecutorTerminalResult): Promise<void> {
@@ -1047,8 +1201,9 @@ export function createAiAgentRunService(input: {
       finalEntryId: terminal.finalEntryId,
       errorCode: terminal.errorCode,
       finishedAt: new Date(),
-      event: terminalEvent({ runId, sessionId, lane }, terminal),
+      event: terminalEvent({ runId, sessionId, lane, attemptNo: context.currentAttemptNo }, terminal),
       lease: { ownerId: context.laneLease.ownerId },
+      attempt: { attemptNo: context.currentAttemptNo },
     })
     if (committed) {
       context.publisher.publishPersisted(committed)
@@ -1198,7 +1353,7 @@ function runSpanEndAttributes(
 }
 
 function buildEvent<T extends RunEvent['type']>(
-  identity: { runId: string; sessionId: string; lane: string },
+  identity: { runId: string; sessionId: string; lane: string; attemptNo: number },
   type: T,
   data: Extract<RunEvent, { type: T }>['data'],
 ): RunEventDraft {
@@ -1206,6 +1361,7 @@ function buildEvent<T extends RunEvent['type']>(
     runId: identity.runId,
     sessionId: identity.sessionId,
     lane: identity.lane,
+    attemptNo: identity.attemptNo,
     turnIndex: null,
     stepId: null,
     modelCallId: null,
@@ -1218,7 +1374,7 @@ function buildEvent<T extends RunEvent['type']>(
 }
 
 function terminalEvent(
-  identity: { runId: string; sessionId: string; lane: string },
+  identity: { runId: string; sessionId: string; lane: string; attemptNo: number },
   terminal: ExecutorTerminalResult,
 ): RunEventDraft {
   if (terminal.status === 'completed') {
@@ -1252,6 +1408,7 @@ function terminalEventForRecord(
     runId: run.id,
     sessionId: run.sessionId,
     lane: run.lane,
+    attemptNo: run.currentAttemptNo,
   }
   if (status === 'completed') {
     return terminalEvent(identity, {

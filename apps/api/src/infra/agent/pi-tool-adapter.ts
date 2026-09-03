@@ -23,9 +23,24 @@ import type { AiSpan, AiTelemetryTarget } from '@api/infra/telemetry/index.js'
 import { startAiSpan } from '@api/infra/telemetry/index.js'
 import type { RegisteredAiTool } from '@api/modules/ai/tool/tool-registry.js'
 import { isAiToolAvailableInScope } from '@api/modules/ai/tool/tool-registry.js'
+import { canonicalJson, sha256Hex } from '@api/modules/ai/run/resolved-manifest.js'
 import { StructuredOutputStorageError } from '@api/modules/ai/output/structured-output.tool.js'
 import { generateId } from '@api/shared/id.js'
 import type { RunExecutionContext } from './run-execution-context.js'
+
+/**
+ * Tool 执行的稳定幂等 token：sha256(canonicalJson({runId, attemptNo, toolExecutionId}))。
+ * 纯函数，相同输入重算结果相同；handler/下游用它做幂等去重（如下游 Idempotency-Key）。
+ */
+export function toolIdempotencyToken(input: { runId: string; attemptNo: number; toolExecutionId: string }): string {
+  return sha256Hex(
+    canonicalJson({
+      runId: input.runId,
+      attemptNo: input.attemptNo,
+      toolExecutionId: input.toolExecutionId,
+    }),
+  )
+}
 
 export interface PiToolResultDetails {
   status: AgentToolStatus
@@ -60,6 +75,8 @@ export interface PiToolExecutionAudit {
     /** 已注册 Tool 必须传精确版本；未注册 Tool 的 not_found 记录传 null，不猜测版本。 */
     toolVersion: string | null
     timeoutMs: number
+    /** 持久到 ai_tool_executions.idempotency_token 的稳定幂等 token。 */
+    idempotencyToken: string
   }) => PiToolExecutionAuditHandle | null
   finalizeToolExecution: (
     handle: PiToolExecutionAuditHandle | null,
@@ -157,6 +174,11 @@ export function createPiToolAdapter(tools: readonly RegisteredAiTool[], options:
           toolName: input.toolName,
           toolVersion: tool?.version ?? null,
           timeoutMs,
+          idempotencyToken: toolIdempotencyToken({
+            runId: options.execution.runId,
+            attemptNo: options.execution.attemptNo,
+            toolExecutionId: executionId,
+          }),
         }),
         finalized: false,
       })
@@ -218,6 +240,11 @@ function createAgentTool(
     // 没有 pending 时在这里补一个，保证 Tool 一定有自己的执行 ID。
     const executionId = pendingAudit?.executionId ?? generateId()
     if (!pendingAudit) execution.setTool(toolCallId, executionId)
+    const idempotencyToken = toolIdempotencyToken({
+      runId: execution.runId,
+      attemptNo: execution.attemptNo,
+      toolExecutionId: executionId,
+    })
     const auditHandle =
       pendingAudit?.handle ??
       beginToolAudit(options.audit, {
@@ -231,6 +258,7 @@ function createAgentTool(
         toolName: tool.name,
         toolVersion: tool.version,
         timeoutMs,
+        idempotencyToken,
       })
     let finalized = false
     const finalizeAudit = (
@@ -434,6 +462,7 @@ function createAgentTool(
               toolCallId,
               toolExecutionId: executionId,
               turnIndex: execution.turnIndex,
+              idempotencyToken,
             },
             parsed,
           ),
@@ -487,12 +516,17 @@ function createAgentTool(
       }
       if (timedOut) {
         finalizeAudit('timed_out', ApiErrorCodes.AI_TOOL_TIMED_OUT)
+        // 非幂等写声明：外部状态未知，不能当作可安全重试的失败。
+        const timeoutModelText =
+          tool.sideEffect === 'non_idempotent_write'
+            ? `The tool timed out after ${timeoutMs}ms. The operation may have already been applied externally; the result is unknown.`
+            : `The tool timed out after ${timeoutMs}ms.`
         return failWithoutAudit(
           toolCallId,
           pendingFailures,
           'timed_out',
           ApiErrorCodes.AI_TOOL_TIMED_OUT,
-          `The tool timed out after ${timeoutMs}ms.`,
+          timeoutModelText,
           false,
           options,
           signal,
@@ -675,6 +709,7 @@ function beginToolAudit(
     toolName: string
     toolVersion: string | null
     timeoutMs: number
+    idempotencyToken: string
   },
 ): PiToolExecutionAuditHandle | null {
   if (!audit) return null

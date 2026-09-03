@@ -32,6 +32,7 @@ import {
 } from './webhook/index.js'
 import {
   createAiAgentRunRepository,
+  createAiRunAttemptRepository,
   createAiRunEventRepository,
   createAiRunResolvedManifestRepository,
   createAiRunTraceRepository,
@@ -198,6 +199,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     eventRepository: createAiRunEventRepository(runtime.db),
     traceRepository: createAiRunTraceRepository(runtime.db),
     resolvedManifestRepository: createAiRunResolvedManifestRepository(runtime.db),
+    attemptRepository: createAiRunAttemptRepository(runtime.db),
     sessionRepository,
     sessionStore: runtime.agentSessionStore,
     agentService: agentDefinitionService,

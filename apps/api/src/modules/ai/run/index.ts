@@ -5,6 +5,14 @@ export {
   LEASE_TTL_MS,
   RENEW_INTERVAL_MS,
 } from './lane-lease.js'
+export {
+  type AiRunAttemptCompleteInput,
+  type AiRunAttemptCreateInput,
+  type AiRunAttemptRecord,
+  type AiRunAttemptRepository,
+  type AiRunAttemptStatus,
+  createAiRunAttemptRepository,
+} from './run-attempt.repository.js'
 export { RunEventPublisher, type RunEventPublisherOptions } from './run-event.publisher.js'
 export { type AiRunEventRepository, createAiRunEventRepository, type RunEventDraft } from './run-event.repository.js'
 export { type AiRunLifecycleRepository, createAiRunLifecycleRepository } from './run-lifecycle.repository.js'

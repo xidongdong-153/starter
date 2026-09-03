@@ -137,6 +137,9 @@ export class PiAgentExecutor {
     let turns = 0
     let summaryPlanned = false
     let structuredOutputEmitted = false
+    /** 本次 attempt 的顶层 agent Step（turnId=NULL）；outcome 与执行终态一致。 */
+    let agentStepId: string | undefined
+    let settledTerminal: ExecutorTerminalResult | undefined
     const runTelemetry: AiTelemetryTarget = input.telemetry ?? NOOP_TELEMETRY_CONTEXT
     let turnScope: AiSpanScope<'starter.ai.turn'> | null = null
     let stepScope: AiSpanScope<'starter.ai.step'> | null = null
@@ -205,6 +208,11 @@ export class PiAgentExecutor {
     const result = new Promise<ExecutorTerminalResult>((resolve) => {
       resolveResult = resolve
     })
+    /** 终态落定前记录，finally 里用它收尾 agent Step。 */
+    const settle = (terminal: ExecutorTerminalResult) => {
+      settledTerminal = terminal
+      resolveResult(terminal)
+    }
 
     const controls: AttachableActiveRunControls = {
       attach() {
@@ -243,8 +251,20 @@ export class PiAgentExecutor {
       })
       if (input.signal?.aborted) abortRequested = true
       try {
+        // 每个 attempt 一条顶层 agent Step：不属于任何 turn，outcome 随本次执行终态；
+        // run 终态事务会在 fenced/重写时把它强制改为最终状态。
+        agentStepId = generateId()
+        lifecycle?.beginStep({
+          id: agentStepId,
+          runId: execution.runId,
+          turnId: null,
+          kind: 'agent',
+          attempt: execution.attemptNo,
+          attemptNo: execution.attemptNo,
+          startedAt: new Date(),
+        })
         if (abortRequested) {
-          resolveResult({
+          settle({
             status: 'aborted',
             finalEntryId: null,
             errorCode: ApiErrorCodes.AI_REQUEST_ABORTED,
@@ -265,7 +285,7 @@ export class PiAgentExecutor {
           throw new Error('Agent Session 读取失败')
         }
         if (abortRequested) {
-          resolveResult({
+          settle({
             status: 'aborted',
             finalEntryId: null,
             errorCode: ApiErrorCodes.AI_REQUEST_ABORTED,
@@ -284,7 +304,7 @@ export class PiAgentExecutor {
             finalEntryId: null,
             errorCode: ApiErrorCodes.AI_MODEL_NOT_FOUND,
           }
-          resolveResult(terminalOverride)
+          settle(terminalOverride)
           return
         }
         const compactionSettings = resolveCompactionSettings(this.options.compaction)
@@ -343,6 +363,7 @@ export class PiAgentExecutor {
               id: turnId,
               runId: execution.runId,
               turnIndex,
+              attemptNo: execution.attemptNo,
               startedAt: new Date(),
             })
             turnScope = openAiSpanScope(runTelemetry, 'starter.ai.turn', {
@@ -350,13 +371,14 @@ export class PiAgentExecutor {
               'starter.ai.turn.id': turnId,
               'starter.ai.turn.index': turnIndex,
             })
-            const stepId = execution.beginStep('assistant', 1)
+            const stepId = execution.beginStep('assistant', execution.attemptNo)
             lifecycle?.beginStep({
               id: stepId,
               runId: execution.runId,
               turnId,
               kind: 'assistant',
-              attempt: 1,
+              attempt: execution.attemptNo,
+              attemptNo: execution.attemptNo,
               startedAt: new Date(),
             })
             stepScope = openAiSpanScope(turnScope.span, 'starter.ai.step', {
@@ -364,7 +386,7 @@ export class PiAgentExecutor {
               'starter.ai.turn.id': turnId,
               'starter.ai.step.id': stepId,
               'starter.ai.step.kind': 'assistant',
-              'starter.ai.step.attempt': 1,
+              'starter.ai.step.attempt': execution.attemptNo,
             })
           },
           onTurnEnd: (piOutcome) => {
@@ -471,6 +493,7 @@ export class PiAgentExecutor {
                 parent: turnScope?.span ?? runTelemetry,
                 runId: execution.runId,
                 turnId: execution.turnId,
+                attemptNo: execution.attemptNo,
                 onStepSpan: (span) => {
                   compactionTelemetry = span
                 },
@@ -533,7 +556,7 @@ export class PiAgentExecutor {
         pendingFollowUps.length = 0
 
         if (abortRequested) {
-          resolveResult({
+          settle({
             status: 'aborted',
             finalEntryId: null,
             errorCode: ApiErrorCodes.AI_REQUEST_ABORTED,
@@ -559,7 +582,7 @@ export class PiAgentExecutor {
           latestModelFailure,
           structuredOutputEmitted ? 'structured_output' : summaryPlanned ? 'max_turns' : 'model_finished',
         )
-        resolveResult(terminal)
+        settle(terminal)
       } catch {
         const terminal =
           terminalOverride ??
@@ -568,13 +591,24 @@ export class PiAgentExecutor {
             finalEntryId: null,
             errorCode: abortRequested ? ApiErrorCodes.AI_REQUEST_ABORTED : ApiErrorCodes.AI_UPSTREAM_ERROR,
           } satisfies ExecutorTerminalResult)
-        resolveResult(terminal)
+        settle(terminal)
       } finally {
         if (deadlineTimer) clearTimeout(deadlineTimer)
         if (callerAbortListener) {
           input.signal?.removeEventListener('abort', callerAbortListener)
         }
         unsubscribe?.()
+        // agent Step 收尾：outcome 与本次执行终态一致；
+        // run 终态事务可能把它改写为 interrupted。
+        if (agentStepId) {
+          const agentOutcome =
+            settledTerminal?.status === 'completed'
+              ? 'succeeded'
+              : settledTerminal?.status === 'aborted'
+                ? 'aborted'
+                : 'failed'
+          lifecycle?.completeStep(agentStepId, agentOutcome, settledTerminal?.errorCode ?? null, new Date())
+        }
         // Pi 没有发出 turn_end 时也要结束 span，不能留下未结束的作用域。
         const sweepOutcome = abortRequested ? 'aborted' : 'failed'
         closeTurnScopes(sweepOutcome)
@@ -724,6 +758,7 @@ async function compactIfNeeded(input: {
     parent: AiTelemetryTarget
     runId: string
     turnId: string | null
+    attemptNo: number
     onStepSpan: (span: AiSpan<'starter.ai.step'> | null) => void
   }
   lifecycle?: AiRunLifecycleRepository
@@ -750,7 +785,7 @@ async function compactIfNeeded(input: {
   const step: RunStepState = {
     id: generateId(),
     kind: 'compaction',
-    attempt: 1,
+    attempt: input.telemetry.attemptNo,
   }
   const stepId = step.id
   const turnId = input.telemetry.turnId
@@ -762,7 +797,8 @@ async function compactIfNeeded(input: {
         runId: input.telemetry.runId,
         turnId,
         kind: 'compaction',
-        attempt: 1,
+        attempt: input.telemetry.attemptNo,
+        attemptNo: input.telemetry.attemptNo,
         startedAt: new Date(),
       })
     } catch {
@@ -797,7 +833,7 @@ async function compactIfNeeded(input: {
       'starter.ai.turn.id': turnId ?? undefined,
       'starter.ai.step.id': stepId,
       'starter.ai.step.kind': 'compaction',
-      'starter.ai.step.attempt': 1,
+      'starter.ai.step.attempt': input.telemetry.attemptNo,
     },
     async (span) => {
       input.telemetry.onStepSpan(span)

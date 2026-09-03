@@ -124,6 +124,7 @@ const starterUserPrincipal: PrincipalContext = {
 function registerProtectedTool() {
   return createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'admin_secret',
       version: '1.0.0',
       description: 'Requires ai:config:manage',

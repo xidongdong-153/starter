@@ -444,6 +444,8 @@ export const aiAgentRuns = sqliteTable(
     errorCode: text('error_code'),
     /** acquire lane lease 时拿到的 fencing token；终态事务用它校验执行所有权。历史行为 NULL，跳过校验。 */
     executionFencingToken: integer('execution_fencing_token'),
+    /** 当前执行 attempt 序号；auto retry 追加后同步递增。 */
+    currentAttemptNo: integer('current_attempt_no').notNull().default(1),
     createdAt: timestamp('created_at').notNull(),
     startedAt: timestamp('started_at'),
     finishedAt: timestamp('finished_at'),
@@ -513,6 +515,42 @@ export const aiRunResolvedManifests = sqliteTable(
   (table) => [check('ai_run_resolved_manifests_json_check', sql`json_valid(${table.manifestJson})`)],
 )
 
+/**
+ * 一次 Run 的一次执行尝试。Attempt 1 在 startRun 创建（trigger=initial）；
+ * auto retry 在原请求内追加（trigger=auto_retry，retry_reason 记录触发重试的
+ * 上一轮错误码）。owner 与 fencing token 来自 acquire lane lease。
+ */
+export const aiRunAttempts = sqliteTable(
+  'ai_run_attempts',
+  {
+    id: text('id').primaryKey(),
+    runId: text('run_id')
+      .notNull()
+      .references(() => aiAgentRuns.id, { onDelete: 'cascade' }),
+    /** 从 1 递增；与 Run 行的 current_attempt_no 同步。 */
+    attemptNo: integer('attempt_no').notNull(),
+    status: text('status').notNull(),
+    trigger: text('trigger').notNull(),
+    /** auto_retry 时记录触发重试的上一轮错误码；initial 为 NULL。 */
+    retryReason: text('retry_reason'),
+    ownerId: text('owner_id').notNull(),
+    fencingToken: integer('fencing_token').notNull(),
+    errorCode: text('error_code'),
+    startedAt: timestamp('started_at').notNull(),
+    finishedAt: timestamp('finished_at'),
+  },
+  (table) => [
+    index('ai_run_attempts_run_started_idx').on(table.runId, table.startedAt, table.id),
+    uniqueIndex('ai_run_attempts_run_attempt_uidx').on(table.runId, table.attemptNo),
+    check(
+      'ai_run_attempts_status_check',
+      sql`${table.status} IN ('running', 'succeeded', 'failed', 'aborted', 'interrupted')`,
+    ),
+    check('ai_run_attempts_trigger_check', sql`${table.trigger} IN ('initial', 'auto_retry')`),
+    check('ai_run_attempts_attempt_no_check', sql`${table.attemptNo} >= 1`),
+  ],
+)
+
 export const aiRunTurns = sqliteTable(
   'ai_run_turns',
   {
@@ -521,6 +559,8 @@ export const aiRunTurns = sqliteTable(
       .notNull()
       .references(() => aiAgentRuns.id, { onDelete: 'cascade' }),
     turnIndex: integer('turn_index').notNull(),
+    /** 产生该 turn 的执行 attempt 序号；历史行回填 1。 */
+    attemptNo: integer('attempt_no').notNull().default(1),
     outcome: text('outcome').notNull().default('running'),
     startedAt: timestamp('started_at').notNull(),
     finishedAt: timestamp('finished_at'),
@@ -538,11 +578,13 @@ export const aiRunSteps = sqliteTable(
     runId: text('run_id')
       .notNull()
       .references(() => aiAgentRuns.id, { onDelete: 'cascade' }),
-    turnId: text('turn_id')
-      .notNull()
-      .references(() => aiRunTurns.id, { onDelete: 'cascade' }),
+    /** 所属 turn；顶层 agent Step 不属于任何 turn，为 NULL。 */
+    turnId: text('turn_id').references(() => aiRunTurns.id, { onDelete: 'cascade' }),
     kind: text('kind').notNull(),
+    /** 公开事件面的 step attempt 序号；当前与 attempt_no 同值。 */
     attempt: integer('attempt').notNull(),
+    /** 产生该 step 的执行 attempt 序号；历史行回填 1。 */
+    attemptNo: integer('attempt_no').notNull().default(1),
     outcome: text('outcome').notNull().default('running'),
     errorCode: text('error_code'),
     startedAt: timestamp('started_at').notNull(),
@@ -716,6 +758,8 @@ export const aiToolExecutions = sqliteTable(
     toolName: text('tool_name').notNull(),
     /** 历史记录与未注册 Tool 的 not_found 记录允许 null；新执行必须由应用层写精确版本。 */
     toolVersion: text('tool_version'),
+    /** 稳定幂等 token：sha256(canonicalJson({runId, attemptNo, toolExecutionId}))；历史行为 NULL。 */
+    idempotencyToken: text('idempotency_token'),
     startedAt: timestamp('started_at').notNull(),
     finishedAt: timestamp('finished_at'),
     durationMs: integer('duration_ms'),
@@ -868,7 +912,15 @@ export const aiAgentRunsRelations = relations(aiAgentRuns, ({ one, many }) => ({
   turns: many(aiRunTurns),
   steps: many(aiRunSteps),
   events: many(aiRunEvents),
+  attempts: many(aiRunAttempts),
   structuredOutputs: many(aiStructuredOutputs),
+}))
+
+export const aiRunAttemptsRelations = relations(aiRunAttempts, ({ one }) => ({
+  run: one(aiAgentRuns, {
+    fields: [aiRunAttempts.runId],
+    references: [aiAgentRuns.id],
+  }),
 }))
 
 export const aiRunTurnsRelations = relations(aiRunTurns, ({ one, many }) => ({

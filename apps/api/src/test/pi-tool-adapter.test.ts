@@ -53,6 +53,7 @@ describe('pi tool adapter', () => {
     }))
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'lookup',
         version: '1.0.0',
         description: 'Look up a value',
@@ -97,6 +98,7 @@ describe('pi tool adapter', () => {
     const audit = createAudit()
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'progressive',
         version: '1.0.0',
         description: 'Reports progress',
@@ -139,6 +141,7 @@ describe('pi tool adapter', () => {
     const audit = createAudit()
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'protected',
         version: '1.0.0',
         description: 'Protected action',
@@ -185,6 +188,7 @@ describe('pi tool adapter', () => {
     const onTerminalFailure = vi.fn()
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'slow',
         version: '1.0.0',
         description: 'Slow action',
@@ -239,6 +243,7 @@ describe('pi tool adapter', () => {
     const onTerminalFailure = vi.fn()
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'cancellable',
         version: '1.0.0',
         description: 'Cancellable action',
@@ -278,6 +283,7 @@ describe('pi tool adapter sensitive marker isolation', () => {
     const audit = createAudit()
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'leaky',
         version: '1.0.0',
         description: 'Throw with a marker',
@@ -329,6 +335,7 @@ describe('pi tool adapter telemetry', () => {
   function lookupRegistry(execute: () => Promise<{ modelText: string; safeSummary: string }>) {
     return createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'lookup',
         version: '2.1.0',
         description: 'Look up a value',
@@ -396,6 +403,7 @@ describe('pi tool adapter telemetry', () => {
     const telemetry = createAiTelemetryContext(recorder)
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'restricted',
         version: '1.0.0',
         description: 'Requires permission',

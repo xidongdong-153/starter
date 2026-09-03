@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto'
-import type { AiRunResolvedManifest, AiRunResolvedManifestSystemPrompt } from '@starter/contracts'
+import type { AiRunResolvedManifest, AiRunResolvedManifestSystemPrompt, AiToolSideEffect } from '@starter/contracts'
 
 import type { ResolvedAiOutputContract } from '../output/output-contract-registry.js'
 
@@ -30,7 +30,7 @@ export function buildResolvedRunManifest(input: {
   model: { providerId: string; modelId: string }
   systemPrompt: AiRunResolvedManifestSystemPrompt | null
   skills: ReadonlyArray<{ skillId: string; revision: number; contentHash: string }>
-  tools: ReadonlyArray<{ name: string; version: string; manifestHash: string }>
+  tools: ReadonlyArray<{ name: string; version: string; manifestHash: string; sideEffect: AiToolSideEffect }>
   outputContract: Pick<ResolvedAiOutputContract, 'name' | 'version' | 'schemaHash'> | null
 }): AiRunResolvedManifest {
   const manifest: Omit<AiRunResolvedManifest, 'manifestHash'> = {
@@ -47,6 +47,7 @@ export function buildResolvedRunManifest(input: {
       name: tool.name,
       version: tool.version,
       manifestHash: tool.manifestHash,
+      sideEffect: tool.sideEffect,
     })),
     outputContract: input.outputContract
       ? {

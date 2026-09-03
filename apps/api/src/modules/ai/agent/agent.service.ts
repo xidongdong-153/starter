@@ -301,6 +301,7 @@ export function createAiAgentDefinitionService(input: {
       outputMode: input.outputMode,
       thinkingLevel: input.thinkingLevel,
       maxTurns: input.maxTurns,
+      ...(input.retryPolicy ? { retryPolicy: input.retryPolicy } : {}),
     }
     return {
       id: null,
@@ -531,7 +532,8 @@ function sameConfig(left: AgentDefinitionConfig, right: AgentDefinitionConfig): 
     normalizedLeft.thinkingLevel === normalizedRight.thinkingLevel &&
     normalizedLeft.maxTurns === normalizedRight.maxTurns &&
     sameOutputContractRefs(normalizedLeft.outputContract, normalizedRight.outputContract) &&
-    normalizedLeft.outputMode === normalizedRight.outputMode
+    normalizedLeft.outputMode === normalizedRight.outputMode &&
+    (normalizedLeft.retryPolicy?.maxAttempts ?? 1) === (normalizedRight.retryPolicy?.maxAttempts ?? 1)
   )
 }
 

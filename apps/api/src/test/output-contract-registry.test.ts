@@ -53,6 +53,7 @@ describe('ai output contract registry', () => {
   it('拒绝业务 Tool 使用 emit_structured_output 保留名称', () => {
     expect(() =>
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'emit_structured_output',
         version: '1.0.0',
         description: 'Conflicting business tool',

@@ -25,6 +25,7 @@ it('测试工具集注册：7 个工具名称与 schema 全部合法', () => {
 
 it('registry 按 name@version 唯一并校验 scope', () => {
   const base = {
+    sideEffect: 'read_only',
     name: 'lookup',
     version: '1.0.0',
     description: 'lookup',
@@ -54,6 +55,7 @@ it('registry 按 name@version 唯一并校验 scope', () => {
 it('listPublic 只投影公开元数据，不含 schema 和 handler', () => {
   const registry = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'lookup',
@@ -71,6 +73,7 @@ it('listPublic 只投影公开元数据，不含 schema 和 handler', () => {
       name: 'lookup',
       version: '1.0.0',
       description: 'lookup',
+      sideEffect: 'read_only',
       scope: { tenantId: 'tenant-a', projectId: 'project-a' },
     },
   ])

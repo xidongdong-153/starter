@@ -395,6 +395,7 @@ it('run 启动时固定 Tool 版本；改 Agent 配置不影响已启动 Run，�
     )
   }
   const lookupV1 = defineAiTool({
+    sideEffect: 'read_only',
     name: 'lookup',
     version: '1.0.0',
     description: 'Lookup v1',
@@ -407,6 +408,7 @@ it('run 启动时固定 Tool 版本；改 Agent 配置不影响已启动 Run，�
     },
   })
   const lookupV2 = defineAiTool({
+    sideEffect: 'read_only',
     name: 'lookup',
     version: '2.0.0',
     description: 'Lookup v2',

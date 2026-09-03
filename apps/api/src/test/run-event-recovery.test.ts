@@ -208,6 +208,7 @@ it('从最后一个 message.delta 和 tool.progress 之后继续到 terminal', a
   })
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'progress-tool',
       version: '1.0.0',
       description: '报告进度',

@@ -175,7 +175,7 @@ export function seedEnabledModel(runtime: ReturnType<typeof createTestApp>['runt
 export function seedAgent(
   runtime: ReturnType<typeof createTestApp>['runtime'],
   toolRefs: Array<{ name: string; version: string }>,
-  options: { maxTurns?: number; thinkingLevel?: AgentThinkingLevel } = {},
+  options: { maxTurns?: number; thinkingLevel?: AgentThinkingLevel; retryPolicy?: { maxAttempts: number } } = {},
 ): string {
   const id = generateId()
   const promptId = generateId()
@@ -209,6 +209,7 @@ export function seedAgent(
         outputMode: 'optional',
         thinkingLevel: options.thinkingLevel ?? 'off',
         maxTurns: options.maxTurns ?? 8,
+        ...(options.retryPolicy ? { retryPolicy: options.retryPolicy } : {}),
       }),
       createdAt: now,
       updatedAt: now,
@@ -399,6 +400,7 @@ export function runDualRuntimeApps(input: { streamFn: StreamFn }): {
 export function lookupTool() {
   return createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Look up a value',

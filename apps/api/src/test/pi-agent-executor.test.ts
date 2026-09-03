@@ -122,6 +122,7 @@ it('piAgentExecutor 使用 Pi Agent 完成多轮 Tool，并按 caller sequence �
   }
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Look up a value',
@@ -396,6 +397,7 @@ it('工具上报进度时发布 tool.progress，只带脱敏摘要', async () =>
   }
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'stepwise',
       version: '1.0.0',
       description: 'Report progress per step',
@@ -489,6 +491,7 @@ it('工具超时后模型继续回复，Run 以 completed 结束', async () => {
   }
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'never_finishes',
       version: '1.0.0',
       description: 'Never settles; adapter timeout owns cancellation',
@@ -589,6 +592,7 @@ it('pi JSON Schema 拒绝参数时仍生成安全 Tool 结果和一次审计', a
     }))
     const registry = createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'lookup',
         version: '1.0.0',
         description: 'Look up a value',
@@ -1139,6 +1143,7 @@ it('撞上 maxTurns 且仍在调工具时追加一轮无工具收尾', async () 
   }
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Look up a value',
@@ -1239,6 +1244,7 @@ it('撞上 maxTurns 时模型已给文字回答则不追加收尾轮', async () 
   }
   const tools = createAiToolRegistry([
     defineAiTool({
+      sideEffect: 'read_only',
       name: 'lookup',
       version: '1.0.0',
       description: 'Look up a value',
@@ -1431,15 +1437,20 @@ it('run 结束前用 listRunning 兜底关闭遗留的 Turn / Step', async () =>
     })
 
     expect(beganTurns).toHaveLength(1)
-    expect(beganSteps).toHaveLength(1)
-    // 第一次来自 turn_end，第二次来自 finally 的兜底扫描
+    // beganSteps[0] 是 agent Step，beganSteps[1] 是 turn 内 assistant Step
+    expect(beganSteps).toHaveLength(2)
+    // assistant Turn 第一次来自 turn_end，第二次来自 finally 的兜底扫描
     expect(completedTurns).toEqual([
       { id: beganTurns[0], outcome: 'succeeded' },
       { id: beganTurns[0], outcome: 'failed' },
     ])
+    // agent Step 由 finally 按终态收尾一次，再被兜底扫描关一次；
+    // assistant Step 第一次来自 turn_end，第二次来自兜底扫描。
     expect(completedSteps).toEqual([
+      { id: beganSteps[1], outcome: 'succeeded' },
       { id: beganSteps[0], outcome: 'succeeded' },
       { id: beganSteps[0], outcome: 'failed' },
+      { id: beganSteps[1], outcome: 'failed' },
     ])
     registry.release(runId)
   } finally {

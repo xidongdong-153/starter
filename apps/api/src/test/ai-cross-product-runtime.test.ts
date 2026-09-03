@@ -63,6 +63,7 @@ it('产品后端通过公开 Bearer HTTP/SSE 完成 Run 并按 scope 恢复 Tran
     hasPermission: async () => true,
   })
   const scopedTool = defineAiTool({
+    sideEffect: 'read_only',
     name: 'scoped_lookup',
     version: '1.0.0',
     description: 'Project-scoped lookup',

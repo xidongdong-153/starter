@@ -112,6 +112,28 @@ export class ActiveRunRegistry {
     return this.byRunId.get(runId)
   }
 
+  /**
+   * auto retry 重建 executor 后替换控制面：runId 与 lease 不变，
+   * 仅把 handle 的 abort/steer/followUp 换到新 controls 上。
+   */
+  replace(runId: string, controls: AttachableActiveRunControls): ActiveRunHandle {
+    const handle = this.byRunId.get(runId)
+    if (!handle) throw new ActiveRunRegistryError('not_active')
+    controls.attach()
+    const next: ActiveRunHandle = {
+      runId,
+      sessionId: handle.sessionId,
+      lane: handle.lane,
+      controls,
+      abort: controls.abort,
+      steer: controls.steer,
+      followUp: controls.followUp,
+    }
+    this.byRunId.set(runId, next)
+    this.handlesBySessionLane.set(laneKey(handle.sessionId, handle.lane), next)
+    return next
+  }
+
   getBySessionLane(sessionId: string, lane: string): ActiveRunHandle | undefined {
     return this.handlesBySessionLane.get(laneKey(sessionId, lane))
   }

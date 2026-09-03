@@ -560,11 +560,16 @@ export const aiToolRefSchema = z.strictObject({
 })
 export type AiToolRef = z.infer<typeof aiToolRefSchema>
 
+/** Tool 副作用声明：决定 auto retry 门禁与超时措辞；定义时必填。 */
+export const aiToolSideEffectSchema = z.enum(['read_only', 'idempotent_write', 'non_idempotent_write'])
+export type AiToolSideEffect = z.infer<typeof aiToolSideEffectSchema>
+
 export const aiToolSummarySchema = z.strictObject({
   name: aiToolNameSchema,
   version: aiToolVersionSchema,
   description: z.string().min(1).max(1000),
   scope: z.union([z.literal('platform'), z.strictObject({ tenantId: aiScopeIdSchema, projectId: aiScopeIdSchema })]),
+  sideEffect: aiToolSideEffectSchema,
 })
 export type AiToolSummary = z.infer<typeof aiToolSummarySchema>
 
@@ -648,6 +653,13 @@ export type AiOutputContractRef = z.infer<typeof aiOutputContractRefSchema>
 
 export const agentRunOutputContractSchema = aiOutputContractRefSchema.nullable()
 
+/** Run 内模型上游失败/超时的自动重试策略；缺省语义为 maxAttempts=1 不重试。 */
+export const agentRetryPolicySchema = z.strictObject({
+  /** 单次 Run 内的最大执行尝试数（含首次）；1 表示不重试。 */
+  maxAttempts: z.number().int().min(1).max(4),
+})
+export type AgentRetryPolicy = z.infer<typeof agentRetryPolicySchema>
+
 /** Structured Output 的服务端校验后取值；`ai_structured_outputs.value_json` 读写用同一个 schema。 */
 export const aiStructuredOutputValueSchema = z.record(z.string(), z.unknown())
 export type AiStructuredOutputValue = z.infer<typeof aiStructuredOutputValueSchema>
@@ -677,6 +689,8 @@ export const agentDefinitionConfigSchema = z.strictObject({
   outputMode: aiOutputModeSchema.default('optional'),
   thinkingLevel: agentThinkingLevelSchema,
   maxTurns: z.number().int().min(1).max(32),
+  /** 可选自动重试策略；不携带时按 maxAttempts=1 处理，存量 config 兼容。 */
+  retryPolicy: agentRetryPolicySchema.optional(),
 })
 
 export type AgentDefinitionConfig = z.infer<typeof agentDefinitionConfigSchema>
@@ -1047,6 +1061,7 @@ export const aiRunResolvedManifestToolSchema = z.strictObject({
   name: aiToolNameSchema,
   version: aiToolVersionSchema,
   manifestHash: sha256HexSchema,
+  sideEffect: aiToolSideEffectSchema,
 })
 export type AiRunResolvedManifestTool = z.infer<typeof aiRunResolvedManifestToolSchema>
 
@@ -1195,6 +1210,7 @@ export const inlineAgentRunConfigSchema = z
     outputMode: aiOutputModeSchema.default('optional'),
     thinkingLevel: agentThinkingLevelSchema.default('off'),
     maxTurns: z.number().int().min(1).max(32).default(8),
+    retryPolicy: agentRetryPolicySchema.optional(),
   })
   .refine((value) => (value.systemPrompt !== undefined) !== (value.systemPromptId !== undefined), {
     message: 'systemPrompt 与 systemPromptId 必须二选一',
@@ -1251,6 +1267,8 @@ const runEventAssociationShape = {
   messageId: uuidSchema.nullable(),
   toolCallId: z.string().min(1).max(240).nullable(),
   toolExecutionId: uuidSchema.nullable(),
+  /** 产生该事件的执行 attempt 序号；缺省视为 1，旧客户端可忽略。 */
+  attemptNo: z.number().int().min(1).optional(),
 }
 
 const runEventEnvelopeShape = {
@@ -1524,9 +1542,21 @@ export const runTraceNodeSchema = z.strictObject({
 })
 export type RunTraceNode = z.infer<typeof runTraceNodeSchema>
 
+/** Run 的一次执行尝试；auto_retry 行的 retryReason 记录触发重试的错误码。 */
+export const runTraceAttemptSchema = z.strictObject({
+  attemptNo: z.number().int().min(1),
+  trigger: z.enum(['initial', 'auto_retry']),
+  status: z.enum(['running', 'succeeded', 'failed', 'aborted', 'interrupted']),
+  errorCode: apiErrorCodeSchema.nullable(),
+  startedAt: isoDateTimeSchema,
+  finishedAt: isoDateTimeSchema.nullable(),
+})
+export type RunTraceAttempt = z.infer<typeof runTraceAttemptSchema>
+
 export const runTraceSchema = z.strictObject({
   runId: uuidSchema,
   nodes: z.array(runTraceNodeSchema).max(2000),
+  attempts: z.array(runTraceAttemptSchema),
 })
 export type RunTrace = z.infer<typeof runTraceSchema>
 

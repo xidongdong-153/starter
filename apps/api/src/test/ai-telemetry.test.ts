@@ -338,21 +338,23 @@ it('run 的 span 树与 SQLite 审计、Turn/Step 记录和 RunEvent 关联字�
     expect(toolSpan.attributes['starter.ai.tool.attempt']).toBe(1)
     expect(toolSpan.attributes['starter.ai.tool.recovery']).toBe(false)
 
-    // span ID 与 SQLite 审计、Turn/Step 记录一致
+    // span ID 与 SQLite 审计、Turn/Step 记录一致；顶层 agent Step 只落库不开 span，
+    // span 集合对应 turn 内 Step
     const turnRows = runtime.db.select().from(aiRunTurns).where(eq(aiRunTurns.runId, runId)).all()
     const stepRows = runtime.db.select().from(aiRunSteps).where(eq(aiRunSteps.runId, runId)).all()
+    const turnScopedStepRows = stepRows.filter((row) => row.kind !== 'agent')
     const modelRows = runtime.db.select().from(aiModelCalls).where(eq(aiModelCalls.runId, runId)).all()
     const toolRows = runtime.db.select().from(aiToolExecutions).where(eq(aiToolExecutions.runId, runId)).all()
     expect(new Set(turnSpans.map((span) => span.attributes['starter.ai.turn.id']))).toEqual(
       new Set(turnRows.map((row) => row.id)),
     )
     expect(new Set(stepSpans.map((span) => span.attributes['starter.ai.step.id']))).toEqual(
-      new Set(stepRows.map((row) => row.id)),
+      new Set(turnScopedStepRows.map((row) => row.id)),
     )
     expect(new Set(modelSpans.map((span) => span.attributes['starter.ai.model_call.id']))).toEqual(
       new Set(modelRows.map((row) => row.id)),
     )
-    expect(new Set(modelRows.map((row) => row.stepId))).toEqual(new Set(stepRows.map((row) => row.id)))
+    expect(new Set(modelRows.map((row) => row.stepId))).toEqual(new Set(turnScopedStepRows.map((row) => row.id)))
     expect(toolSpan.attributes['starter.ai.tool.execution_id']).toBe(toolRows[0]?.id)
     expect(toolSpan.attributes['starter.ai.tool.call_id']).toBe(toolRows[0]?.toolCallId)
 
@@ -438,14 +440,18 @@ it('模型上游失败时 Run、Turn、Step 和 Model Call span 都记录失败�
         .all()
         .map((row) => row.outcome),
     ).toEqual(['failed'])
+    // agent 与 assistant Step 都落失败终态，agent Step 在前
     expect(
       runtime.db
         .select()
         .from(aiRunSteps)
         .where(eq(aiRunSteps.runId, failedRunId))
         .all()
-        .map((row) => ({ outcome: row.outcome, errorCode: row.errorCode })),
-    ).toEqual([{ outcome: 'failed', errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR }])
+        .map((row) => ({ kind: row.kind, outcome: row.outcome, errorCode: row.errorCode })),
+    ).toEqual([
+      { kind: 'agent', outcome: 'failed', errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR },
+      { kind: 'assistant', outcome: 'failed', errorCode: ApiErrorCodes.AI_UPSTREAM_ERROR },
+    ])
     expect(events.find((event) => event.type === 'turn.completed')?.data).toMatchObject({ outcome: 'failed' })
   } finally {
     cleanup()
@@ -665,7 +671,7 @@ it('abort 的 Run、Turn、Step 和 Model Call span 记录取消终态', async (
     expect(spanByName(spans, 'starter.ai.step').attributes['starter.ai.step.outcome']).toBe('aborted')
     expect(spanByName(spans, 'starter.ai.model_call').attributes['starter.ai.model_call.result']).toBe('cancelled')
 
-    // abort 的 Turn / Step 记 aborted，不留 running 记录
+    // abort 的 Turn / Step 记 aborted，不留 running 记录；agent Step 同样落 aborted
     expect(
       runtime.db
         .select()
@@ -680,8 +686,11 @@ it('abort 的 Run、Turn、Step 和 Model Call span 记录取消终态', async (
         .from(aiRunSteps)
         .where(eq(aiRunSteps.runId, runId ?? ''))
         .all()
-        .map((row) => row.outcome),
-    ).toEqual(['aborted'])
+        .map((row) => ({ kind: row.kind, outcome: row.outcome })),
+    ).toEqual([
+      { kind: 'agent', outcome: 'aborted' },
+      { kind: 'assistant', outcome: 'aborted' },
+    ])
   } finally {
     cleanup()
     await rm(directory, { recursive: true, force: true })
@@ -721,6 +730,7 @@ it('tool 失败但模型继续并最终成功时 Turn 和 Step 都记 succeeded'
     streamSimple,
     tools: createAiToolRegistry([
       defineAiTool({
+        sideEffect: 'read_only',
         name: 'failing',
         version: '1.0.0',
         description: 'Always fails',
@@ -746,7 +756,7 @@ it('tool 失败但模型继续并最终成功时 Turn 和 Step 都记 succeeded'
     expect(events.at(-1)?.type).toBe('run.completed')
     expect(events.find((event) => event.type === 'tool.completed')?.data).toMatchObject({ status: 'failed' })
 
-    // Tool 失败不等于 Run 失败：两轮 Turn / Step 都是 succeeded
+    // Tool 失败不等于 Run 失败：两轮 Turn / Step 都是 succeeded，agent Step 也是 succeeded
     expect(
       runtime.db
         .select()
@@ -761,10 +771,11 @@ it('tool 失败但模型继续并最终成功时 Turn 和 Step 都记 succeeded'
         .from(aiRunSteps)
         .where(eq(aiRunSteps.runId, runId))
         .all()
-        .map((row) => ({ outcome: row.outcome, errorCode: row.errorCode })),
+        .map((row) => ({ kind: row.kind, outcome: row.outcome, errorCode: row.errorCode })),
     ).toEqual([
-      { outcome: 'succeeded', errorCode: null },
-      { outcome: 'succeeded', errorCode: null },
+      { kind: 'agent', outcome: 'succeeded', errorCode: null },
+      { kind: 'assistant', outcome: 'succeeded', errorCode: null },
+      { kind: 'assistant', outcome: 'succeeded', errorCode: null },
     ])
     expect(
       runtime.db

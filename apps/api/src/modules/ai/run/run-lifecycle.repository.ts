@@ -4,17 +4,28 @@ import type { AppDatabase } from '@api/infra/db/client.js'
 import { aiRunSteps, aiRunTurns } from '../ai.schema.js'
 
 export type RunTurnOutcome = 'running' | 'succeeded' | 'failed' | 'aborted'
-export type RunStepOutcome = 'running' | 'succeeded' | 'retry' | 'failed' | 'aborted' | 'deferred' | 'overflow'
+export type RunStepOutcome =
+  'running' | 'succeeded' | 'retry' | 'failed' | 'aborted' | 'deferred' | 'overflow' | 'interrupted'
 
 export interface AiRunLifecycleRepository {
-  beginTurn: (input: { id: string; runId: string; turnIndex: number; startedAt: Date }) => void
+  beginTurn: (input: {
+    id: string
+    runId: string
+    turnIndex: number
+    /** 产生该 turn 的执行 attempt 序号。 */
+    attemptNo: number
+    startedAt: Date
+  }) => void
   completeTurn: (id: string, outcome: Exclude<RunTurnOutcome, 'running'>, finishedAt: Date) => void
   beginStep: (input: {
     id: string
     runId: string
-    turnId: string
+    /** 所属 turn；顶层 agent Step 不属于任何 turn，传 null。 */
+    turnId: string | null
     kind: string
     attempt: number
+    /** 产生该 step 的执行 attempt 序号。 */
+    attemptNo: number
     startedAt: Date
   }) => void
   completeStep: (
@@ -29,7 +40,13 @@ export interface AiRunLifecycleRepository {
 }
 
 export function createAiRunLifecycleRepository(db: AppDatabase): AiRunLifecycleRepository {
-  function beginTurn(input: { id: string; runId: string; turnIndex: number; startedAt: Date }): void {
+  function beginTurn(input: {
+    id: string
+    runId: string
+    turnIndex: number
+    attemptNo: number
+    startedAt: Date
+  }): void {
     db.insert(aiRunTurns)
       .values({ ...input, outcome: 'running' })
       .run()
@@ -43,9 +60,10 @@ export function createAiRunLifecycleRepository(db: AppDatabase): AiRunLifecycleR
   function beginStep(input: {
     id: string
     runId: string
-    turnId: string
+    turnId: string | null
     kind: string
     attempt: number
+    attemptNo: number
     startedAt: Date
   }): void {
     db.insert(aiRunSteps)

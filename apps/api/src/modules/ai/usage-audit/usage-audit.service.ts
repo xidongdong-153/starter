@@ -115,6 +115,7 @@ export function createAiUsageAuditService(repository: AiUsageAuditRepository, lo
     toolName: string
     toolVersion: string | null
     timeoutMs: number
+    idempotencyToken: string
   }): AiToolExecutionAuditHandle | null {
     if (!input.modelCallId) return null
     const handle: AiToolExecutionAuditHandle = {
@@ -138,6 +139,7 @@ export function createAiUsageAuditService(repository: AiUsageAuditRepository, lo
         toolName: input.toolName,
         toolVersion: input.toolVersion,
         timeoutMs: input.timeoutMs,
+        idempotencyToken: input.idempotencyToken,
         startedAt: handle.startedAt,
       })
       return handle
