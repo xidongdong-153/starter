@@ -1,0 +1,30 @@
+{
+  "id": "api-ai-agent-architecture-research",
+  "name": "api-ai-agent-architecture-research",
+  "title": "调研 api-ai Agent 架构优化方向",
+  "description": "",
+  "status": "completed",
+  "dev_type": null,
+  "scope": null,
+  "package": "admin",
+  "priority": "P2",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-09-02",
+  "completedAt": "2026-09-03",
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-02-ai-run-durable-lease",
+    "09-02-ai-run-resolved-manifest",
+    "09-02-ai-run-attempt-step"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

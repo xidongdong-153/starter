@@ -1,0 +1,8 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"API 后端分层、质量检查与 AI 专项规范入口"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Agent Run 生命周期、并发、恢复与 SSE 契约"}
+{"file":".trellis/spec/api/backend/pi-agent-execution-guidelines.md","reason":"Pi executor、Tool adapter、Session 与事件映射边界"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"共享 Zod 契约、DTO 与跨层变更要求"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/course-langgraph-agent-patterns.md","reason":"课程概念取舍与迁移边界"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/current-api-ai-gap-analysis.md","reason":"当前执行链、源码证据、稳定性与组合能力缺口"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/pi-reuse-assessment.md","reason":"Pi 可复用能力、AgentHarness 限制与版本风险"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/agent-orchestration-framework-comparison.md","reason":"LangGraph、Vercel AI SDK、Mastra 与保持现状的选型依据"}

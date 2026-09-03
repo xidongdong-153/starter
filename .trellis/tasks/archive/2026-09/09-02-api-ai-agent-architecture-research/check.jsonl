@@ -1,0 +1,8 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"检查 API 分层与专项规范符合性"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"检查类型、Lint、Format、测试与 endpoint 质量要求"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"检查 Run 状态、并发、恢复与事件不变量"}
+{"file":".trellis/spec/api/backend/pi-agent-execution-guidelines.md","reason":"检查 Pi executor 与产品运行面的职责边界"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"检查共享契约与客户端影响"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/current-api-ai-gap-analysis.md","reason":"复核方案是否解决有源码证据的真实缺口"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/pi-reuse-assessment.md","reason":"复核是否误用未完成的 Pi Harness 能力"}
+{"file":".trellis/tasks/09-02-api-ai-agent-architecture-research/research/agent-orchestration-framework-comparison.md","reason":"复核框架选择、适配成本和采用门槛"}
