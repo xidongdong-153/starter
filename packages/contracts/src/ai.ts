@@ -1195,6 +1195,66 @@ const agentRunIdempotencyKeySchema = z
   .max(128)
   .regex(/^[\w.:-]+$/u)
 
+export const executableAgentInputSchema = z.strictObject({
+  lane: agentLaneSchema.optional(),
+  input: agentRunInputTextSchema,
+  idempotencyKey: agentRunIdempotencyKeySchema.optional(),
+  attachmentIds: agentAttachmentIdsSchema.optional(),
+})
+export type ExecutableAgentInput = z.infer<typeof executableAgentInputSchema>
+
+export const executableControlSchema = z.enum(['abort', 'steer', 'follow_up'])
+export type ExecutableControl = z.infer<typeof executableControlSchema>
+
+export const executableAgentControls = ['abort', 'steer', 'follow_up'] as const
+const executableAgentControlsSchema = z.tuple([z.literal('abort'), z.literal('steer'), z.literal('follow_up')])
+
+const executableJsonValueSchema = z.json()
+
+/** Executable Manifest 中的 JSON Schema；只接受 JSON 可序列化对象。 */
+export const executableJsonObjectSchema = z.record(z.string(), z.unknown()).superRefine((value, context) => {
+  if (!executableJsonValueSchema.safeParse(value).success) {
+    context.addIssue({ code: 'custom', message: '必须是 JSON 可序列化对象' })
+  }
+})
+export type ExecutableJsonObject = z.infer<typeof executableJsonObjectSchema>
+
+export const executableManifestOutputSchema = z.strictObject({
+  contract: aiOutputContractRefSchema,
+  schema: executableJsonObjectSchema,
+})
+export type ExecutableManifestOutput = z.infer<typeof executableManifestOutputSchema>
+
+export const executableManifestV1Schema = z.strictObject({
+  manifestSchemaVersion: z.literal(1),
+  kind: z.literal('agent'),
+  id: uuidSchema,
+  version: z.number().int().min(1),
+  name: agentDefinitionNameSchema,
+  description: agentDefinitionDescriptionSchema,
+  inputSchema: executableJsonObjectSchema,
+  output: executableManifestOutputSchema.nullable(),
+  eventProtocolVersion: z.literal(1),
+  controls: executableAgentControlsSchema,
+  sideEffect: aiToolSideEffectSchema,
+  manifestHash: sha256HexSchema,
+})
+export type ExecutableManifestV1 = z.infer<typeof executableManifestV1Schema>
+
+export const executableManifestListQuerySchema = agentDefinitionListQuerySchema
+export type ExecutableManifestListQuery = z.infer<typeof executableManifestListQuerySchema>
+
+export const executableManifestListSchema = z.strictObject({
+  items: z.array(executableManifestV1Schema),
+  total: z.number().int().min(0),
+  page: z.number().int().min(1),
+  pageSize: z.number().int().min(1).max(100),
+})
+export type ExecutableManifestList = z.infer<typeof executableManifestListSchema>
+
+export const executableManifestParamsSchema = z.strictObject({ executableId: uuidSchema })
+export type ExecutableManifestParams = z.infer<typeof executableManifestParamsSchema>
+
 /**
  * startRun 的内联 Agent 配置：不经过 ai_agent_definitions，直接在请求体里
  * 给出执行配置。`systemPrompt`（内联文本）与 `systemPromptId`（引用）二选一。
@@ -1221,6 +1281,8 @@ export type InlineAgentRunConfig = z.infer<typeof inlineAgentRunConfigSchema>
 export const startAgentRunSchema = z
   .strictObject({
     agentId: uuidSchema.optional(),
+    /** 仅校验显式 Agent 的当前 revision；不能用于 Session 默认 Agent 或内联配置。 */
+    expectedAgentRevision: z.number().int().min(1).optional(),
     /** 内联 Agent 配置；与 agentId 互斥，两者都不传时回落 Session 的 defaultAgentId。 */
     config: inlineAgentRunConfigSchema.optional(),
     lane: agentLaneSchema.optional(),
@@ -1233,8 +1295,25 @@ export const startAgentRunSchema = z
     /** 可选图片附件引用；与 `input` 一起构成首条 user message。 */
     attachmentIds: agentAttachmentIdsSchema.optional(),
   })
-  .refine((value) => !(value.agentId !== undefined && value.config !== undefined), {
-    message: 'agentId 与 config 不能同时提供',
+  .superRefine((value, context) => {
+    if (value.agentId !== undefined && value.config !== undefined) {
+      context.addIssue({ code: 'custom', path: ['config'], message: 'agentId 与 config 不能同时提供' })
+    }
+    if (value.expectedAgentRevision === undefined) return
+    if (value.agentId === undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expectedAgentRevision'],
+        message: 'expectedAgentRevision 必须与显式 agentId 同时提供',
+      })
+    }
+    if (value.config !== undefined) {
+      context.addIssue({
+        code: 'custom',
+        path: ['expectedAgentRevision'],
+        message: 'expectedAgentRevision 不能与 config 同时提供',
+      })
+    }
   })
 
 export type StartAgentRunInput = z.infer<typeof startAgentRunSchema>

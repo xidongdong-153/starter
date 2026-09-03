@@ -3,13 +3,16 @@ import type { MiddlewareHandler } from 'hono'
 import { OpenAPIHono } from '@hono/zod-openapi'
 
 import { createSuccessResponse } from '@api/shared/response.js'
+import { toRuntimeAccessContext } from '@api/modules/ai/principal.js'
 
 import {
   createAdminAgentDefinitionRoute,
   getAdminAgentDefinitionRoute,
+  getExecutableManifestRoute,
   getPublicAgentDefinitionRoute,
   listAdminAgentDefinitionsRoute,
   listAdminAiToolsRoute,
+  listExecutableManifestsRoute,
   listPublicAgentDefinitionsRoute,
   listPublicAiToolsRoute,
   updateAdminAgentDefinitionRoute,
@@ -27,6 +30,7 @@ export function createAiAgentDefinitionRoute(deps: {
   requireManage: AiRouteMiddleware
 }) {
   const { service, requireAuth, requireRuntime, requireRead, requireManage } = deps
+  const access = (c: { var: HonoEnv['Variables'] }) => toRuntimeAccessContext(c.var.principal, c.var.resourceScope)
 
   return new OpenAPIHono<HonoEnv>()
     .openapi({ ...listPublicAgentDefinitionsRoute, middleware: requireRuntime }, (c) =>
@@ -34,6 +38,21 @@ export function createAiAgentDefinitionRoute(deps: {
     )
     .openapi({ ...getPublicAgentDefinitionRoute, middleware: requireRuntime }, (c) =>
       c.json(createSuccessResponse(service.getPublic(c.req.valid('param').agentId), c.var.requestId), 200),
+    )
+    .openapi({ ...listExecutableManifestsRoute, middleware: requireRuntime }, async (c) =>
+      c.json(
+        createSuccessResponse(await service.listExecutableManifests(c.req.valid('query'), access(c)), c.var.requestId),
+        200,
+      ),
+    )
+    .openapi({ ...getExecutableManifestRoute, middleware: requireRuntime }, async (c) =>
+      c.json(
+        createSuccessResponse(
+          await service.getExecutableManifest(c.req.valid('param').executableId, access(c)),
+          c.var.requestId,
+        ),
+        200,
+      ),
     )
     .openapi(
       {

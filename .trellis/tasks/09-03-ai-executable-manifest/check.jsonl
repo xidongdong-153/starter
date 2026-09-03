@@ -1,0 +1,5 @@
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"检查版本校验是否早于幂等、lease 和 Run row。"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API endpoint、测试和全量质量检查要求。"}
+{"file":".trellis/spec/contracts/backend/quality-guidelines.md","reason":"共享契约 strict schema、构建和跨端检查要求。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 Manifest schema、presenter 和 route 的跨层一致性。"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"按已确认的 D1 边界核对实现是否越界或遗漏。"}

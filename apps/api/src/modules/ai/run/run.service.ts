@@ -238,6 +238,12 @@ export function createAiAgentRunService(input: {
     const resolved = startInput.input.config
       ? await agentService.resolveInline(startInput.input.config, access)
       : await resolvePresetAgent(startInput.input, session, access)
+    if (
+      startInput.input.expectedAgentRevision !== undefined &&
+      resolved.revision !== startInput.input.expectedAgentRevision
+    ) {
+      throw new AppError(ApiErrorCodes.AI_AGENT_REVISION_CONFLICT, 'Agent revision 与请求期望不一致', 409)
+    }
     const lane = startInput.input.lane ?? 'main'
 
     // 附件解析与能力硬校验在幂等预检查之前：失败请求不 reserve、

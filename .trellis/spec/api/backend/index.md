@@ -43,6 +43,7 @@ pnpm --filter @starter/api test
 - `authentication-guidelines.md`：Better Auth OAuth provider、同邮箱账号关联、Admin 绑定和错误校验契约。
 - `agent-session-guidelines.md`：AI Session 子域的归属、创建补偿、transcript 投影和一致性检查。
 - `agent-run-guidelines.md`：AgentRun 子域的启动、SSE、终态持久化、控制接口、并发和启动恢复。
+- `executable-manifest-guidelines.md`：可执行 Agent 发现、Manifest V1、稳定 hash 和 Run revision 前置校验。
 - `pi-agent-execution-guidelines.md`：Pi Agent executor、原生 stream、Tool adapter、Session entry、compaction、active Run 和审计边界。
 - `ai-integration-guidelines.md`：AI Provider、加密凭据、模型目录、白名单、默认模型和 SSE 调用契约。
 - `product-module-guidelines.md`：chat / flow 等产品模块的薄代理约定、RPC 类型导出和主 AppType 类型上限。

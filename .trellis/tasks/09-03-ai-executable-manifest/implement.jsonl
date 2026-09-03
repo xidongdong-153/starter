@@ -1,0 +1,7 @@
+{"file":".trellis/spec/api/backend/index.md","reason":"API 分层、端点和质量检查入口。"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 启动顺序、幂等、lease、SSE 和错误语义。"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"Agent presenter、service、route 文件放置规则。"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"新增 revision conflict error code 与统一响应边界。"}
+{"file":".trellis/spec/contracts/backend/index.md","reason":"共享 Zod schema 和 DTO 的依赖边界。"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"Manifest 从 contracts 到 service、route、客户端的跨层数据检查。"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"阶段 D 当前源码证据、版本语义、范围和测试建议。"}

@@ -7,6 +7,9 @@ import type {
   AiToolRef,
   AiToolSummary,
   CreateAgentDefinitionInput,
+  ExecutableManifestList,
+  ExecutableManifestListQuery,
+  ExecutableManifestV1,
   InlineAgentRunConfig,
   UpdateAgentDefinitionInput,
   UpdateAgentDefinitionStatusInput,
@@ -27,6 +30,7 @@ import { sha256Hex } from '../run/resolved-manifest.js'
 import { AiAgentDefinitionRevisionConflictError } from './agent.repository.js'
 import type { AiAgentDefinitionRecord, AiAgentDefinitionRepository } from './agent.repository.js'
 import { parseAgentDefinitionConfig, toAgentDefinitionDetail, toAgentDefinitionSummary } from './agent.presenter.js'
+import { toExecutableManifestV1 } from './executable-manifest.presenter.js'
 
 /**
  * Run 启动时固化的解析事实：资源版本引用与内容 hash。只含 revision 与
@@ -69,6 +73,11 @@ export interface AiAgentDefinitionService {
     pageSize: number
   }
   getPublic: (id: string) => AgentDefinitionSummary
+  listExecutableManifests: (
+    query: ExecutableManifestListQuery,
+    access: RuntimeAccessContext,
+  ) => Promise<ExecutableManifestList>
+  getExecutableManifest: (id: string, access: RuntimeAccessContext) => Promise<ExecutableManifestV1>
   listAdmin: (query: AgentDefinitionListQuery) => {
     items: AgentDefinitionDetail[]
     total: number
@@ -115,6 +124,25 @@ export function createAiAgentDefinitionService(input: {
     const record = requireRecord(id)
     if (record.status !== 'enabled') throw notFound()
     return toAgentDefinitionSummary(record)
+  }
+
+  async function listExecutableManifests(
+    query: ExecutableManifestListQuery,
+    access: RuntimeAccessContext,
+  ): Promise<ExecutableManifestList> {
+    const result = repository.list({ ...query, status: 'enabled' })
+    const items = await Promise.all(
+      result.items.map(async (record) =>
+        toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(record.id, access)),
+      ),
+    )
+    return { items, total: result.total, page: query.page, pageSize: query.pageSize }
+  }
+
+  async function getExecutableManifest(id: string, access: RuntimeAccessContext): Promise<ExecutableManifestV1> {
+    const record = requireRecord(id)
+    if (record.status !== 'enabled') throw notFound()
+    return toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(id, access))
   }
 
   function listAdmin(query: AgentDefinitionListQuery) {
@@ -482,6 +510,8 @@ export function createAiAgentDefinitionService(input: {
   return {
     listPublic,
     getPublic,
+    listExecutableManifests,
+    getExecutableManifest,
     listAdmin,
     getAdmin,
     create,

@@ -1,0 +1,30 @@
+{
+  "id": "api-ai-executable-runtime",
+  "name": "api-ai-executable-runtime",
+  "title": "阶段 D：Executable Manifest 与窄运行端口",
+  "description": "把已发布 Agent 变成可发现、可按版本校验并经窄运行端口调用的 capability。",
+  "status": "planning",
+  "dev_type": null,
+  "scope": null,
+  "package": "api",
+  "priority": "P1",
+  "creator": "xidongdong-153",
+  "assignee": "xidongdong-153",
+  "createdAt": "2026-09-03",
+  "completedAt": null,
+  "branch": null,
+  "base_branch": "main",
+  "worktree_path": null,
+  "commit": null,
+  "pr_url": null,
+  "subtasks": [],
+  "children": [
+    "09-03-ai-executable-manifest",
+    "09-03-ai-agent-runtime-port",
+    "09-03-ai-app-capability-policy"
+  ],
+  "parent": null,
+  "relatedFiles": [],
+  "notes": "",
+  "meta": {}
+}

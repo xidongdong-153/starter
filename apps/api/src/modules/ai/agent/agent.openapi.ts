@@ -8,6 +8,10 @@ import {
   agentDefinitionSummaryListSchema,
   agentDefinitionSummarySchema,
   createAgentDefinitionSchema,
+  executableManifestListQuerySchema,
+  executableManifestListSchema,
+  executableManifestParamsSchema,
+  executableManifestV1Schema,
   updateAgentDefinitionSchema,
   updateAgentDefinitionStatusSchema,
   uuidSchema,
@@ -57,6 +61,36 @@ export const getPublicAgentDefinitionRoute = createRoute({
     200: apiSuccessResponse(agentDefinitionSummarySchema, '已启用的 Agent', 'AgentDefinitionSummaryResponse'),
     401: unauthorizedResponse,
     404: notFoundResponse,
+  },
+})
+
+export const listExecutableManifestsRoute = createRoute({
+  method: 'get',
+  path: '/api/ai/executables',
+  tags: runtimeTags,
+  security: runtimeSecurity,
+  request: { query: executableManifestListQuerySchema },
+  responses: {
+    200: apiSuccessResponse(executableManifestListSchema, '当前可执行 Agent 清单', 'ExecutableManifestListResponse'),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    500: internalErrorResponse,
+  },
+})
+
+export const getExecutableManifestRoute = createRoute({
+  method: 'get',
+  path: '/api/ai/executables/{executableId}',
+  tags: runtimeTags,
+  security: runtimeSecurity,
+  request: { params: executableManifestParamsSchema },
+  responses: {
+    200: apiSuccessResponse(executableManifestV1Schema, '当前可执行 Agent', 'ExecutableManifestResponse'),
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+    500: internalErrorResponse,
   },
 })
 

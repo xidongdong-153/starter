@@ -167,6 +167,7 @@ export const startAgentRunRoute = createRoute({
     '同 key 已绑定其他 session 时返回 409 AI.IDEMPOTENCY_KEY_CONFLICT；不同调用方（不同应用或用户）使用相同 key 互不相关。',
     'key 只在 Run 行创建成功后被消费：lane 占用（AI.SESSION_BUSY）、参数校验失败、Session 或 Agent 不存在等启动前失败不消费 key，之后同 key 重试会创建新 Run。',
     'Run 已终态（含 failed）后同 key 重试返回那个 Run，不重新执行；需要重跑请换新 key。',
+    'body 可选 expectedAgentRevision：只能与显式 agentId 同时使用；当前 revision 不匹配时在附件、幂等和 lane lease 处理前返回 409 AI.AGENT_REVISION_CONFLICT。',
   ].join(''),
   request: streamRequest,
   responses: {
