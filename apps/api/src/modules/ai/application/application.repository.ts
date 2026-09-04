@@ -74,6 +74,36 @@ export function createAiApplicationRepository(db: AppDatabase) {
       })
       return record
     },
+    updatePolicy(
+      id: string,
+      policyJson: string,
+      actorId: string,
+      now: Date,
+      requestId: string | null,
+    ): AiAppCredentialRecord | undefined {
+      return db.transaction((tx) => {
+        const updated = tx
+          .update(aiAppCredentials)
+          .set({ policyJson, updatedBy: actorId, updatedAt: now })
+          .where(and(eq(aiAppCredentials.id, id), eq(aiAppCredentials.status, 'active')))
+          .returning()
+          .get()
+        if (!updated) return undefined
+        tx.insert(aiAppCredentialAuditEvents)
+          .values({
+            id: generateId(),
+            appId: id,
+            actorId,
+            action: 'policy_updated',
+            tenantId: updated.tenantId,
+            projectId: updated.projectId,
+            requestId,
+            createdAt: now,
+          })
+          .run()
+        return updated
+      })
+    },
     markUsed(id: string, now: Date): void {
       db.update(aiAppCredentials).set({ lastUsedAt: now }).where(eq(aiAppCredentials.id, id)).run()
     },

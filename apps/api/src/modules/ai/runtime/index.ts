@@ -10,3 +10,4 @@ export type {
   AgentRuntimeStartInput,
   AgentRuntimeStartResult,
 } from './agent-runtime.port.js'
+export { enforceControlPolicy, enforceStartPolicy, manifestAllowedByPolicy, strongestSideEffect } from './app-policy.js'

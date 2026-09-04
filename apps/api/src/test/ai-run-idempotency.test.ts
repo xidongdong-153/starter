@@ -271,8 +271,8 @@ it('两个 product_app 凭据使用相同 key 各自独立成 Run', async () => 
     seedEnabledModel(runtime)
     const agentId = seedAgent(runtime, [])
     const admin = await registerAdmin(app, runtime)
-    const appA = await createAppCredential(app, admin.cookie, 'Product A', 'tenant-a', 'project-a')
-    const appB = await createAppCredential(app, admin.cookie, 'Product B', 'tenant-a', 'project-b')
+    const appA = await createAppCredential(app, admin.cookie, 'Product A', 'tenant-a', 'project-a', agentId)
+    const appB = await createAppCredential(app, admin.cookie, 'Product B', 'tenant-a', 'project-b', agentId)
     const key = 'scope-shared-01'
 
     const runA = await bearerStartRun(app, appA.secret, agentId, key)
@@ -438,11 +438,23 @@ async function createAppCredential(
   name: string,
   tenantId: string,
   projectId: string,
+  agentId: string,
 ): Promise<{ secret: string }> {
   const response = await app.request('/api/ai/admin/applications', {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, tenantId, projectId }),
+    // product_app 启动 Run 需要允许该 Agent 的 policy（seed 后 revision 为 1）。
+    body: JSON.stringify({
+      name,
+      tenantId,
+      projectId,
+      policy: {
+        schemaVersion: 1,
+        executables: [{ id: agentId, version: 1 }],
+        controls: ['abort', 'steer', 'follow_up'],
+        maxSideEffect: 'non_idempotent_write',
+      },
+    }),
   })
   expect(response.status).toBe(200)
   const result = await readSuccess<{ secret: string }>(response)

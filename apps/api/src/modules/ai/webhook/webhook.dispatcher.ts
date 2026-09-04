@@ -8,6 +8,7 @@ import {
   createAiWebhookRepository,
   type AiWebhookEndpointRecord,
   type DueDeliveryRow,
+  type TerminalProductAppRunCursor,
   type TerminalProductAppRunRow,
 } from './webhook.repository.js'
 import type { WebhookCrypto } from './webhook.crypto.js'
@@ -15,6 +16,9 @@ import type { WebhookCrypto } from './webhook.crypto.js'
 const ENQUEUE_BATCH_LIMIT = 200
 const DELIVER_BATCH_LIMIT = 50
 const LAST_ERROR_MAX_LENGTH = 500
+// claim TTL 必须大于单次出站请求超时（AI_WEBHOOK_TIMEOUT_MS，默认 10s）；
+// 超时配得比 TTL 长时，多实例下会出现 claim 过期被重领的合法重复 POST，接收方按 X-Starter-Delivery-Id 去重。
+const DELIVERY_CLAIM_TTL_MS = 60_000
 
 export interface AiWebhookDispatcherSettings {
   sweepIntervalMs: number
@@ -60,7 +64,7 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
   const backoffMs = settings.backoffMs.length > 0 ? settings.backoffMs : [0]
   let timer: ReturnType<typeof setInterval> | null = null
   let ticking = false
-  let lastSweptFinishedAt = 0
+  let lastSweptCursor: TerminalProductAppRunCursor | null = null
 
   function start(): void {
     if (timer) return
@@ -94,11 +98,11 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
   }
 
   async function enqueuePhase(): Promise<void> {
-    const runs = repository.listTerminalProductAppRunsAfter(lastSweptFinishedAt, ENQUEUE_BATCH_LIMIT)
+    const runs = repository.listTerminalProductAppRunsAfter(lastSweptCursor, ENQUEUE_BATCH_LIMIT)
     if (runs.length === 0) return
     const endpointsByApp = groupEndpointsByApp(repository.listEnabledEndpoints())
     const now = new Date()
-    let maxFinishedAt = lastSweptFinishedAt
+    let nextCursor = lastSweptCursor
     for (const run of runs) {
       const payloadJson = buildPayloadJson(run, now)
       for (const endpoint of endpointsByApp.get(run.appId) ?? []) {
@@ -111,6 +115,9 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
           runId: run.id,
           eventType: 'run.terminal',
           payloadJson,
+          eventId: run.eventId,
+          sequence: run.sequence,
+          eventProtocolVersion: 1,
           status: 'pending',
           attempts: 0,
           nextAttemptAt: null,
@@ -118,14 +125,14 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
           updatedAt: now,
         })
       }
-      maxFinishedAt = Math.max(maxFinishedAt, run.finishedAt.getTime())
+      nextCursor = { finishedAt: run.finishedAt.getTime(), runId: run.id }
     }
-    // 全部入队成功才推进水位；中途抛异常时水位不动，下一 tick 重扫（幂等）。
-    lastSweptFinishedAt = maxFinishedAt
+    // 全部入队成功才推进游标；中途抛异常时游标不动，下一 tick 重扫（幂等）。
+    lastSweptCursor = nextCursor
   }
 
   async function deliverPhase(): Promise<void> {
-    const due = repository.listDueDeliveries(DELIVER_BATCH_LIMIT, new Date())
+    const due = repository.claimDueDeliveries(DELIVER_BATCH_LIMIT, new Date(), DELIVERY_CLAIM_TTL_MS)
     for (const item of due) {
       try {
         await deliverOne(item)
@@ -171,6 +178,7 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
           'X-Starter-Event': delivery.eventType,
           'X-Starter-Timestamp': String(timestampSec),
           'X-Starter-Signature': signature,
+          'X-Starter-Delivery-Id': delivery.id,
         },
         body,
       })
@@ -252,6 +260,9 @@ function buildPayloadJson(run: TerminalProductAppRunRow, now: Date): string {
     appId: run.appId,
     runId: run.id,
     sessionId: run.sessionId,
+    eventId: run.eventId,
+    sequence: run.sequence,
+    eventProtocolVersion: 1,
     lane: run.lane,
     agentId: run.agentId,
     agentRevision: run.agentRevision,

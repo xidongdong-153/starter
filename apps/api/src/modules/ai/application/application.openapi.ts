@@ -3,6 +3,7 @@ import {
   aiApplicationSchema,
   aiApplicationSecretSchema,
   createAiApplicationSchema,
+  updateAiApplicationPolicySchema,
 } from '@starter/contracts'
 import { createRoute, z } from '@hono/zod-openapi'
 import {
@@ -13,16 +14,6 @@ import {
   notFoundResponse,
   unauthorizedResponse,
 } from '@api/openapi/responses.js'
-import type { HonoEnv } from '@api/shared/hono-env.js'
-import type { OpenAPIHono } from '@hono/zod-openapi'
-
-export function registerAiApplicationOpenApiComponents(app: OpenAPIHono<HonoEnv>) {
-  app.openAPIRegistry.registerComponent('securitySchemes', 'bearerAuth', {
-    type: 'http',
-    scheme: 'bearer',
-    description: 'product_app 凭据（secret），配合 X-AI-External-User-Id 等头使用',
-  })
-}
 
 const tags = ['AI Control']
 const security = [{ cookieAuth: [] }]
@@ -84,6 +75,28 @@ export const revokeAiApplicationRoute = createRoute({
   request: { params: aiApplicationParamsSchema },
   responses: {
     200: apiSuccessResponse(aiApplicationSchema, '已撤销应用', 'RevokedAiApplicationResponse'),
+    401: unauthorizedResponse,
+    403: forbiddenResponse,
+    404: notFoundResponse,
+    409: conflictResponse,
+  },
+})
+
+export const updateAiApplicationPolicyRoute = createRoute({
+  method: 'patch',
+  path: '/api/ai/admin/applications/{appId}/policy',
+  tags,
+  security,
+  request: {
+    params: aiApplicationParamsSchema,
+    body: {
+      content: { 'application/json': { schema: updateAiApplicationPolicySchema } },
+      required: true,
+    },
+  },
+  responses: {
+    200: apiSuccessResponse(aiApplicationSchema, '已更新的应用策略', 'UpdatedAiApplicationPolicyResponse'),
+    400: invalidRequestResponse,
     401: unauthorizedResponse,
     403: forbiddenResponse,
     404: notFoundResponse,

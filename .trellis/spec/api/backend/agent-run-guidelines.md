@@ -88,6 +88,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - `ai_agent_runs` 存 Run 索引与无 secret snapshot：id、session_id、agent_id、lane、status、agent_revision、snapshot_json、request_id、idempotency_key、idempotency_scope、final_entry_id、error_code、created_at、started_at、finished_at。message 和事件不进主库。
 - snapshot 用 `agentRunSnapshotSchema` 校验后 `JSON.stringify` 保存；读取时再次 parse，失败视为数据损坏（运行时不应发生）。
 - startRun 幂等键：`idempotency_key + idempotency_scope` 的部分唯一索引（`WHERE idempotency_key IS NOT NULL`）是最终防线；scope 由 `RuntimeAccessContext` 七字段拼出（kind|tenantId|projectId|principalId|externalUserId|subjectType|subjectId），与 accessWhere 判据一致。预检查在 reserve 之前：命中同 Session 直接返回既有 Run 的 runId（SSE 走 subscribe 回放），异 Session 409；create 命中唯一约束时先释放原始 lease 再重查走同一分支。key 只在 Run 行创建成功后被消费（busy、校验失败、404 都不消费），终态 Run（含 failed）同 key 返回原 Run 不重跑。
+- product_app capability policy：`runtime/app-policy.ts` 是唯一判定模块（`strongestSideEffect` / `enforceStartPolicy` / `enforceControlPolicy` / `manifestAllowedByPolicy`），policy 判断不得写进 route、transport 或产品模块。guard 把 `ai_app_credentials.policy_json` parse 成 `RuntimeAccessContext.policy`，null（存量行）或 parse 失败一律 fail closed（等价拒绝一切），starter_user 恒 pass-through。`startRun` 的 `enforceStartPolicy` 位于 expectedAgentRevision 检查之后、幂等键预检查 / registry reserve / db lease / Run row 之前，403 全程无副作用（不建 Run、不占 lease、不消费 idempotencyKey）；abort/steer/followUp 在查到 scoped Run（404 判据在前）之后、操作 active handle 之前只查 controls，不重查 executables（已在跑的 Run 不追溯）。Agent revision 变化后旧 policy 拒绝，不执行旧版本也不自动升级。discovery（`listExecutableManifests` / `getExecutableManifest`）按 policy 过滤，不允许的详情返回 404。policy 经 `PATCH /api/ai/admin/applications/{appId}/policy` 更新，写 `policy_updated` 审计；rotate 保留 policy，revoke 仍 401。
 - Run Service 是 lane lease（进程内 registry + 持久 lease）reserve/acquire/attach/release、Run row、RunEventPublisher、`run.started` 和 terminal event 的唯一所有者；Executor 不创建或更新主库 Run。
 - Session lane 的执行排他以 `ai_agent_lane_leases` 持久 lease 为权威（`run/lane-lease.ts`；TTL 90s、续租 30s 是代码常量，不配环境变量）。`startRun` 先查进程内 registry（快速失败路径），再 acquire db lease：条件 INSERT / 过期接管（`fencing_token` +1）都不命中返回 busy，映射 `AI.SESSION_BUSY`；acquire、Run row 创建之间任何失败都要同时释放两层 lease。ownerId 用 `parseEnv` 的 `APP_INSTANCE_ID`。执行期间每 30s 续租一次，续租失败（被接管或过期）调用 registry handle 的 abort，走现有 aborted 收尾。
 - 终态事务（`completeWithTerminalEvent`）在同一事务内做 fencing 校验：执行路径传入 `lease.ownerId`，lease 行的 owner、`fencing_token` 与 Run row 的 `execution_fencing_token` 一致且未过期才按实际结果提交；失配或过期时终态强制写 `interrupted`（`AI.RUN_INTERRUPTED`），丢弃实际执行结果。恢复扫描路径不传 lease，Run row token 为 NULL 的历史行也跳过校验。
@@ -106,6 +107,7 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
 - `activeRun` 的判据只有主库 Run 行的 `starting` / `running`，不查 `ActiveRunRegistry`：registry 是进程内索引，进程重启后 `recoverInterrupted` 已经把非终态 Run 落成 `interrupted`，此时应该返回 null，让客户端保持静态历史。查询参数 `lane` 默认 `main`，响应 data 与 `GET /runs/{runId}` 同源（`toAgentRun(record, readLiveSnapshot(record))`），没有在跑的 Run 时 data 是 null 而不是 404。
 - SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。两处 SSE handler（创建流与恢复流）的心跳写入必须都是真实换行 `": heartbeat\n\n"`——写字面量 `\\n` 会产出永不封帧的垃圾字节并粘连下一帧。
+- SSE writer 未观察到终态事件就结束（iterator 提前 EOF 或抛错、事件队列超限关闭）时，发送版本化 transport frame `event: stream.resume_required`（`streamResumeRequiredFrameSchema`：type、eventProtocolVersion、lastSequence、reason `transport_closed`），不带 SSE id；客户端按 lastSequence 重连 `/events/stream`。frame 是纯 transport 信号：不写 `ai_run_events`、不走 RunEventPublisher、不进 Timeline/transcript。正常终态流和客户端主动断开（onAbort 置位后）都不发。AI、chat、flow 三个入口共用 `writeRunEventStream`，一次实现全部生效。
 - `AgentRuntimePort` 是 chat、flow 和 AI 运行路由的唯一运行面窄依赖。port 文件只能依赖 contracts DTO 和 `RuntimeAccessContext`，不得依赖 Hono、repository、Pi 包或 concrete service `ReturnType`。adapter 接收结构化 Run/Session backend；`sequenceForEvent` 只在 adapter 内部把 `{ lastEventId }` 转成 service 的数字游标。
 - `startRunTransport` 必须把 `start()` 返回的 `events` iterable 直接交给 SSE writer，不能再调用 `subscribe(0)`。`resumeRunTransport` 在 `afterSequence > 0` 时传 `{ afterSequence }`；只有为 0 且存在 `Last-Event-ID` 时才传 `{ lastEventId }`；否则传 `{ afterSequence: 0 }`。
 - RunEvent publisher 成功持久化事件时同时推入 start queue 和已有恢复 subscribers。终态提交成功、终态未提交或终态事务抛错后都必须关闭 start queue；SSE iterator 提前 `return()` 只关闭当前 queue，不 abort Run。
@@ -125,6 +127,9 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 | Agent 不存在 | 404 | `COMMON.NOT_FOUND`（resolve 抛出） |
 | Agent 非 enabled | 409 | `AI.AGENT_NOT_ENABLED`（resolve 抛出） |
 | Agent 配置引用无效 | 400 | `AI.AGENT_CONFIG_INVALID`（resolve 抛出） |
+| product_app 启动未授权：executable 不在 policy、revision 不精确匹配或聚合 side effect 超过 maxSideEffect | 403 | `AI.APP_POLICY_FORBIDDEN`，不建 Run、不占 lease、不消费幂等键 |
+| product_app 调用未授权 control（policy.controls 缺 abort/steer/follow_up） | 403 | `AI.APP_POLICY_FORBIDDEN`，不影响该 Run |
+| product_app 调用 `/api/ai/completions` | 403 | `AI.COMPLETION_FORBIDDEN`（Agent-only 承诺；内联 config 另有 `AI.RUN_INLINE_CONFIG_FORBIDDEN`） |
 | registry 或持久 lease 同 session+lane 冲突（Run row 创建前） | 409 | `AI.SESSION_BUSY`，不创建 Run |
 | 同 scope 幂等键已绑定其他 Session 的 Run | 409 | `AI.IDEMPOTENCY_KEY_CONFLICT`，不影响既有 Run |
 | lane 创建失败 | 500 | `AI.SESSION_STORAGE_FAILED` |
@@ -175,6 +180,9 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - lane lease（`apps/api/src/test/ai-lane-lease.test.ts`）：store 级条件更新（插入 token=1、未过期 busy、过期接管 token+1、旧 owner renew/release 无效果、`releaseExpired` 只删过期行）；双 runtime（`runDualRuntimeApps`，共享 Starter db、不同 `APP_INSTANCE_ID`）同 lane 互斥（一成功一 `AI.SESSION_BUSY`、主库单条非终态 Run、终态后可再启动）、不同 lane 不互斥；lease 被接管后旧 owner 终态落成 `interrupted` 且不删新 owner 的 lease 行；短 TTL / 续租间隔注入（`RuntimeDeps.laneLeaseOptions`）验证续租失败后 executor 中止；readiness 未 resolve 时 startRun 等待且不建 Run、不领 lease。双 runtime 底座共享同一个 Pi Session store 实例：Pi SQLite backend 对同一 session 只允许一个写者，两个 repository 打开同一文件会互相拒绝，与本组用例验证的 Starter lease 粒度无关。
 - resolved manifest（`apps/api/src/test/ai-resolved-manifest.test.ts`）：相同 Agent revision 两次 Run 相同 manifestHash；Prompt/Skill 的 content、description、name 更新都传播（资源 revision+1、引用 Agent revision+1、未引用不变、旧 Run manifest 不变）；内联配置 manifest（inline=true、contentHash 为内联文本 SHA-256、全文不落库）；manifest 写入失败 Run 落 failed 且两层 lease 释放；Tool manifestHash 稳定；contract 移除后历史输出按表内值渲染。
 - run attempt（`apps/api/src/test/ai-run-attempts.test.ts`）：幂等重放不建新 Run/Attempt；模型失败 + maxAttempts=2 创建 Attempt 2（trigger=auto_retry、retry_reason、事件 attemptNo 切换、单一 terminal、两 attempt 与 agent Step 终态）；abort 不重试；non_idempotent_write 门禁；上限耗尽全 attempt 落 failed；重试期 lease 接管落 interrupted；tool 审计行 token 持久且纯函数重算相同、handler 上下文拿到同一 token；超时措辞按 sideEffect 分类。trace 的 attempts 列表与 RunEvent 可选 attemptNo 字段（缺省视为 1）已进契约测试。
+- 应用能力策略（`apps/api/src/test/ai-application-policy.test.ts`）：policy strict 校验 400 矩阵（未知字段、重复 executable、重复 control）；create 缺 policy 400；PATCH policy 生效 + `policy_updated` 审计 + revoked 409；discovery 只见 policy 内且 revision 精确匹配的 manifest（revision 升级后列表清空、详情 404）；start 三类 403（未授权 Agent / revision 不匹配 / maxSideEffect 超限）且无副作用（0 Run 行、同 lane 立即可启动、幂等键未被消费可复用）；controls 403 三例（挂住 streamFn 停在 running 再操作）；null policy（直插 `policy_json` NULL 模拟存量）fail closed（discovery 空 + start 403）；product_app completion 403；starter_user 对照不受 policy 影响。
+- SSE 恢复 frame（`run-event-recovery.test.ts`）：正常终态流无 `stream.resume_required`；非终态 EOF 发 frame 且 lastSequence 等于最后事件 sequence（空流为 0）；恢复流以终态收尾且无 frame；flow 恢复端点从 sequence 1 连续收到终态（`product-modules.smoke.test.ts`）。
+- webhook 事件交付（`ai-webhook.test.ts`）：payload 的 eventId/sequence 与 `ai_run_events` terminal 行一致；interrupted Run（无 terminal 事件行）两列 null；同 `finished_at` 201 条不漏（`(finishedAt, runId)` 复合游标）；双 dispatcher claim 互斥与过期重领；请求头带 `X-Starter-Delivery-Id`。
 
 ## 7. Wrong vs Correct
 
@@ -225,5 +233,27 @@ return writeRunEventStream(c, runtimePort.subscribe(access, sessionId, result.ru
 const result = await runtimePort.start(input)
 return writeRunEventStream(c, result.events)
 ```
+
+### Wrong：在 route / transport 各写一份 policy 判断
+
+```ts
+// run.route.ts、chat.route.ts、flow.route.ts 各自检查
+if (access.principal.kind === 'product_app' && !policyAllows(agentId)) {
+  throw new AppError(ApiErrorCodes.AI_APP_POLICY_FORBIDDEN, '...', 403)
+}
+```
+
+三个入口必然漂移，且容易把检查放在幂等预检查或 lease 之后，产生带副作用的 403。
+
+### Correct：单一检查模块在 service 入口调用
+
+```ts
+// runtime/app-policy.ts 是唯一判定点
+// run.service.ts 在幂等键预检查、reserve 之前调用
+enforceStartPolicy(access, { agentId, agentRevision, sideEffect }) // 403 无副作用
+// agent.service.ts discovery 用 manifestAllowedByPolicy 过滤
+```
+
+policy 随 `RuntimeAccessContext` 进入 port，AI/chat/flow 三个入口自动统一生效；新增运行面动作时只扩展 `app-policy.ts` 和对应 service 调用点。
 
 > **Warning**: Pi 只自动创建 `main` lane。非 main lane 必须由 Run Service 显式 `createLane`（已存在会抛 `already_exists`，需幂等忽略），否则 executor 打开 session 时 `Lane not found`。

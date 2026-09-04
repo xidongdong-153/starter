@@ -7,12 +7,13 @@ import type { AiAgentDefinitionService } from '@api/modules/ai/agent/index.js'
 import type { AgentRuntimePort } from '@api/modules/ai/runtime/index.js'
 import type { AiAgentSessionService } from '@api/modules/ai/session/index.js'
 import { toRuntimeAccessContext } from '@api/modules/ai/principal.js'
-import { startRunTransport } from '@api/modules/ai/run/run-transport.js'
+import { resumeRunTransport, startRunTransport } from '@api/modules/ai/run/run-transport.js'
 import { createSuccessResponse } from '@api/shared/response.js'
 
 import {
   abortFlowRunRoute,
   createFlowSessionRoute,
+  getFlowRunEventsStreamRoute,
   getFlowRunRoute,
   getFlowRunStructuredOutputsRoute,
   getFlowSessionTranscriptRoute,
@@ -75,6 +76,17 @@ export function createFlowRoute(runtime: AppRuntime, services: FlowRouteServices
         sessionId: params.sessionId,
         input: c.req.valid('json'),
         requestId: c.var.requestId,
+      })
+    })
+    .openapi({ ...getFlowRunEventsStreamRoute, middleware: requireAuth }, async (c) => {
+      const params = c.req.valid('param')
+      const query = c.req.valid('query')
+      const accessContext = access(c)
+      return resumeRunTransport(c, services.runtimePort, {
+        access: accessContext,
+        sessionId: params.sessionId,
+        runId: params.runId,
+        afterSequence: query.afterSequence,
       })
     })
     .openapi({ ...getFlowRunRoute, middleware: requireAuth }, (c) =>

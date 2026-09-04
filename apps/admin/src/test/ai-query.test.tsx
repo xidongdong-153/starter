@@ -202,7 +202,12 @@ describe('ai query 状态', () => {
       wrapper: createQueryClientWrapper(queryClient),
     })
 
-    const created = await result.current.mutateAsync({ name: 'web-chat', tenantId: 'acme', projectId: 'chat' })
+    const created = await result.current.mutateAsync({
+      name: 'web-chat',
+      tenantId: 'acme',
+      projectId: 'chat',
+      policy: { schemaVersion: 1, executables: [], controls: [], maxSideEffect: 'read_only' },
+    })
 
     expect(created.secret).toBe('ai_secret_value')
     await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1))

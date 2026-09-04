@@ -20,6 +20,7 @@ function record(secret: string): AiAppCredentialRecord {
     name: 'Product',
     tenantId: 'tenant-a',
     projectId: 'project-a',
+    policyJson: null,
     secretHash: hashAppSecret(secret),
     secretPrefix: secret.slice(0, 12),
     status: 'active',

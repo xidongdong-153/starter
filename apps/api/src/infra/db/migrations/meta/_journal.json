@@ -218,6 +218,13 @@
       "when": 1788398934973,
       "tag": "0030_small_thunderball",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "6",
+      "when": 1788488851054,
+      "tag": "0031_cold_roland_deschain",
+      "breakpoints": true
     }
   ]
 }

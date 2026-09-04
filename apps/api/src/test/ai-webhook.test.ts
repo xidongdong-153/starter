@@ -14,6 +14,7 @@ import { createPiAgentExecutor } from '@api/infra/agent/index.js'
 import {
   aiAgentRuns,
   aiAgentSessions,
+  aiRunEvents,
   aiWebhookDeliveries,
   aiWebhookEndpoints,
   permissions,
@@ -22,7 +23,12 @@ import {
   userRoles,
 } from '@api/infra/db/schema/index.js'
 import { createAiRunLifecycleRepository } from '@api/modules/ai/run/index.js'
-import { createWebhookCrypto, createWebhookSigningSecret, signWebhookPayload } from '@api/modules/ai/webhook/index.js'
+import {
+  createAiWebhookDispatcher,
+  createWebhookCrypto,
+  createWebhookSigningSecret,
+  signWebhookPayload,
+} from '@api/modules/ai/webhook/index.js'
 import { generateId } from '@api/shared/id.js'
 
 import { assistantMessage, seedAgent, seedEnabledModel, streamModel } from './ai-run-harness.js'
@@ -119,13 +125,24 @@ async function setupWebhookTest(env: NodeJS.ProcessEnv = {}): Promise<WebhookTes
   const admin = await registerAiAdmin(app, runtime)
   seedEnabledModel(runtime)
   const agentId = seedAgent(runtime, [])
-  const credential = await createAppCredential(app, admin.cookie)
+  const credential = await createAppCredential(app, admin.cookie, agentId)
   return { app, runtime, cleanup, admin, agentId, credential }
+}
+
+/** product_app 启动 Run 需要允许该 Agent 的 policy（revision 为 seed 后的 1）。 */
+function agentPolicy(agentId: string) {
+  return {
+    schemaVersion: 1 as const,
+    executables: [{ id: agentId, version: 1 }],
+    controls: ['abort', 'steer', 'follow_up'] as const,
+    maxSideEffect: 'non_idempotent_write' as const,
+  }
 }
 
 async function createAppCredential(
   app: ReturnType<typeof createTestApp>['app'],
   cookie: string,
+  agentId: string,
 ): Promise<{ appId: string; secret: string }> {
   const response = await app.request('/api/ai/admin/applications', {
     method: 'POST',
@@ -134,6 +151,7 @@ async function createAppCredential(
       name: 'Webhook Product',
       tenantId: 'tenant-wh',
       projectId: 'project-wh',
+      policy: agentPolicy(agentId),
     }),
   })
   expect(response.status).toBe(200)
@@ -164,6 +182,85 @@ async function createWebhookEndpoint(
     endpointId: result.data.endpoint.endpointId,
     signingSecret: result.data.signingSecret,
   }
+}
+
+/** 直插 product_app Session 行（interrupted / 同时间戳 / claim 用例的造数底座）。 */
+function insertProductSession(context: WebhookTestContext, now: Date): string {
+  const sessionId = generateId()
+  context.runtime.db
+    .insert(aiAgentSessions)
+    .values({
+      id: sessionId,
+      ownerId: null,
+      principalKind: 'product_app',
+      tenantId: 'tenant-wh',
+      projectId: 'project-wh',
+      externalUserId: 'wh-customer-1',
+      appId: context.credential.appId,
+      subjectType: null,
+      subjectId: null,
+      title: 'direct-insert',
+      defaultAgentId: null,
+      archivedAt: null,
+      createdAt: now,
+      updatedAt: now,
+    })
+    .run()
+  return sessionId
+}
+
+/** 直插终态 Run 行（不建 ai_run_events，interrupted 语义）；返回 runId。 */
+function insertTerminalRun(
+  context: WebhookTestContext,
+  sessionId: string,
+  input: { status: string; finishedAt: Date },
+): string {
+  const runId = generateId()
+  context.runtime.db
+    .insert(aiAgentRuns)
+    .values({
+      id: runId,
+      sessionId,
+      agentId: context.agentId,
+      lane: 'main',
+      status: input.status,
+      agentRevision: 1,
+      snapshotJson: JSON.stringify({ schemaVersion: 2 }),
+      requestId: 'direct-insert-test',
+      finalEntryId: null,
+      errorCode: null,
+      createdAt: input.finishedAt,
+      startedAt: input.finishedAt,
+      finishedAt: input.finishedAt,
+    })
+    .run()
+  return runId
+}
+
+/** 记录出站请求头的 fetch mock，claim 互斥用例用它代替真实接收服务器。 */
+function mockFetchRecorder() {
+  const calls: Array<{ headers: Record<string, string> }> = []
+  return {
+    calls,
+    fetch: async (_input: string | URL | Request, init?: RequestInit) => {
+      calls.push({ headers: (init?.headers ?? {}) as Record<string, string> })
+      return new Response('ok', { status: 200 })
+    },
+  }
+}
+
+/** 直接构造 dispatcher：与 createAiServices 同参，但 urlGuard 换成 mock。 */
+function createTestDispatcher(
+  runtime: ReturnType<typeof createTestApp>['runtime'],
+  fetch: (input: string | URL | Request, init?: RequestInit) => Promise<Response>,
+) {
+  return createAiWebhookDispatcher({
+    db: runtime.db,
+    crypto: createWebhookCrypto(TEST_ENCRYPTION_KEY),
+    urlGuard: { fetch },
+    logger: runtime.logger.child({ module: 'ai-webhook-test' }),
+    settings: { sweepIntervalMs: 1000, maxAttempts: 3, backoffMs: [0, 0, 0] },
+  })
 }
 
 interface DeliveryView {
@@ -541,6 +638,18 @@ it('端到端：Run 终态推送带可验证签名，payload 与 Run 终态一�
       expect(payload.status).toBe('completed')
       expect(payload.errorCode).toBeNull()
       expect(payload.finishedAt).toBe(run.finishedAt)
+      // payload identity 与持久 terminal RunEvent 一致，请求头带稳定投递 ID。
+      const terminalRows = context.runtime.db
+        .select({ eventId: aiRunEvents.eventId, sequence: aiRunEvents.sequence, type: aiRunEvents.type })
+        .from(aiRunEvents)
+        .where(eq(aiRunEvents.runId, run.runId))
+        .all()
+        .filter((row) => ['run.completed', 'run.failed', 'run.aborted'].includes(row.type))
+      expect(terminalRows).toHaveLength(1)
+      expect(payload.eventId).toBe(terminalRows[0]?.eventId)
+      expect(payload.sequence).toBe(terminalRows[0]?.sequence)
+      expect(payload.eventProtocolVersion).toBe(1)
+      expect(typeof request.headers['x-starter-delivery-id']).toBe('string')
       expect(typeof payload.occurredAt).toBe('string')
       // payload 不携带 endpointId、正文和身份字段。
       expect(payload.endpointId).toBeUndefined()
@@ -842,5 +951,174 @@ it('aI_WEBHOOK_ENABLED=false 时无任何投递行为，管理面 CRUD 仍可用
     }
   } finally {
     await receiver.close()
+  }
+})
+
+it('interrupted Run 无 terminal RunEvent，delivery 的 eventId/sequence 为 null', async () => {
+  const receiver = await startReceiver()
+  try {
+    const context = await setupWebhookTest()
+    try {
+      const { endpointId } = await createWebhookEndpoint(
+        context.app,
+        context.admin.cookie,
+        context.credential.appId,
+        receiver.url,
+      )
+      const now = new Date()
+      const sessionId = insertProductSession(context, now)
+      const runId = insertTerminalRun(context, sessionId, { status: 'interrupted', finishedAt: now })
+
+      await vi.waitFor(
+        async () => {
+          const page = await listDeliveries(context.app, context.admin.cookie, { endpointId })
+          expect(page.total).toBe(1)
+          expect(page.items[0]?.status).toBe('delivered')
+        },
+        { timeout: 8000 },
+      )
+
+      const payload = JSON.parse(receiver.requests[0]!.body) as {
+        eventId: string | null
+        sequence: number | null
+        eventProtocolVersion: number
+      }
+      expect(payload.eventId).toBeNull()
+      expect(payload.sequence).toBeNull()
+      expect(payload.eventProtocolVersion).toBe(1)
+
+      const row = context.runtime.db
+        .select()
+        .from(aiWebhookDeliveries)
+        .where(eq(aiWebhookDeliveries.runId, runId))
+        .get()!
+      expect(row.eventId).toBeNull()
+      expect(row.sequence).toBeNull()
+      expect(row.eventProtocolVersion).toBe(1)
+    } finally {
+      context.cleanup()
+    }
+  } finally {
+    await receiver.close()
+  }
+})
+
+it('相同 finished_at 超过单批上限 200 时不漏发，重复扫描不重复建 delivery', async () => {
+  const receiver = await startReceiver()
+  try {
+    const context = await setupWebhookTest()
+    try {
+      const { endpointId } = await createWebhookEndpoint(
+        context.app,
+        context.admin.cookie,
+        context.credential.appId,
+        receiver.url,
+      )
+      const finishedAt = new Date()
+      const sessionId = insertProductSession(context, finishedAt)
+      // 201 条共享同一毫秒 finished_at：单批上限 200，复合游标必须跨批继续扫。
+      for (let index = 0; index < 201; index += 1) {
+        insertTerminalRun(context, sessionId, { status: 'completed', finishedAt })
+      }
+
+      await vi.waitFor(
+        async () => {
+          const page = await listDeliveries(context.app, context.admin.cookie, { endpointId })
+          expect(page.total).toBe(201)
+        },
+        { timeout: 8000 },
+      )
+
+      // 等一个以上 tick 确认没有第二批重复入队。
+      await new Promise((resolve) => setTimeout(resolve, 1500))
+      const page = await listDeliveries(context.app, context.admin.cookie, { endpointId })
+      expect(page.total).toBe(201)
+    } finally {
+      context.cleanup()
+    }
+  } finally {
+    await receiver.close()
+  }
+})
+
+it('两个 dispatcher 对同一 delivery 互斥，claim 过期后可重领', async () => {
+  // 关闭 app 内置 dispatcher，两个手动构造的 dispatcher 共享同一 db。
+  const context = await setupWebhookTest({ AI_WEBHOOK_ENABLED: 'false' })
+  try {
+    const { endpointId } = await createWebhookEndpoint(
+      context.app,
+      context.admin.cookie,
+      context.credential.appId,
+      'http://127.0.0.1:9/webhook',
+    )
+    const now = new Date()
+    const sessionId = insertProductSession(context, now)
+    const runId = insertTerminalRun(context, sessionId, { status: 'completed', finishedAt: now })
+
+    // 直插 pending delivery，绕过 enqueue 阶段只验证 claim 互斥。
+    const deliveryId = generateId()
+    context.runtime.db
+      .insert(aiWebhookDeliveries)
+      .values({
+        id: deliveryId,
+        endpointId,
+        appId: context.credential.appId,
+        runId,
+        eventType: 'run.terminal',
+        payloadJson: JSON.stringify({ type: 'run.terminal' }),
+        eventId: null,
+        sequence: null,
+        eventProtocolVersion: 1,
+        status: 'pending',
+        attempts: 0,
+        nextAttemptAt: null,
+        createdAt: now,
+        updatedAt: now,
+      })
+      .run()
+
+    const fetchA = mockFetchRecorder()
+    const dispatcherA = createTestDispatcher(context.runtime, fetchA.fetch)
+    await dispatcherA.tick()
+    expect(fetchA.calls).toHaveLength(1)
+    expect(fetchA.calls[0]?.headers).toMatchObject({ 'X-Starter-Delivery-Id': deliveryId })
+    expect(
+      context.runtime.db.select().from(aiWebhookDeliveries).where(eq(aiWebhookDeliveries.id, deliveryId)).get()?.status,
+    ).toBe('delivered')
+
+    // 模拟另一实例持有未过期 claim：dispatcherB 不得投递。
+    const claimedAt = new Date()
+    context.runtime.db
+      .update(aiWebhookDeliveries)
+      .set({
+        status: 'pending',
+        claimedAt,
+        claimExpiresAt: new Date(claimedAt.getTime() + 60_000),
+        updatedAt: claimedAt,
+      })
+      .where(eq(aiWebhookDeliveries.id, deliveryId))
+      .run()
+    const fetchB = mockFetchRecorder()
+    const dispatcherB = createTestDispatcher(context.runtime, fetchB.fetch)
+    await dispatcherB.tick()
+    expect(fetchB.calls).toHaveLength(0)
+    expect(
+      context.runtime.db.select().from(aiWebhookDeliveries).where(eq(aiWebhookDeliveries.id, deliveryId)).get()?.status,
+    ).toBe('pending')
+
+    // claim 过期后可被重领并完成投递。
+    context.runtime.db
+      .update(aiWebhookDeliveries)
+      .set({ claimExpiresAt: new Date(claimedAt.getTime() - 1000) })
+      .where(eq(aiWebhookDeliveries.id, deliveryId))
+      .run()
+    await dispatcherB.tick()
+    expect(fetchB.calls).toHaveLength(1)
+    expect(fetchB.calls[0]?.headers).toMatchObject({ 'X-Starter-Delivery-Id': deliveryId })
+    expect(
+      context.runtime.db.select().from(aiWebhookDeliveries).where(eq(aiWebhookDeliveries.id, deliveryId)).get()?.status,
+    ).toBe('delivered')
+  } finally {
+    context.cleanup()
   }
 })

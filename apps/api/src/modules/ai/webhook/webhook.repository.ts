@@ -1,6 +1,12 @@
-import { and, asc, count, desc, eq, gt, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, gt, inArray, isNotNull, isNull, lte, or, sql } from 'drizzle-orm'
 import type { AppDatabase } from '@api/infra/db/client.js'
-import { aiAgentRuns, aiAgentSessions, aiWebhookDeliveries, aiWebhookEndpoints } from '@api/modules/ai/ai.schema.js'
+import {
+  aiAgentRuns,
+  aiAgentSessions,
+  aiRunEvents,
+  aiWebhookDeliveries,
+  aiWebhookEndpoints,
+} from '@api/modules/ai/ai.schema.js'
 import type { AiWebhookDeliveryQuery } from '@starter/contracts'
 
 export type AiWebhookEndpointRecord = typeof aiWebhookEndpoints.$inferSelect
@@ -17,6 +23,13 @@ export interface TerminalProductAppRunRow {
   errorCode: string | null
   finishedAt: Date
   appId: string
+  eventId: string | null
+  sequence: number | null
+}
+
+export interface TerminalProductAppRunCursor {
+  finishedAt: number
+  runId: string
 }
 
 /** 到期待投递记录，带端点 url 与加密 secret，免去二次查询。 */
@@ -98,8 +111,8 @@ export function createAiWebhookRepository(db: AppDatabase) {
     db.insert(aiWebhookDeliveries).values(input).onConflictDoNothing().run()
   }
 
-  function listDueDeliveries(limit: number, now: Date): DueDeliveryRow[] {
-    return db
+  function claimDueDeliveries(limit: number, now: Date, ttlMs: number): DueDeliveryRow[] {
+    const candidates = db
       .select({
         delivery: aiWebhookDeliveries,
         url: aiWebhookEndpoints.url,
@@ -112,11 +125,32 @@ export function createAiWebhookRepository(db: AppDatabase) {
           eq(aiWebhookDeliveries.status, 'pending'),
           eq(aiWebhookEndpoints.status, 'enabled'),
           or(isNull(aiWebhookDeliveries.nextAttemptAt), lte(aiWebhookDeliveries.nextAttemptAt, now)),
+          or(isNull(aiWebhookDeliveries.claimExpiresAt), lte(aiWebhookDeliveries.claimExpiresAt, now)),
         ),
       )
       .orderBy(asc(aiWebhookDeliveries.createdAt), asc(aiWebhookDeliveries.id))
       .limit(limit)
       .all()
+
+    const claimExpiresAt = new Date(now.getTime() + ttlMs)
+    const claimed: DueDeliveryRow[] = []
+    for (const candidate of candidates) {
+      const delivery = db
+        .update(aiWebhookDeliveries)
+        .set({ claimedAt: now, claimExpiresAt })
+        .where(
+          and(
+            eq(aiWebhookDeliveries.id, candidate.delivery.id),
+            eq(aiWebhookDeliveries.status, 'pending'),
+            or(isNull(aiWebhookDeliveries.claimExpiresAt), lte(aiWebhookDeliveries.claimExpiresAt, now)),
+          ),
+        )
+        .returning()
+        .get()
+      if (delivery)
+        claimed.push({ delivery, url: candidate.url, signingSecretEncrypted: candidate.signingSecretEncrypted })
+    }
+    return claimed
   }
 
   function markDelivered(id: string, now: Date, responseCode: number): void {
@@ -128,6 +162,8 @@ export function createAiWebhookRepository(db: AppDatabase) {
         lastResponseCode: responseCode,
         lastError: null,
         deliveredAt: now,
+        claimedAt: null,
+        claimExpiresAt: null,
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
@@ -147,6 +183,8 @@ export function createAiWebhookRepository(db: AppDatabase) {
         nextAttemptAt,
         lastResponseCode: responseCode,
         lastError: error,
+        claimedAt: null,
+        claimExpiresAt: null,
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
@@ -162,6 +200,8 @@ export function createAiWebhookRepository(db: AppDatabase) {
         lastResponseCode: responseCode,
         lastError: error,
         deadAt: now,
+        claimedAt: null,
+        claimExpiresAt: null,
         updatedAt: now,
       })
       .where(eq(aiWebhookDeliveries.id, id))
@@ -191,7 +231,23 @@ export function createAiWebhookRepository(db: AppDatabase) {
     return { items, total: totalRow?.value ?? 0 }
   }
 
-  function listTerminalProductAppRunsAfter(watermarkMs: number, limit: number): TerminalProductAppRunRow[] {
+  function listTerminalProductAppRunsAfter(
+    cursor: TerminalProductAppRunCursor | null,
+    limit: number,
+  ): TerminalProductAppRunRow[] {
+    const afterCursor =
+      cursor === null
+        ? undefined
+        : or(
+            gt(aiAgentRuns.finishedAt, new Date(cursor.finishedAt)),
+            and(eq(aiAgentRuns.finishedAt, new Date(cursor.finishedAt)), gt(aiAgentRuns.id, cursor.runId)),
+          )
+    const baseWhere = and(
+      eq(aiAgentSessions.principalKind, 'product_app'),
+      isNotNull(aiAgentSessions.appId),
+      sql`${aiAgentRuns.status} IN ('completed', 'failed', 'aborted', 'interrupted')`,
+      isNotNull(aiAgentRuns.finishedAt),
+    )
     const rows = db
       .select({
         id: aiAgentRuns.id,
@@ -203,17 +259,19 @@ export function createAiWebhookRepository(db: AppDatabase) {
         errorCode: aiAgentRuns.errorCode,
         finishedAt: aiAgentRuns.finishedAt,
         appId: aiAgentSessions.appId,
+        eventId: aiRunEvents.eventId,
+        sequence: aiRunEvents.sequence,
       })
       .from(aiAgentRuns)
       .innerJoin(aiAgentSessions, eq(aiAgentRuns.sessionId, aiAgentSessions.id))
-      .where(
+      .leftJoin(
+        aiRunEvents,
         and(
-          eq(aiAgentSessions.principalKind, 'product_app'),
-          isNotNull(aiAgentSessions.appId),
-          sql`${aiAgentRuns.status} IN ('completed', 'failed', 'aborted', 'interrupted')`,
-          gt(aiAgentRuns.finishedAt, new Date(watermarkMs)),
+          eq(aiRunEvents.runId, aiAgentRuns.id),
+          inArray(aiRunEvents.type, ['run.completed', 'run.failed', 'run.aborted']),
         ),
       )
+      .where(afterCursor === undefined ? baseWhere : and(baseWhere, afterCursor))
       .orderBy(asc(aiAgentRuns.finishedAt), asc(aiAgentRuns.id))
       .limit(limit)
       .all()
@@ -224,11 +282,17 @@ export function createAiWebhookRepository(db: AppDatabase) {
       row.appId !== null && row.finishedAt !== null && row.agentId !== null && row.agentRevision !== null
         ? [
             {
-              ...row,
-              appId: row.appId,
-              finishedAt: row.finishedAt,
+              id: row.id,
+              sessionId: row.sessionId,
               agentId: row.agentId,
+              lane: row.lane,
+              status: row.status,
               agentRevision: row.agentRevision,
+              errorCode: row.errorCode,
+              finishedAt: row.finishedAt,
+              appId: row.appId,
+              eventId: row.eventId ?? null,
+              sequence: row.sequence ?? null,
             },
           ]
         : [],
@@ -245,7 +309,7 @@ export function createAiWebhookRepository(db: AppDatabase) {
     deleteEndpoint,
     touchLastDelivery,
     insertDeliveryIgnore,
-    listDueDeliveries,
+    claimDueDeliveries,
     markDelivered,
     markRetry,
     markDead,

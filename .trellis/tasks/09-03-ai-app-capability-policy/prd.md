@@ -33,15 +33,15 @@
 
 ## Acceptance Criteria
 
-- [ ] policy schema、migration、CRUD、guard 上下文和审计完整，未知字段或重复 capability 返回 400。
-- [ ] `product_app` 只能发现并启动 policy 中精确匹配当前 revision 的 Agent。
-- [ ] 未授权 Agent、revision、control 或副作用等级在执行前返回稳定 403，跨 scope 继续返回 404。
-- [ ] policy 失败不创建 Run、不领取 lease、不消费 idempotency key。
-- [ ] terminal Webhook identity 与持久 terminal RunEvent 一致，重复扫描不重复建 delivery。
-- [ ] 相同时间戳超过单批上限时不漏发；两个 dispatcher 不同时领取同一 delivery。
-- [ ] SSE 正常终态无额外 frame，非终态结束返回可校验的恢复 frame，并能按 sequence 重连。
-- [ ] Starter User 和现有 JSON/SSE/Timeline/Transcript 行为不受 app policy 影响。
-- [ ] migration、contracts、API 与全仓检查通过。
+- [x] policy schema、migration、CRUD、guard 上下文和审计完整，未知字段或重复 capability 返回 400。（contracts `aiApplicationPolicySchema` strict + superRefine；migration 0031；PATCH policy 端点 + `policy_updated` 审计；`ai-application-policy.test.ts` 断言 400 矩阵）
+- [x] `product_app` 只能发现并启动 policy 中精确匹配当前 revision 的 Agent。（discovery 过滤 + `enforceStartPolicy`；同测试断言 revision 升级后 discovery 清空、详情 404、start 403）
+- [x] 未授权 Agent、revision、control 或副作用等级在执行前返回稳定 403，跨 scope 继续返回 404。（`AI.APP_POLICY_FORBIDDEN`；controls 403 三例；跨 scope 404 由 `requireScopedRun` 前置保证）
+- [x] policy 失败不创建 Run、不领取 lease、不消费 idempotency key。（`enforceStartPolicy` 在幂等预检查 / reserve / Run row 前；测试断言 0 Run 行、同 lane 可立即启动、同幂等键换合法请求成功）
+- [x] terminal Webhook identity 与持久 terminal RunEvent 一致，重复扫描不重复建 delivery。（leftJoin `ai_run_events` 取 eventId/sequence；`(endpoint_id, run_id)` 唯一约束；端到端断言与插入事件行一致）
+- [x] 相同时间戳超过单批上限时不漏发；两个 dispatcher 不同时领取同一 delivery。（`(finishedAt, runId)` 复合游标；201 条同时间戳两轮 tick 全部送达；claim 条件 UPDATE 互斥 + 过期重领测试）
+- [x] SSE 正常终态无额外 frame，非终态结束返回可校验的恢复 frame，并能按 sequence 重连。（`streamResumeRequiredFrameSchema`；run-event-recovery 四类 frame 断言；flow 恢复端点从 sequence 1 连续收到终态）
+- [x] Starter User 和现有 JSON/SSE/Timeline/Transcript 行为不受 app policy 影响。（全量 476 测试既有断言不变；policy 检查对 starter_user 三处短路）
+- [x] migration、contracts、API 与全仓检查通过。（API check-types / lint / format / db:check / test 66 文件 476 用例、admin 112 用例、根级 format:check、`pnpm build` 5 任务、`git diff --check`）
 
 ## Out Of Scope
 

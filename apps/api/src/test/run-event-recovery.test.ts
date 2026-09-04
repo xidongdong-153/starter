@@ -5,12 +5,17 @@ import { z } from 'zod'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
+import { Hono } from 'hono'
+import { runEventSchema, streamResumeRequiredFrameSchema, type RunEvent } from '@starter/contracts'
 
 import { createApp } from '@api/bootstrap/create-app.js'
 import { createRuntime } from '@api/bootstrap/create-runtime.js'
 import { createPiSessionStore } from '@api/infra/agent/pi-session-store.js'
 import { createAiToolRegistry, defineAiTool } from '@api/modules/ai/tool/tool-registry.js'
 import { AsyncEventQueue } from '@api/infra/agent/pi-event-mapper.js'
+import { writeRunEventStream } from '@api/modules/ai/run/run-sse.js'
+import { generateId } from '@api/shared/id.js'
+import type { HonoEnv } from '@api/shared/hono-env.js'
 
 import { readSuccess, register } from './helpers.js'
 import {
@@ -72,6 +77,81 @@ async function readRemainingSse(prefix: string, reader: ReadableStreamDefaultRea
   reader.releaseLock()
   return body
 }
+
+function transportEvent(sequence: number, type: RunEvent['type'], data: Record<string, unknown>): RunEvent {
+  return runEventSchema.parse({
+    eventId: generateId(),
+    runId: generateId(),
+    sessionId: generateId(),
+    lane: 'main',
+    sequence,
+    occurredAt: new Date().toISOString(),
+    turnIndex: null,
+    stepId: null,
+    modelCallId: null,
+    messageId: null,
+    toolCallId: null,
+    toolExecutionId: null,
+    type,
+    data,
+  })
+}
+
+async function* eventsOf(events: RunEvent[]): AsyncGenerator<RunEvent> {
+  for (const event of events) yield event
+}
+
+function parseResumeFrame(body: string) {
+  const frame = body.trim().split('\n\n').at(-1)
+  expect(frame).toContain('event: stream.resume_required')
+  // transport frame 没有 eventId，不携带 SSE id 行。
+  expect(frame).not.toContain('id:')
+  const dataLine = /^data: (.+)$/mu.exec(frame ?? '')?.[1]
+  expect(dataLine).toBeDefined()
+  return streamResumeRequiredFrameSchema.parse(JSON.parse(dataLine ?? ''))
+}
+
+it('writeRunEventStream 非终态 EOF 发送 stream.resume_required，终态流与空流边界正确', async () => {
+  const app = new Hono<HonoEnv>()
+  app.get('/partial', (c) =>
+    writeRunEventStream(
+      c,
+      eventsOf([
+        transportEvent(1, 'message.delta', { partId: '0:0', delta: 'a' }),
+        transportEvent(2, 'message.delta', { partId: '0:0', delta: 'b' }),
+      ]),
+    ),
+  )
+  app.get('/empty', (c) => writeRunEventStream(c, eventsOf([])))
+  app.get('/terminal', (c) =>
+    writeRunEventStream(
+      c,
+      eventsOf([
+        transportEvent(1, 'message.delta', { partId: '0:0', delta: 'a' }),
+        transportEvent(2, 'run.completed', { finalEntryId: null, reason: 'model_finished' }),
+      ]),
+    ),
+  )
+
+  const partial = await app.request('/partial')
+  expect(partial.status).toBe(200)
+  const partialBody = await partial.text()
+  expect(partialBody).toContain('event: message.delta')
+  expect(parseResumeFrame(partialBody)).toEqual({
+    type: 'stream.resume_required',
+    eventProtocolVersion: 1,
+    lastSequence: 2,
+    reason: 'transport_closed',
+  })
+
+  const empty = await app.request('/empty')
+  expect(parseResumeFrame(await empty.text())).toMatchObject({ lastSequence: 0 })
+
+  const terminal = await app.request('/terminal')
+  const terminalBody = await terminal.text()
+  expect(terminalBody).toContain('event: run.completed')
+  expect(terminalBody).not.toContain('stream.resume_required')
+})
 
 it('查询与订阅之间产生新事件时不丢不重', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'starter-recovery-race-'))
@@ -181,7 +261,8 @@ it('按 session 查到进行中的 Run 后可以从 sequence 1 恢复事件流',
     expect(resumed.status).toBe(200)
     const resumedBody = readSseBody(resumed)
     release()
-    const resumedEvents = parseSseEvents(await resumedBody)
+    const resumedRaw = await resumedBody
+    const resumedEvents = parseSseEvents(resumedRaw)
     const sequences = resumedEvents.map((event) => event.sequence)
     expect(sequences).toEqual(Array.from({ length: sequences.length }, (_, index) => index + 1))
     expect(resumedEvents[0]?.type).toBe('run.started')
@@ -189,6 +270,8 @@ it('按 session 查到进行中的 Run 后可以从 sequence 1 恢复事件流',
       true,
     )
     expect(resumedEvents.at(-1)?.type).toBe('run.completed')
+    // 恢复流以终态收尾时不发送 stream.resume_required frame。
+    expect(resumedRaw).not.toContain('stream.resume_required')
 
     const afterTerminal = await test.app.request(`/api/ai/sessions/${sessionId}/active-run`, {
       headers: { cookie: user.cookie },

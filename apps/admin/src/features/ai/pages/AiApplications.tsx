@@ -1,4 +1,10 @@
-import type { AiApplication, AiApplicationSecret, CreateAiApplicationInput } from '@starter/contracts'
+import type {
+  AiApplication,
+  AiApplicationPolicy,
+  AiApplicationSecret,
+  CreateAiApplicationInput,
+  ExecutableControl,
+} from '@starter/contracts'
 import type { TableProps } from 'antd'
 
 import { PermissionKeys, aiScopeIdSchema } from '@starter/contracts'
@@ -6,11 +12,13 @@ import {
   Alert,
   App,
   Button,
+  Checkbox,
   Collapse,
   Form,
   Input,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Table,
   Tag,
@@ -22,6 +30,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
+  useAgentDefinitionsQuery,
   useAiApplicationsQuery,
   useCreateAiApplicationMutation,
   useRevokeAiApplicationMutation,
@@ -34,6 +43,9 @@ interface ApplicationFormValues {
   name: string
   tenantId: string
   projectId: string
+  executableIds: string[]
+  controls: ExecutableControl[]
+  maxSideEffect: AiApplicationPolicy['maxSideEffect']
 }
 
 /** 生成满足 aiScopeIdSchema 的随机 scope id：前缀 + 32 位 hex。 */
@@ -45,6 +57,9 @@ export function AiApplications() {
   const { t } = useTranslation()
   const { message } = App.useApp()
   const applicationsQuery = useAiApplicationsQuery()
+  // 策略里的 executables 只能选启用中的 Agent，用公开列表（启用状态）而不是 admin 全量列表。
+  const agentsQuery = useAgentDefinitionsQuery({ page: 1, pageSize: 100 })
+  const agents = agentsQuery.data?.items ?? []
   const createApplication = useCreateAiApplicationMutation()
   const rotateSecret = useRotateAiApplicationSecretMutation()
   const revokeApplication = useRevokeAiApplicationMutation()
@@ -79,6 +94,16 @@ export function AiApplications() {
       name: values.name.trim(),
       tenantId: values.tenantId.trim(),
       projectId: values.projectId.trim(),
+      policy: {
+        schemaVersion: 1,
+        // version 用创建时看到的 revision；列表里找不到的 id 直接丢弃，不猜测版本号。
+        executables: values.executableIds.flatMap((id) => {
+          const agent = agents.find((candidate) => candidate.id === id)
+          return agent ? [{ id, version: agent.revision }] : []
+        }),
+        controls: values.controls,
+        maxSideEffect: values.maxSideEffect,
+      },
     }
     try {
       const created = await createApplication.mutateAsync(input)
@@ -295,13 +320,65 @@ export function AiApplications() {
         confirmLoading={createApplication.isPending}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" initialValues={generatedScopes}>
+        <Form
+          form={form}
+          layout="vertical"
+          initialValues={{
+            ...generatedScopes,
+            executableIds: [],
+            controls: ['abort', 'steer', 'follow_up'],
+            maxSideEffect: 'read_only',
+          }}
+        >
           <Form.Item
             name="name"
             label={t('ai.applications.name')}
             rules={[{ required: true, whitespace: true, message: t('ai.applications.nameRequired') }]}
           >
             <Input maxLength={120} placeholder={t('ai.applications.namePlaceholder')} />
+          </Form.Item>
+          <Form.Item name="maxSideEffect" label={t('ai.applications.policy.maxSideEffect')}>
+            <Select
+              options={(
+                [
+                  ['read_only', 'maxSideEffectReadOnly'],
+                  ['idempotent_write', 'maxSideEffectIdempotentWrite'],
+                  ['non_idempotent_write', 'maxSideEffectNonIdempotentWrite'],
+                ] as const
+              ).map(([value, labelKey]) => ({
+                value,
+                label: t(`ai.applications.policy.${labelKey}`),
+              }))}
+            />
+          </Form.Item>
+          <Form.Item name="controls" label={t('ai.applications.policy.controls')}>
+            <Checkbox.Group
+              options={(
+                [
+                  ['abort', 'controlsAbort'],
+                  ['steer', 'controlsSteer'],
+                  ['follow_up', 'controlsFollowUp'],
+                ] as const
+              ).map(([value, labelKey]) => ({
+                value,
+                label: t(`ai.applications.policy.${labelKey}`),
+              }))}
+            />
+          </Form.Item>
+          <Form.Item
+            name="executableIds"
+            label={t('ai.applications.policy.executables')}
+            extra={t('ai.applications.policy.hint')}
+          >
+            <Select
+              mode="multiple"
+              loading={agentsQuery.isLoading}
+              options={agents.map((agent) => ({
+                value: agent.id,
+                label: `${agent.name} · v${agent.revision}`,
+              }))}
+              placeholder={t('ai.applications.policy.executablesPlaceholder')}
+            />
           </Form.Item>
           <Collapse
             ghost

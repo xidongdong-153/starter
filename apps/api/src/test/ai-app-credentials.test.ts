@@ -10,6 +10,16 @@ import {
 } from '@api/infra/db/schema/index.js'
 import { createTestApp, readFailure, readSuccess, register } from './helpers.js'
 
+/** 不经 policy 检查的用例给空 policy：create 请求必填 policy 字段。 */
+function emptyPolicy() {
+  return {
+    schemaVersion: 1 as const,
+    executables: [],
+    controls: [],
+    maxSideEffect: 'read_only' as const,
+  }
+}
+
 async function registerAiAdmin(
   app: ReturnType<typeof createTestApp>['app'],
   runtime: ReturnType<typeof createTestApp>['runtime'],
@@ -50,6 +60,7 @@ it('应用凭据创建只返回一次 secret，并保存 hash、scope 和审计'
         name: 'Chat Product',
         tenantId: 'tenant-a',
         projectId: 'project-a',
+        policy: emptyPolicy(),
       }),
     })
     expect(response.status).toBe(200)
@@ -89,7 +100,7 @@ it('应用凭据轮换和撤销状态生效', async () => {
     const create = await app.request('/api/ai/admin/applications', {
       method: 'POST',
       headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name: 'Product', tenantId: 't', projectId: 'p' }),
+      body: JSON.stringify({ name: 'Product', tenantId: 't', projectId: 'p', policy: emptyPolicy() }),
     })
     const created = await readSuccess<{
       application: { appId: string }

@@ -5,9 +5,9 @@ import { createSuccessResponse } from '@api/shared/response.js'
 import {
   createAiApplicationRoute,
   listAiApplicationsRoute,
-  registerAiApplicationOpenApiComponents,
   revokeAiApplicationRoute,
   rotateAiApplicationRoute,
+  updateAiApplicationPolicyRoute,
 } from './application.openapi.js'
 import type { createAiApplicationService } from './application.service.js'
 
@@ -52,8 +52,15 @@ export function createAiApplicationRouteGroup(deps: {
         200,
       ),
     )
-
-  registerAiApplicationOpenApiComponents(app)
+    .openapi({ ...updateAiApplicationPolicyRoute, middleware }, (c) =>
+      c.json(
+        createSuccessResponse(
+          service.updatePolicy(c.req.valid('param').appId, c.req.valid('json'), c.var.currentUserId, c.var.requestId),
+          c.var.requestId,
+        ),
+        200,
+      ),
+    )
 
   return app
 }

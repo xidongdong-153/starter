@@ -1154,21 +1154,45 @@ it('steer 带附件时插入的 user message 含 image 块并送达模型', asyn
   }
 })
 
-it('product_app 凭证可上传附件并在 completion 中引用，跨 principal 引用被拒绝', async () => {
-  const { gateway, inputs } = createFakeGateway()
-  const { app, cleanup, runtime } = createTestApp({}, { aiGateway: gateway })
+it('product_app 凭证可上传附件并在 Run 中引用，跨 principal 引用被拒绝', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-att-app-'))
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const contexts: Context[] = []
+  const test = createAttachmentRunApp({
+    store,
+    modelId: IMAGE_MODEL_ID,
+    stubInput: ['text', 'image'],
+    streamSimple: (_model, context) => {
+      contexts.push(context)
+      return textStream('收到图片')
+    },
+  })
   try {
-    const admin = await register(app, 'att-app-admin@example.com')
+    const admin = await register(test.app, 'att-app-admin@example.com')
     expect(
-      createAuthorizationRepository(runtime.db).bootstrapAdminByEmail('att-app-admin@example.com', systemContext).kind,
+      createAuthorizationRepository(test.runtime.db).bootstrapAdminByEmail('att-app-admin@example.com', systemContext)
+        .kind,
     ).toBe('ok')
-    const credentialResponse = await app.request('/api/ai/admin/applications', {
+    seedEnabledModel(test.runtime, IMAGE_MODEL_ID)
+    const agentId = seedAgentWithModel(test.runtime, IMAGE_MODEL_ID)
+    // D3 起 product_app 禁用无状态 completion，附件引用改走 Agent Run；
+    // Run 启动要求 policy 允许该 Agent（seed 后 revision 为 1）。
+    const credentialResponse = await test.app.request('/api/ai/admin/applications', {
       method: 'POST',
       headers: { cookie: admin.cookie, 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name: 'Attachment Product',
         tenantId: 'tenant-a',
         projectId: 'project-a',
+        policy: {
+          schemaVersion: 1,
+          executables: [{ id: agentId, version: 1 }],
+          controls: ['abort', 'steer', 'follow_up'],
+          maxSideEffect: 'non_idempotent_write',
+        },
       }),
     })
     expect(credentialResponse.status).toBe(200)
@@ -1180,15 +1204,14 @@ it('product_app 凭证可上传附件并在 completion 中引用，跨 principal
       Authorization: `Bearer ${credential.data.secret}`,
       'X-AI-External-User-Id': 'customer-1',
     }
-    const modelRef = seedEnabledModel(runtime, IMAGE_MODEL_ID)
 
-    const uploaded = await uploadAndRead(app, bearerHeaders, {
+    const uploaded = await uploadAndRead(test.app, bearerHeaders, {
       bytes: PNG_BYTES,
       mimeType: 'image/png',
     })
     expect(uploaded.sessionId).toBeNull()
 
-    const rows = runtime.db.select().from(aiAttachments).all()
+    const rows = test.runtime.db.select().from(aiAttachments).all()
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
       principalKind: 'product_app',
@@ -1197,24 +1220,29 @@ it('product_app 凭证可上传附件并在 completion 中引用，跨 principal
     })
 
     // starter_user 上传的附件不能被 product_app 引用
-    const user = await register(app, 'att-app-user@example.com')
+    const user = await register(test.app, 'att-app-user@example.com')
     const userAttachment = await uploadAndRead(
-      app,
+      test.app,
       { cookie: user.cookie },
       {
         bytes: WEBP_BYTES,
         mimeType: 'image/webp',
       },
     )
-    const denied = await app.request('/api/ai/completions', {
+
+    const sessionResponse = await test.app.request('/api/ai/sessions', {
       method: 'POST',
-      headers: {
-        ...bearerHeaders,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: { ...bearerHeaders, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'attachment-run' }),
+    })
+    expect(sessionResponse.status).toBe(200)
+    const sessionId = (await readSuccess<{ id: string }>(sessionResponse)).data.id
+
+    const denied = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: 'POST',
+      headers: { ...bearerHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: modelRef,
+        agentId,
         input: '描述图片',
         attachmentIds: [userAttachment.id],
       }),
@@ -1222,39 +1250,30 @@ it('product_app 凭证可上传附件并在 completion 中引用，跨 principal
     expect(denied.status).toBe(404)
     expect((await readFailure(denied)).error.code).toBe(ApiErrorCodes.AI_ATTACHMENT_NOT_FOUND)
 
-    const response = await app.request('/api/ai/completions', {
+    const response = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
       method: 'POST',
-      headers: {
-        ...bearerHeaders,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
+      headers: { ...bearerHeaders, 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: modelRef,
+        agentId,
         input: '描述图片',
         attachmentIds: [uploaded.id],
       }),
     })
     expect(response.status).toBe(200)
-    expect(inputs).toHaveLength(1)
-    const message = inputs[0]?.messages[0]
+    const events = parseSseEvents(await readSseBody(response))
+    expect(events.at(-1)?.type).toBe('run.completed')
+
+    expect(contexts).toHaveLength(1)
+    const message = contexts[0]?.messages.at(-1)
     expect(message?.role).toBe('user')
-    if (message?.role === 'user') {
-      expect(message.content[0]).toMatchObject({
-        type: 'text',
-        text: '描述图片',
-      })
-      expect(message.content[1]).toEqual({
-        type: 'image',
-        data: base64(PNG_BYTES),
-        mimeType: 'image/png',
-        turnIndex: 0,
-        contentIndex: 1,
-        blockId: '0:1',
-      })
-    }
+    expect((message as { content: unknown }).content).toEqual([
+      { type: 'text', text: '描述图片' },
+      { type: 'image', data: base64(PNG_BYTES), mimeType: 'image/png' },
+    ])
+    expect((message as { attachmentIds?: unknown }).attachmentIds).toEqual([uploaded.id])
   } finally {
-    cleanup()
+    test.cleanup()
+    await rm(directory, { recursive: true, force: true })
   }
 })
 

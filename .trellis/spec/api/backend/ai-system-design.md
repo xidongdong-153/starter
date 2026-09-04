@@ -7,9 +7,9 @@
 当前 AI 系统提供三类调用和一个推送通道：
 
 - `POST /api/ai/test`：管理员或用户执行一次模型测试。它使用 Provider、模型白名单和统一 Gateway，但不创建 Agent Session、Agent Run 或 Pi transcript。
-- `POST /api/ai/completions`：一次性无状态模型调用。调用方直接指定白名单内模型（可带 systemPrompt）加一段输入，单轮拿结果；不传工具，不创建 Agent Session、Agent Run 或 Pi transcript，审计 `scenario='completion'`。
+- `POST /api/ai/completions`：一次性无状态模型调用。调用方直接指定白名单内模型（可带 systemPrompt）加一段输入，单轮拿结果；不传工具，不创建 Agent Session、Agent Run 或 Pi transcript，审计 `scenario='completion'`。仅 starter_user 可用；`product_app` 调用返回 403 `AI.COMPLETION_FORBIDDEN`（第三方只能经 Agent capability 调用）。
 - `POST /api/ai/sessions/{sessionId}/runs`：在用户自己的持久 Session 和指定 lane 中运行一个 Agent。它使用 Pi `Agent`、Pi Session、Tool adapter、SSE 和 Run 恢复记录。
-- Run 终态 Webhook：`product_app` 的 Run 进终态后，由 `webhook/` 的周期扫描补登并 POST 推送到管理员配置的端点，带 HMAC-SHA256 签名，失败退避重试，超限死信；它不进入 Run 终态事务，也不订阅事件发布路径。
+- Run 终态 Webhook：`product_app` 的 Run 进终态后，由 `webhook/` 的周期扫描补登并 POST 推送到管理员配置的端点，带 HMAC-SHA256 签名，失败退避重试，超限死信；payload 携带对应 terminal RunEvent 的 `eventId` / `sequence` / `eventProtocolVersion`（interrupted Run 无 terminal 事件行时两列为 null），请求头带 `X-Starter-Delivery-Id` 供接收方幂等去重；它不进入 Run 终态事务，也不订阅事件发布路径。
 
 本文件重点说明第三类 Agent Run，因为它包含输入、模型循环、工具调用、流式事件、持久历史、主库索引、用量审计和恢复。
 
@@ -124,11 +124,12 @@ Executor 不创建或更新 `ai_agent_runs`，不注册 HTTP route，也不发�
 Webhook 子域负责：
 
 - 管理面端点 CRUD、signing secret 的 AES-256-GCM 加解密（key 复用 `AI_CREDENTIAL_ENCRYPTION_KEY`）、连通性 test 探测和投递记录查询。
-- 周期 tick（`AI_WEBHOOK_SWEEP_INTERVAL_MS`，默认 5 秒）：先补登终态 `product_app` Run（`finished_at > 内存水位` 且不早于端点 `created_at`，`(endpoint_id, run_id)` 唯一保证幂等），再投递到期 pending 记录。
+- 周期 tick（`AI_WEBHOOK_SWEEP_INTERVAL_MS`，默认 5 秒）：先补登终态 `product_app` Run，扫描游标是复合键 `(finished_at, run_id)`（严格大于，同 `finished_at` 超过单批上限时继续扫下一批不跳过；进程重启后内存游标归零重新补扫），且不早于端点 `created_at`，`(endpoint_id, run_id)` 唯一保证幂等；入队时 leftJoin `ai_run_events` 取 terminal 事件的 `eventId` / `sequence` 写入 delivery（协议版本 `eventProtocolVersion = 1`），再投递到期 pending 记录。
+- 多实例投递互斥：`claimDueDeliveries` 用条件 UPDATE（`status='pending'` 且 claim 未过期）领取 delivery，TTL `DELIVERY_CLAIM_TTL_MS = 60s`（代码常量，必须大于 `AI_WEBHOOK_TIMEOUT_MS`，否则会出现 claim 过期被重领的合法重复 POST）；`markDelivered` / `markRetry` / `markDead` 清 claim 两列。协议是 at-least-once，接收方按 `X-Starter-Delivery-Id` 去重。
 - 出站请求全部走 `AiUrlGuard.fetch`；`AiUrlGuardError` 属配置性失败，直接置 `dead` 不重试。
 - 重试退避与最大次数由 `AI_WEBHOOK_BACKOFF_MS`、`AI_WEBHOOK_MAX_ATTEMPTS` 控制，超限置 `dead`；无手工重投。
 
-Webhook 投递器不进 Run 终态事务，不订阅 RunService 事件，不读写 Pi Session；它只扫 `ai_agent_runs`。进程重启后内存水位归零，漏发的终态 Run 按同一规则补扫，端点创建之前和禁用窗口内结束的 Run 永不补发。总开关 `AI_WEBHOOK_ENABLED` 默认 false，关闭时管理面 CRUD 仍可用。
+Webhook 投递器不进 Run 终态事务，不订阅 RunService 事件，不读写 Pi Session；它只扫 `ai_agent_runs` 并从 `ai_run_events` 读 terminal 事件标识。进程重启后游标归零，漏发的终态 Run 按同一规则补扫，端点创建之前和禁用窗口内结束的 Run 永不补发。总开关 `AI_WEBHOOK_ENABLED` 默认 false，关闭时管理面 CRUD 仍可用。
 
 ## 4. 一次输入如何变成最终输出
 
@@ -207,12 +208,15 @@ Run Service 接着按以下顺序执行：
 
 1. 校验当前用户拥有该 Session，且 Session 没有归档。
 2. 解析 Agent 当前配置和 revision（预设走 `resolve(id)`，内联走 `resolveInline(config, access)`）。
-3. 请求带 `idempotencyKey` 时按 `idempotency_scope + idempotency_key` 预检查：命中同 Session 直接返回既有 Run（SSE 模式 subscribe 回放），异 Session 返回 409 `AI.IDEMPOTENCY_KEY_CONFLICT`。这一步在 reserve 之前，不占 lane 租约；scope 由 `RuntimeAccessContext` 七字段拼出，与 Session 可见性判据一致。
-4. 对 `sessionId + lane` 做 registry reserve。冲突在创建 Run 行之前返回 `AI.SESSION_BUSY`，此时 key 未被消费。
-5. 为非 `main` lane 创建 Pi lane。
-6. 在主库创建 `starting` Run 行，并保存无 secret snapshot；带 key 启动时行里写入 key 和 scope，key 在这一步成功后才被消费，并发同 key 竞争由部分唯一索引兜底（释放租约后重查走预检查同一分支）。
-7. 准备 Executor、attach active handle、更新为 `running`。
-8. 正常启动时发送 sequence 1 的 `run.started`。
+3. product_app 主体执行 capability policy 检查（`runtime/app-policy.ts` 的 `enforceStartPolicy`）：`{agentId, agentRevision}` 精确匹配 policy.executables、聚合 Tool side effect 不超过 `maxSideEffect`；失败 403 `AI.APP_POLICY_FORBIDDEN`，不建 Run、不占 lane 租约、不消费幂等键。starter_user 跳过；policy 为 null（存量行）或 parse 失败一律 fail closed。
+4. 请求带 `idempotencyKey` 时按 `idempotency_scope + idempotency_key` 预检查：命中同 Session 直接返回既有 Run（SSE 模式 subscribe 回放），异 Session 返回 409 `AI.IDEMPOTENCY_KEY_CONFLICT`。这一步在 reserve 之前，不占 lane 租约；scope 由 `RuntimeAccessContext` 七字段拼出，与 Session 可见性判据一致。
+5. 对 `sessionId + lane` 做 registry reserve。冲突在创建 Run 行之前返回 `AI.SESSION_BUSY`，此时 key 未被消费。
+6. 为非 `main` lane 创建 Pi lane。
+7. 在主库创建 `starting` Run 行，并保存无 secret snapshot；带 key 启动时行里写入 key 和 scope，key 在这一步成功后才被消费，并发同 key 竞争由部分唯一索引兜底（释放租约后重查走预检查同一分支）。
+8. 准备 Executor、attach active handle、更新为 `running`。
+9. 正常启动时发送 sequence 1 的 `run.started`。
+
+abort / steer / follow-up 控制面：查到 scoped Run（404 判据在前）后、操作 active handle 前，product_app 还要检查 `policy.controls` 是否包含对应动作（`enforceControlPolicy`，缺权限 403 `AI.APP_POLICY_FORBIDDEN`）；不重查 executables，已在跑的 Run 不追溯。
 
 `prepare`、`attach` 或 `markRunning` 失败时，Run Service 会创建失败终态事件并释放原始 lane lease，不能只按尚未创建的 runId handle 释放。
 
@@ -349,7 +353,7 @@ SSE 的 `id` 是 `eventId`，`event` 是 RunEvent.type，`data` 是完整事件 
 
 SSE 断开不会 abort Run。Route 只停止向当前连接写数据；Agent 继续运行、写 Pi transcript、写主库终态。
 
-客户端遇到流提前结束（包括事件队列超限关闭 transport、读流中途断开）时不能报错也不能清空已有视图，Run 还在后台跑。正确做法是转成轮询 `GET /runs/{runId}` 的 `live`，到终态后再用 transcript 替换临时流式视图。只有一个事件都没收到就断的启动失败才报错。
+SSE writer 在未观察到终态事件就结束（iterator 提前 EOF 或抛错、事件队列超限关闭）时发送版本化 transport frame `event: stream.resume_required`（schema：`streamResumeRequiredFrameSchema`，字段 type / eventProtocolVersion / lastSequence / reason），不带 SSE id。客户端收到该 frame 或裸的非终态 EOF 都不能报错也不能清空已有视图，Run 还在后台跑：优先按 frame 内 lastSequence 重连 `/events/stream`，无法重连时转成轮询 `GET /runs/{runId}` 的 `live`，到终态后再用 transcript 替换临时流式视图。只有一个事件都没收到就断的启动失败才报错。正常终态流和客户端主动断开不发 frame；frame 不写 `ai_run_events`、不进 Timeline / transcript。
 
 ### 5.2 Pi Session SQLite
 
@@ -387,7 +391,7 @@ Starter 主库保存：
 | `ai_model_calls` | Provider/model、scenario、runId、耗时、token、cost、结果和错误码 | prompt、response、secret、原始错误 |
 | `ai_tool_executions` | Tool 名称、时间、耗时、状态、timeout、错误码 | arguments、result、safeSummary |
 | `ai_webhook_endpoints` | 端点 URL、所属 app、加密 signing secret、enabled/disabled、最后投递时间 | secret 明文 |
-| `ai_webhook_deliveries` | 端点、Run、payload 快照、状态、尝试次数、下次尝试时间、最近响应码和错误 | secret；payload 不含正文和身份字段 |
+| `ai_webhook_deliveries` | 端点、Run、payload 快照、terminal 事件的 eventId/sequence/协议版本、claim 与过期时间、状态、尝试次数、下次尝试时间、最近响应码和错误 | secret；payload 不含正文和身份字段 |
 
 `ai_model_calls` 的 `scenario` 当前为 `model_test`、`agent_run`、`completion` 或 `legacy`。新 Agent Run 的模型请求使用 `scenario='agent_run'` 和 nullable `run_id`；模型测试和无状态调用没有 Run 关联。
 
@@ -469,6 +473,15 @@ flowchart TD
 
 应用凭据只存 sha256 哈希和前 12 位前缀（`application.crypto.ts`），认证时按前缀取候选再做 `timingSafeEqual`。`AI_CONFIG_MANAGE` 权限的管理员负责创建、rotate 和 revoke。
 
+### 应用能力策略（capability policy）
+
+每个 `product_app` 凭据带一份版本化 strict policy（`ai_app_credentials.policy_json`，`aiApplicationPolicySchema`）：`schemaVersion: 1`、`executables: Array<{id, version}>`（精确 Agent revision，无通配无范围）、`controls: Array<'abort'|'steer'|'follow_up'>`、`maxSideEffect`（read_only / idempotent_write / non_idempotent_write 三级）。规则：
+
+- create 必填 policy；`policy_json` 为 NULL 的存量行与 parse 失败一律 fail closed（discovery 空、start 403），缺省不解释成允许全部。
+- policy 经 `PATCH /api/ai/admin/applications/{appId}/policy` 更新（revoked 后 409），写 `policy_updated` 审计；rotate 保留 policy，revoke 仍立即 401。
+- guard 认证后把 parse 结果放进 `RuntimeAccessContext.policy`，discovery（`/api/ai/executables*`）按 policy 过滤（不允许的详情 404），start 与 controls 的检查点见 §4.1；`runtime/app-policy.ts` 是唯一判定模块，判定逻辑不进 route / transport / 产品模块。starter_user 不受 policy 影响（三处恒 pass-through）。
+- Agent revision 变化后旧 policy 拒绝调用，不执行旧版本也不自动升级。
+
 Tool 的权限检查由 adapter 按 principal kind 分流：只有 `starter_user` 用 `principal.principalId` 查 Starter 授权表；`product_app` 对带 `requiredPermission` 的 Tool 直接 `AI.TOOL_FORBIDDEN`，伪造与 Starter 用户相同的 `X-AI-External-User-Id` 也不会查 `user_roles`；权限查询异常同样按拒绝处理。Adapter 只收 Run 启动时已解析的 `RegisteredAiTool[]`，handler 不接收裸 userId、Hono Context、Better Auth session 或数据库 client。
 
 `GET /api/ai/agents` 和 `GET /api/ai/agents/{agentId}` 当前用的是 `requireAuth`，应用凭据调不通；运行面 OpenAPI 的 `security` 也只声明了 `cookieAuth`。改这两处前先确认调用方是否依赖现状。
@@ -534,7 +547,7 @@ Provider secret 只能由 AI infra 的 credential store 读取和解密。以下
 - 不把 `ai_model_calls` 当作 Run 状态来源；Run 状态以 `ai_agent_runs` 为准，模型调用只是审计记录。
 - 不使用 fallback、localStorage 或前端缓存恢复业务状态。
 - 不提前加入分布式队列、跨节点 active registry 或 Web 聊天产品层。当前 active registry 是单进程的，`tenantId` / `projectId` 只是 scope 查询维度，不要在此之上再造一层租户模型。
-- Webhook 投递器不得进入 Run 终态事务，也不订阅事件发布路径；终态推送只依赖对 `ai_agent_runs` 的周期扫描，入队靠 `(endpoint_id, run_id)` 唯一约束幂等。
+- Webhook 投递器不得进入 Run 终态事务，也不订阅事件发布路径；终态推送只依赖对 `ai_agent_runs` 的周期扫描，入队靠 `(endpoint_id, run_id)` 唯一约束幂等；扫描游标必须是 `(finishedAt, runId)` 复合键，不允许退回单列 `finished_at` 水位（同时间戳超批会跳过记录）。
 
 ## 11. OpenAPI 面分类
 
@@ -637,7 +650,7 @@ pnpm --filter @starter/api exec vitest run src/test/ai-webhook.test.ts --config 
 - `ai_model_calls` 与 `ai_tool_executions` 不含 prompt、response、arguments、result 和 secret。
 - SSE 断开不会 abort，重新读取可以得到已持久化结果。
 - 主库 Run 终态、Pi terminal entry 和恢复逻辑的字段一致。
-- Webhook 投递：签名可按文档公式验证，`run.service` 与 SSE 路径零改动，重复 tick 不重复入队，guard 拒绝直接死信，secret 不进日志和列表 DTO。
+- Webhook 投递：签名可按文档公式验证，`run.service` 与 SSE 路径零改动，重复 tick 不重复入队，guard 拒绝直接死信，secret 不进日志和列表 DTO；payload 的 eventId/sequence 与 `ai_run_events` terminal 行一致，同时间戳超批不漏发，双实例 claim 互斥，请求头带 `X-Starter-Delivery-Id`。
 
 ## 14. 相关规范
 

@@ -3,7 +3,7 @@
   "name": "ai-app-capability-policy",
   "title": "D3：应用能力策略与事件交付",
   "description": "限制 product_app 可调用的 Agent 版本和 controls，并完善外部事件交付语义。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

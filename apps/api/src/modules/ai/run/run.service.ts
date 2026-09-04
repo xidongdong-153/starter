@@ -39,6 +39,7 @@ import { toAiErrorCategory, isAiRetryableErrorCode } from '@api/modules/ai/ai-er
 import type { RuntimeAccessContext } from '@api/modules/ai/principal.js'
 
 import type { AiAgentDefinitionService } from '../agent/agent.service.js'
+import { enforceControlPolicy, enforceStartPolicy } from '../runtime/app-policy.js'
 import type { AiAttachmentResolver } from '../attachment/index.js'
 import type { AiOutputContractRegistry } from '../output/output-contract-registry.js'
 import { toStructuredOutputContractRef } from '../output/output-contract-registry.js'
@@ -244,6 +245,11 @@ export function createAiAgentRunService(input: {
     ) {
       throw new AppError(ApiErrorCodes.AI_AGENT_REVISION_CONFLICT, 'Agent revision 与请求期望不一致', 409)
     }
+    enforceStartPolicy(access, {
+      id: resolved.id,
+      revision: resolved.revision,
+      tools: resolved.tools.map((tool) => tool.sideEffect),
+    })
     const lane = startInput.input.lane ?? 'main'
 
     // 附件解析与能力硬校验在幂等预检查之前：失败请求不 reserve、
@@ -878,6 +884,7 @@ export function createAiAgentRunService(input: {
 
   function abort(access: RuntimeAccessContext, sessionId: string, runId: string): AgentRun {
     const run = requireScopedRun(access, sessionId, runId)
+    enforceControlPolicy(access, 'abort')
     const handle = registry.get(runId)
     if (!handle) throw runNotActive()
     handle.abort()
@@ -891,6 +898,7 @@ export function createAiAgentRunService(input: {
     input: SteerAgentRunInput,
   ): Promise<AgentRun> {
     const run = requireScopedRun(access, sessionId, runId)
+    enforceControlPolicy(access, 'steer')
     const handle = registry.get(runId)
     if (!handle) throw runNotActive()
     const images = await resolveInputImages({
@@ -910,6 +918,7 @@ export function createAiAgentRunService(input: {
     input: FollowUpAgentRunInput,
   ): Promise<AgentRun> {
     const run = requireScopedRun(access, sessionId, runId)
+    enforceControlPolicy(access, 'follow_up')
     const handle = registry.get(runId)
     if (!handle) throw runNotActive()
     const images = await resolveInputImages({

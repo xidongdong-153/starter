@@ -1,1 +1,8 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"检查 policy 拒绝是否发生在 reserve/幂等预检查之前、终态与 subscriber 生命周期不回归"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"检查 principal 双身份边界、secret 边界与 Webhook 不进终态事务的约束"}
+{"file":".trellis/spec/api/backend/product-module-guidelines.md","reason":"检查 flow 新恢复端点与 chat/AI 的同构及窄依赖不破坏"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"检查新错误码 403/404 语义与统一 envelope"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"提交前完整质量门禁清单"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"policy 数据流跨层一致性与事件 identity 一致性检查"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"确认 policy 检查、sideEffect 聚合没有第二份实现"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"对照 D3 验收测试清单与明确非目标"}

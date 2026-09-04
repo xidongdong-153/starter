@@ -15,6 +15,7 @@ import {
   type AgentRun,
   type AgentTranscript,
   type AgentTranscriptItem,
+  type AiApplicationPolicy,
   type RunTimeline,
   type StructuredOutputList,
 } from '@starter/contracts'
@@ -167,7 +168,14 @@ it('product_app 发现 Agent、JSON 启动 Run、读取结构化输出并回放 
     const productAgent = await setupAgent(app, runtime, admin, 'third-party-product', 8, [], productContract)
     const adminContractAgent = await setupAgent(app, runtime, admin, 'third-party-admin-contract', 8, [], adminContract)
 
-    const main = await createAppCredential(app, admin.cookie, 'Main product', 'tenant-a', 'project-a')
+    const main = await createAppCredential(
+      app,
+      admin.cookie,
+      'Main product',
+      'tenant-a',
+      'project-a',
+      agentPolicy([enabledAgent.agentId, productAgent.agentId, adminContractAgent.agentId]),
+    )
     const other = await createAppCredential(app, admin.cookie, 'Other product', 'tenant-a', 'project-b')
     const client = createProductClient(app, main.secret, 'customer-1', {
       subjectType: 'ticket',
@@ -484,17 +492,38 @@ async function registerAdmin(
   return admin
 }
 
+/** 空 policy：credential 只做内联拒绝或跨 scope 404 验证，不跑 Agent。 */
+function emptyPolicy(): AiApplicationPolicy {
+  return {
+    schemaVersion: 1,
+    executables: [],
+    controls: [],
+    maxSideEffect: 'read_only',
+  }
+}
+
+/** 允许指定 Agent 集合的 policy（setupAgent 创建后 revision 为 1）。 */
+function agentPolicy(agentIds: string[]): AiApplicationPolicy {
+  return {
+    schemaVersion: 1,
+    executables: agentIds.map((id) => ({ id, version: 1 })),
+    controls: ['abort', 'steer', 'follow_up'],
+    maxSideEffect: 'non_idempotent_write',
+  }
+}
+
 async function createAppCredential(
   app: ReturnType<typeof createTestApp>['app'],
   cookie: string,
   name: string,
   tenantId: string,
   projectId: string,
+  policy: AiApplicationPolicy = emptyPolicy(),
 ): Promise<{ appId: string; secret: string }> {
   const response = await app.request('/api/ai/admin/applications', {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, tenantId, projectId }),
+    body: JSON.stringify({ name, tenantId, projectId, policy }),
   })
   expect(response.status).toBe(200)
   const result = await readSuccess<{

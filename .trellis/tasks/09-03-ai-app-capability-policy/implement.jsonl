@@ -1,1 +1,9 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 生命周期、policy 检查点插入位置与终态唯一性约束"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"AI 模块边界、principal 双身份、Webhook 投递器与 SSE 断开语义"}
+{"file":".trellis/spec/api/backend/product-module-guidelines.md","reason":"flow 恢复端点与 chat 的同构规则、产品路由窄依赖"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"新增错误码的 status、envelope 和存在性隐藏规则"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API 类型、Lint、Format、测试和边界检查要求"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"runtime、webhook、application 文件归属与子域组织约定"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"policy 从 guard 到 service 检查点的跨层数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"policy 检查与 sideEffect 聚合只留一份实现"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"D3 当前代码面、缺口清单、最小 policy 语义和验收研究结论"}

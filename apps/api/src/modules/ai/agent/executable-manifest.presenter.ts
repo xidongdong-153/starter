@@ -1,4 +1,4 @@
-import type { AgentDefinitionSummary, AiToolSideEffect, ExecutableManifestV1 } from '@starter/contracts'
+import type { AgentDefinitionSummary, ExecutableManifestV1 } from '@starter/contracts'
 import {
   executableAgentControls,
   executableAgentInputSchema,
@@ -8,15 +8,11 @@ import {
 import { z } from 'zod'
 
 import { canonicalJson, sha256Hex } from '../run/resolved-manifest.js'
+import { strongestSideEffect } from '../runtime/app-policy.js'
 
 import type { ResolvedAgentDefinition } from './agent.service.js'
 
 const inputSchema = executableJsonObjectSchema.parse(z.toJSONSchema(executableAgentInputSchema, { target: 'draft-7' }))
-const sideEffectRank: Record<AiToolSideEffect, number> = {
-  read_only: 0,
-  idempotent_write: 1,
-  non_idempotent_write: 2,
-}
 
 export function toExecutableManifestV1(
   definition: Pick<AgentDefinitionSummary, 'id' | 'name' | 'description'>,
@@ -85,11 +81,4 @@ export function toExecutableManifestV1(
     sideEffect: executionContract.sideEffect,
     manifestHash: sha256Hex(canonicalJson(executionContract)),
   })
-}
-
-function strongestSideEffect(sideEffects: readonly AiToolSideEffect[]): AiToolSideEffect {
-  return sideEffects.reduce<AiToolSideEffect>(
-    (strongest, sideEffect) => (sideEffectRank[sideEffect] > sideEffectRank[strongest] ? sideEffect : strongest),
-    'read_only',
-  )
 }

@@ -30,7 +30,18 @@ async function createCredential(
   const response = await app.request('/api/ai/admin/applications', {
     method: 'POST',
     headers: { Cookie: admin.cookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, tenantId: 'tenant', projectId }),
+    // 只验证 Session scope 隔离，不经 policy 检查，给空 policy。
+    body: JSON.stringify({
+      name,
+      tenantId: 'tenant',
+      projectId,
+      policy: {
+        schemaVersion: 1,
+        executables: [],
+        controls: [],
+        maxSideEffect: 'read_only',
+      },
+    }),
   })
   const body = await readSuccess<{ secret: string }>(response)
   return body.data.secret

@@ -253,18 +253,72 @@ export type AiSubjectType = z.infer<typeof aiSubjectTypeSchema>
 export const aiSubjectIdSchema = z.string().trim().min(1).max(240)
 export type AiSubjectId = z.infer<typeof aiSubjectIdSchema>
 
+export const aiToolSideEffectSchema = z.enum(['read_only', 'idempotent_write', 'non_idempotent_write'])
+export type AiToolSideEffect = z.infer<typeof aiToolSideEffectSchema>
+
+export const executableControlSchema = z.enum(['abort', 'steer', 'follow_up'])
+export type ExecutableControl = z.infer<typeof executableControlSchema>
+
+export const aiApplicationPolicySchema = z
+  .strictObject({
+    schemaVersion: z.literal(1),
+    executables: z
+      .array(
+        z.strictObject({
+          id: uuidSchema,
+          version: z.number().int().min(1),
+        }),
+      )
+      .max(100),
+    controls: z.array(executableControlSchema).max(3),
+    maxSideEffect: aiToolSideEffectSchema,
+  })
+  .superRefine((value, context) => {
+    const executableIds = new Set<string>()
+    for (const [index, executable] of value.executables.entries()) {
+      if (executableIds.has(executable.id)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['executables', index, 'id'],
+          message: '策略不能包含重复的 executable id',
+        })
+      }
+      executableIds.add(executable.id)
+    }
+
+    const controls = new Set<string>()
+    for (const [index, control] of value.controls.entries()) {
+      if (controls.has(control)) {
+        context.addIssue({
+          code: 'custom',
+          path: ['controls', index],
+          message: '策略不能包含重复的 control',
+        })
+      }
+      controls.add(control)
+    }
+  })
+export type AiApplicationPolicy = z.infer<typeof aiApplicationPolicySchema>
+
 export const createAiApplicationSchema = z.strictObject({
   name: z.string().trim().min(1).max(120),
   tenantId: aiScopeIdSchema,
   projectId: aiScopeIdSchema,
+  policy: aiApplicationPolicySchema,
 })
 export type CreateAiApplicationInput = z.infer<typeof createAiApplicationSchema>
+
+export const updateAiApplicationPolicySchema = z.strictObject({
+  policy: aiApplicationPolicySchema,
+})
+export type UpdateAiApplicationPolicyInput = z.infer<typeof updateAiApplicationPolicySchema>
 
 export const aiApplicationSchema = z.strictObject({
   appId: uuidSchema,
   name: z.string().min(1).max(120),
   tenantId: aiScopeIdSchema,
   projectId: aiScopeIdSchema,
+  policy: aiApplicationPolicySchema.nullable(),
   status: z.enum(['active', 'revoked']),
   secretPrefix: z.string().min(8).max(32),
   createdAt: isoDateTimeSchema,
@@ -559,10 +613,6 @@ export const aiToolRefSchema = z.strictObject({
   version: aiToolVersionSchema,
 })
 export type AiToolRef = z.infer<typeof aiToolRefSchema>
-
-/** Tool 副作用声明：决定 auto retry 门禁与超时措辞；定义时必填。 */
-export const aiToolSideEffectSchema = z.enum(['read_only', 'idempotent_write', 'non_idempotent_write'])
-export type AiToolSideEffect = z.infer<typeof aiToolSideEffectSchema>
 
 export const aiToolSummarySchema = z.strictObject({
   name: aiToolNameSchema,
@@ -1202,9 +1252,6 @@ export const executableAgentInputSchema = z.strictObject({
   attachmentIds: agentAttachmentIdsSchema.optional(),
 })
 export type ExecutableAgentInput = z.infer<typeof executableAgentInputSchema>
-
-export const executableControlSchema = z.enum(['abort', 'steer', 'follow_up'])
-export type ExecutableControl = z.infer<typeof executableControlSchema>
 
 export const executableAgentControls = ['abort', 'steer', 'follow_up'] as const
 const executableAgentControlsSchema = z.tuple([z.literal('abort'), z.literal('steer'), z.literal('follow_up')])
@@ -1896,6 +1943,14 @@ export const completionStreamEventSchema = z.discriminatedUnion('type', [
 
 export type CompletionStreamEvent = z.infer<typeof completionStreamEventSchema>
 
+export const streamResumeRequiredFrameSchema = z.strictObject({
+  type: z.literal('stream.resume_required'),
+  eventProtocolVersion: z.literal(1),
+  lastSequence: z.number().int().min(0),
+  reason: z.literal('transport_closed'),
+})
+export type StreamResumeRequiredFrame = z.infer<typeof streamResumeRequiredFrameSchema>
+
 /**
  * Run 终态 Webhook 推送（`run.terminal`）。
  *
@@ -1907,6 +1962,9 @@ export const webhookRunTerminalPayloadSchema = z.strictObject({
   appId: uuidSchema,
   runId: uuidSchema,
   sessionId: uuidSchema,
+  eventId: uuidSchema.nullable(),
+  sequence: z.number().int().min(1).nullable(),
+  eventProtocolVersion: z.literal(1),
   lane: agentLaneSchema,
   agentId: uuidSchema,
   agentRevision: z.number().int().min(1),

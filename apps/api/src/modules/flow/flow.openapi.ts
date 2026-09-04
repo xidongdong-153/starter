@@ -2,6 +2,7 @@ import {
   agentDefinitionListQuerySchema,
   agentTranscriptQuerySchema,
   createAgentSessionSchema,
+  runTimelineQuerySchema,
   startAgentRunJsonSchema,
   startAgentRunSchema,
   uuidSchema,
@@ -144,6 +145,15 @@ export const getFlowRunStructuredOutputsRoute = createRoute({
   },
 })
 
+const flowStreamResponse = {
+  content: { 'text/event-stream': { schema: z.string() } },
+  description: [
+    'Agent Run RunEvent SSE 流。SSE id 对应 eventId，event 对应 type，data 是完整 RunEvent JSON。',
+    'sequence 在单个 Run 内严格递增，只有 run.completed、run.failed 或 run.aborted 之一会作为唯一终态事件。',
+    '连接断开不会中止 Run；创建流使用 POST，已有 Run 的恢复使用 /events/stream，Run 终态后读取 Timeline 或 Session transcript。',
+  ].join(''),
+}
+
 export const startFlowRunRoute = createRoute({
   method: 'post',
   path: '/api/flow/sessions/{sessionId}/runs',
@@ -185,5 +195,20 @@ export const startFlowRunRoute = createRoute({
     404: notFoundResponse,
     409: conflictResponse,
     500: internalErrorResponse,
+  },
+})
+
+export const getFlowRunEventsStreamRoute = createRoute({
+  method: 'get',
+  path: '/api/flow/sessions/{sessionId}/runs/{runId}/events/stream',
+  tags,
+  security,
+  description: '恢复已有 Run 的 RunEvent SSE。支持 afterSequence 和 Last-Event-ID，不会创建新的 Run。',
+  request: { params: runParams, query: runTimelineQuerySchema },
+  responses: {
+    200: flowStreamResponse,
+    400: invalidRequestResponse,
+    401: unauthorizedResponse,
+    404: notFoundResponse,
   },
 })

@@ -97,8 +97,8 @@ it('产品后端通过公开 Bearer HTTP/SSE 完成 Run 并按 scope 恢复 Tran
     expect(promptResponse.status).toBe(200)
     const prompt = await readSuccess<{ id: string }>(promptResponse)
     const agentId = seedAgent(runtime, prompt.data.id)
-    const first = await createAppCredential(app, admin.cookie, 'Chat product', 'tenant-a', 'project-a')
-    const second = await createAppCredential(app, admin.cookie, 'Other product', 'tenant-a', 'project-b')
+    const first = await createAppCredential(app, admin.cookie, 'Chat product', 'tenant-a', 'project-a', agentId)
+    const second = await createAppCredential(app, admin.cookie, 'Other product', 'tenant-a', 'project-b', agentId)
     const client = createProductClient(app, first.secret, 'customer-1', {
       subjectType: 'ticket',
       subjectId: 'ticket-42',
@@ -352,11 +352,24 @@ async function createAppCredential(
   name: string,
   tenantId: string,
   projectId: string,
+  agentId: string,
 ): Promise<{ appId: string; secret: string }> {
   const response = await app.request('/api/ai/admin/applications', {
     method: 'POST',
     headers: { Cookie: cookie, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name, tenantId, projectId }),
+    // product_app 启动 Run 需要允许该 Agent 的 policy（seed 后 revision 为 1）；
+    // 另一 project 的凭据同样允许，才能走到 Tool scope 校验的 400。
+    body: JSON.stringify({
+      name,
+      tenantId,
+      projectId,
+      policy: {
+        schemaVersion: 1,
+        executables: [{ id: agentId, version: 1 }],
+        controls: ['abort', 'steer', 'follow_up'],
+        maxSideEffect: 'non_idempotent_write',
+      },
+    }),
   })
   expect(response.status).toBe(200)
   const result = await readSuccess<{

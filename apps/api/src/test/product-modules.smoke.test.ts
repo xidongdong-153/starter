@@ -239,6 +239,74 @@ it('chat 和 flow 的 Run 入口共用 JSON/SSE transport，active、transcript�
   }
 })
 
+it('flow 恢复端点：断开后按 afterSequence 从 sequence 1 恢复并终态收尾；未知 Last-Event-ID 400', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-flow-recovery-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedStream(gate, 'flow recovery answer'),
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const { cookie } = await register(test.app, 'flow-recovery@example.com')
+
+    const sessionResponse = await test.app.request('/api/flow/sessions', {
+      method: 'POST',
+      headers: { cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'flow recovery' }),
+    })
+    const session = await readSuccess<{ id: string }>(sessionResponse)
+    const started = await test.app.request(`/api/flow/sessions/${session.data.id}/runs`, {
+      method: 'POST',
+      headers: { cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, input: 'flow recovery input' }),
+    })
+    expect(started.status).toBe(200)
+    // 读到 run.started 帧后断开，模拟页面刷新；断开不中止 Run。
+    const reader = started.body?.getReader()
+    if (!reader) throw new Error('SSE 缺少 response body')
+    const firstChunk = await reader.read()
+    expect(firstChunk.done).toBe(false)
+    const runId = parseSseEvents(new TextDecoder().decode(firstChunk.value))[0]?.runId
+    if (!runId) throw new Error('首个 SSE chunk 缺少 runId')
+    await reader.cancel()
+
+    release()
+    await waitForCompletedRun(test.app, cookie, session.data.id, runId)
+
+    const resumed = await test.app.request(
+      `/api/flow/sessions/${session.data.id}/runs/${runId}/events/stream?afterSequence=0`,
+      { headers: { cookie } },
+    )
+    expect(resumed.status).toBe(200)
+    expect(resumed.headers.get('content-type')).toContain('text/event-stream')
+    const events = parseSseEvents(await readSseBody(resumed))
+    const sequences = events.map((event) => event.sequence)
+    expect(sequences).toEqual(Array.from({ length: sequences.length }, (_, index) => index + 1))
+    expect(events[0]?.type).toBe('run.started')
+    expect(events.at(-1)?.type).toBe('run.completed')
+
+    const unknownEvent = await test.app.request(`/api/flow/sessions/${session.data.id}/runs/${runId}/events/stream`, {
+      headers: { cookie, 'Last-Event-ID': '00000000-0000-7000-8000-000000000000' },
+    })
+    expect(unknownEvent.status).toBe(400)
+    expect((await readFailure(unknownEvent)).error.code).toBe('COMMON.INVALID_REQUEST')
+  } finally {
+    test.cleanup()
+    await store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
 async function waitForCompletedRun(
   app: ReturnType<typeof createTestApp>['app'],
   cookie: string,

@@ -17,6 +17,7 @@ import type {
 import { agentDefinitionConfigSchema, ApiErrorCodes, defaultAgentDefinitionConfig } from '@starter/contracts'
 
 import type { RuntimeAccessContext } from '../principal.js'
+import { manifestAllowedByPolicy } from '../runtime/app-policy.js'
 import type { AiToolRegistry, RegisteredAiTool } from '../tool/tool-registry.js'
 import { isAiToolAvailableInScope } from '../tool/tool-registry.js'
 import type { AiOutputContractRegistry, ResolvedAiOutputContract } from '../output/output-contract-registry.js'
@@ -130,19 +131,63 @@ export function createAiAgentDefinitionService(input: {
     query: ExecutableManifestListQuery,
     access: RuntimeAccessContext,
   ): Promise<ExecutableManifestList> {
-    const result = repository.list({ ...query, status: 'enabled' })
-    const items = await Promise.all(
-      result.items.map(async (record) =>
-        toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(record.id, access)),
-      ),
-    )
-    return { items, total: result.total, page: query.page, pageSize: query.pageSize }
+    if (access.principal.kind !== 'product_app') {
+      const result = repository.list({ ...query, status: 'enabled' })
+      const items = await Promise.all(
+        result.items.map(async (record) =>
+          toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(record.id, access)),
+        ),
+      )
+      return { items, total: result.total, page: query.page, pageSize: query.pageSize }
+    }
+
+    const policy = access.policy
+    if (!policy) return { items: [], total: 0, page: query.page, pageSize: query.pageSize }
+
+    const records: AiAgentDefinitionRecord[] = []
+    let page = 1
+    let total = 0
+    do {
+      const result = repository.list({ page, pageSize: 100, status: 'enabled' })
+      records.push(...result.items)
+      total = result.total
+      page += 1
+    } while (records.length < total)
+
+    const items: ExecutableManifestV1[] = []
+    for (const record of records) {
+      const allowedExecutable = policy.executables.find((item) => item.id === record.id)
+      if (!allowedExecutable || allowedExecutable.version !== record.revision) continue
+      const manifest = toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(record.id, access))
+      if (manifestAllowedByPolicy(manifest, policy)) items.push(manifest)
+    }
+
+    const start = (query.page - 1) * query.pageSize
+    return {
+      items: items.slice(start, start + query.pageSize),
+      total: items.length,
+      page: query.page,
+      pageSize: query.pageSize,
+    }
   }
 
   async function getExecutableManifest(id: string, access: RuntimeAccessContext): Promise<ExecutableManifestV1> {
     const record = requireRecord(id)
     if (record.status !== 'enabled') throw notFound()
-    return toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(id, access))
+    if (
+      access.principal.kind === 'product_app' &&
+      !access.policy?.executables.some((item) => item.id === record.id && item.version === record.revision)
+    ) {
+      throw notFound()
+    }
+    const manifest = toExecutableManifestV1(toAgentDefinitionSummary(record), await resolve(id, access))
+    if (
+      access.principal.kind === 'product_app' &&
+      (!access.policy || !manifestAllowedByPolicy(manifest, access.policy))
+    ) {
+      throw notFound()
+    }
+    return manifest
   }
 
   function listAdmin(query: AgentDefinitionListQuery) {

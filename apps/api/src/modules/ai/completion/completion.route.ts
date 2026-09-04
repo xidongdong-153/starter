@@ -3,8 +3,9 @@ import { OpenAPIHono } from '@hono/zod-openapi'
 import { streamSSE } from 'hono/streaming'
 
 import type { HonoEnv } from '@api/shared/hono-env.js'
+import { AppError } from '@api/shared/app-error.js'
 import { createSuccessResponse } from '@api/shared/response.js'
-import { completionResultSchema } from '@starter/contracts'
+import { ApiErrorCodes, completionResultSchema } from '@starter/contracts'
 import { toRuntimeAccessContext } from '@api/modules/ai/principal.js'
 
 import { createCompletionRoute } from './completion.openapi.js'
@@ -17,6 +18,9 @@ export function createAiCompletionRoute(deps: { service: AiCompletionService; re
   const access = (c: { var: HonoEnv['Variables'] }) => toRuntimeAccessContext(c.var.principal, c.var.resourceScope)
 
   return new OpenAPIHono<HonoEnv>().openapi({ ...createCompletionRoute, middleware: requireAuth }, async (c) => {
+    if (c.var.principal.kind === 'product_app') {
+      throw new AppError(ApiErrorCodes.AI_COMPLETION_FORBIDDEN, '应用凭据不能调用无状态 completion', 403)
+    }
     const request = c.req.valid('json')
     const requestId = c.var.requestId
     const accessContext = access(c)

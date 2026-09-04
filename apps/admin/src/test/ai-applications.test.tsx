@@ -11,6 +11,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCurrentPermissions, createTestQueryClient, renderWithQueryClient } from './helpers'
 
 const mocks = vi.hoisted(() => ({
+  useAgentDefinitionsQuery: vi.fn(),
   useAiApplicationsQuery: vi.fn(),
   useCreateAiApplicationMutation: vi.fn(),
   useRevokeAiApplicationMutation: vi.fn(),
@@ -21,6 +22,13 @@ const fixedUuid = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
 const scopeFromUuid = (prefix: 'ten' | 'prj', uuid: string) => `${prefix}_${uuid.replaceAll('-', '')}`
 const fixedTenantId = scopeFromUuid('ten', fixedUuid)
 const fixedProjectId = scopeFromUuid('prj', fixedUuid)
+// 创建表单不动策略字段时的默认提交值：空 executables（拒绝全部 Agent）+ 只读。
+const defaultPolicy = {
+  schemaVersion: 1,
+  executables: [],
+  controls: ['abort', 'steer', 'follow_up'],
+  maxSideEffect: 'read_only',
+} as const
 
 const { getCurrentPermissions } = vi.hoisted(() => ({
   getCurrentPermissions: vi.fn(),
@@ -42,6 +50,7 @@ const activeApplication: AiApplication = {
   name: 'web-chat',
   tenantId: 'acme',
   projectId: 'chat',
+  policy: null,
   status: 'active',
   secretPrefix: 'ai_abcd01234',
   createdAt: '2026-08-20T00:00:00.000Z',
@@ -72,6 +81,11 @@ beforeEach(() => {
   vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedUuid)
   getCurrentPermissions.mockReset()
   getCurrentPermissions.mockResolvedValue(createCurrentPermissions([PermissionKeys.AI_CONFIG_MANAGE]))
+  mocks.useAgentDefinitionsQuery.mockReturnValue({
+    data: { items: [], total: 0, page: 1, pageSize: 100 },
+    isLoading: false,
+    error: null,
+  })
   mocks.useAiApplicationsQuery.mockReturnValue({
     data: [activeApplication, revokedApplication],
     isLoading: false,
@@ -118,6 +132,7 @@ describe('应用凭据管理页', () => {
         name: 'web-chat',
         tenantId: fixedTenantId,
         projectId: fixedProjectId,
+        policy: defaultPolicy,
       }),
     )
     expect(await screen.findByText('ai_abcd012345678901234567890123456789012345678')).toBeTruthy()
@@ -147,7 +162,12 @@ describe('应用凭据管理页', () => {
     fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
 
     await waitFor(() =>
-      expect(mutateAsync).toHaveBeenCalledWith({ name: 'web-chat', tenantId: 'acme', projectId: 'chat' }),
+      expect(mutateAsync).toHaveBeenCalledWith({
+        name: 'web-chat',
+        tenantId: 'acme',
+        projectId: 'chat',
+        policy: defaultPolicy,
+      }),
     )
   })
 

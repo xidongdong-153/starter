@@ -91,7 +91,7 @@ it('cookie 与 Bearer 只能发现当前 enabled Manifest，schema 和 hash 传�
       (await patchJson(test.app, `/api/ai/admin/agents/${disabled}/status`, admin.cookie, { status: 'disabled' }))
         .status,
     ).toBe(200)
-    const credential = await createApplication(test, admin.cookie)
+    const credential = await createApplication(test, admin.cookie, [published.agentId])
     const bearerHeaders = {
       Authorization: `Bearer ${credential.secret}`,
       'X-AI-External-User-Id': 'customer-1',
@@ -516,11 +516,18 @@ async function createDraftAgent(test: ReturnType<typeof createTestApp>, cookie: 
   return (await readSuccess<{ id: string }>(response)).data.id
 }
 
-async function createApplication(test: ReturnType<typeof createTestApp>, cookie: string) {
+async function createApplication(test: ReturnType<typeof createTestApp>, cookie: string, executableIds: string[] = []) {
   const response = await postJson(test.app, '/api/ai/admin/applications', cookie, {
     name: 'Manifest Product',
     tenantId: 'tenant-a',
     projectId: 'project-a',
+    // Bearer 发现 manifest 需要 policy 允许该 Agent（创建后 revision 为 1）。
+    policy: {
+      schemaVersion: 1,
+      executables: executableIds.map((id) => ({ id, version: 1 })),
+      controls: ['abort', 'steer', 'follow_up'],
+      maxSideEffect: 'non_idempotent_write',
+    },
   })
   expect(response.status).toBe(200)
   return (await readSuccess<{ secret: string }>(response)).data

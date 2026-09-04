@@ -214,7 +214,7 @@ it('starter_user 用 JSON 模式拿到完整单轮结果并写 completion 审计
   }
 })
 
-it('product_app 用 Bearer 调用 JSON 模式并写入应用维度审计', async () => {
+it('product_app 调用 completion 被 403 拒绝且不写审计', async () => {
   const { gateway } = createFakeGateway()
   const { app, cleanup, runtime } = createTestApp({}, { aiGateway: gateway })
   try {
@@ -223,6 +223,8 @@ it('product_app 用 Bearer 调用 JSON 模式并写入应用维度审计', async
       createAuthorizationRepository(runtime.db).bootstrapAdminByEmail('completion-admin@example.com', systemContext)
         .kind,
     ).toBe('ok')
+    // D3 起 product_app 只能调用管理员发布的 Agent，无状态 completion 整体禁用，
+    // 与 policy 内容无关；改为断言 403 与错误码。
     const credentialResponse = await app.request('/api/ai/admin/applications', {
       method: 'POST',
       headers: {
@@ -233,6 +235,12 @@ it('product_app 用 Bearer 调用 JSON 模式并写入应用维度审计', async
         name: 'Completion Product',
         tenantId: 'tenant-a',
         projectId: 'project-a',
+        policy: {
+          schemaVersion: 1,
+          executables: [],
+          controls: [],
+          maxSideEffect: 'read_only',
+        },
       }),
     })
     expect(credentialResponse.status).toBe(200)
@@ -252,24 +260,12 @@ it('product_app 用 Bearer 调用 JSON 模式并写入应用维度审计', async
       },
       body: JSON.stringify({ model: modelRef, input: 'classify this' }),
     })
-    expect(response.status).toBe(200)
-    const result = await readSuccess<CompletionResult>(response)
-    expect(result.data.content).toBe(fakeContent)
-    expect(result.data.stopReason).toBe('stop')
+    expect(response.status).toBe(403)
+    expect((await readFailure(response)).error.code).toBe(ApiErrorCodes.AI_COMPLETION_FORBIDDEN)
 
+    // 被拒绝的调用不产生模型调用审计。
     const calls = runtime.db.select().from(aiModelCalls).all()
-    expect(calls).toHaveLength(1)
-    expect(calls[0]).toMatchObject({
-      scenario: 'completion',
-      principalKind: 'product_app',
-      appId: credential.data.application.appId,
-      externalUserId: 'customer-1',
-      userId: 'customer-1',
-      tenantId: 'tenant-a',
-      projectId: 'project-a',
-      runId: null,
-      result: 'succeeded',
-    })
+    expect(calls).toHaveLength(0)
   } finally {
     cleanup()
   }

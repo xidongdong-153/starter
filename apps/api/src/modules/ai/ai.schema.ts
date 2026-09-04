@@ -12,6 +12,8 @@ export const aiAppCredentials = sqliteTable(
     name: text('name').notNull(),
     tenantId: text('tenant_id').notNull(),
     projectId: text('project_id').notNull(),
+    /** JSON 序列化的 product_app capability policy；存量 NULL 表示拒绝运行面动作。 */
+    policyJson: text('policy_json'),
     secretHash: text('secret_hash').notNull(),
     secretPrefix: text('secret_prefix').notNull(),
     status: text('status').notNull().default('active'),
@@ -815,8 +817,15 @@ export const aiWebhookDeliveries = sqliteTable(
     eventType: text('event_type').notNull(),
     /** 入队时的 payload 快照，投递时原样发送。 */
     payloadJson: text('payload_json').notNull(),
+    /** 对应 terminal RunEvent 的 identity；interrupted Run 没有事件时为 NULL。 */
+    eventId: text('event_id'),
+    sequence: integer('sequence'),
+    eventProtocolVersion: integer('event_protocol_version'),
     status: text('status').notNull().default('pending'),
     attempts: integer('attempts').notNull().default(0),
+    /** 多实例 dispatcher 的条件领取信息。 */
+    claimedAt: timestamp('claimed_at'),
+    claimExpiresAt: timestamp('claim_expires_at'),
     /** null 表示立即可投。 */
     nextAttemptAt: timestamp('next_attempt_at'),
     lastResponseCode: integer('last_response_code'),

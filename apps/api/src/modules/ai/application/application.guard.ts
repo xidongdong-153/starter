@@ -1,6 +1,7 @@
 import type { MiddlewareHandler } from 'hono'
 import type { HonoEnv } from '@api/shared/hono-env.js'
-import { ApiErrorCodes, aiRuntimeSubjectHeadersSchema } from '@starter/contracts'
+import { ApiErrorCodes, aiApplicationPolicySchema, aiRuntimeSubjectHeadersSchema } from '@starter/contracts'
+import type { AiApplicationPolicy } from '@starter/contracts'
 import { AppError } from '@api/shared/app-error.js'
 import type { createAiApplicationService } from './application.service.js'
 import { toResourceScope } from '../principal.js'
@@ -27,6 +28,20 @@ export function createRequireProductApp(
     })
     if (!parsed.success) throw unauthorized()
 
+    let policy: AiApplicationPolicy | null = null
+    if (record.policyJson !== null) {
+      try {
+        const policyResult = aiApplicationPolicySchema.safeParse(JSON.parse(record.policyJson))
+        if (policyResult.success) {
+          policy = policyResult.data
+        } else {
+          c.var.logger.warn({ appId: record.id }, 'AI 应用凭据 policy_json 无效，按未配置处理')
+        }
+      } catch {
+        c.var.logger.warn({ appId: record.id }, 'AI 应用凭据 policy_json 不是有效 JSON，按未配置处理')
+      }
+    }
+
     const principal = {
       kind: 'product_app' as const,
       principalId: record.id,
@@ -34,6 +49,7 @@ export function createRequireProductApp(
       projectId: record.projectId,
       externalUserId: parsed.data.externalUserId,
       appId: record.id,
+      policy,
     }
     c.set('principal', principal)
     c.set('resourceScope', toResourceScope(principal, parsed.data))
