@@ -11,11 +11,12 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createCurrentPermissions, createTestQueryClient, renderWithQueryClient } from './helpers'
 
 const mocks = vi.hoisted(() => ({
-  useAgentDefinitionsQuery: vi.fn(),
+  fetchAllEnabledAgentDefinitions: vi.fn(),
   useAiApplicationsQuery: vi.fn(),
   useCreateAiApplicationMutation: vi.fn(),
   useRevokeAiApplicationMutation: vi.fn(),
   useRotateAiApplicationSecretMutation: vi.fn(),
+  useUpdateAiApplicationPolicyMutation: vi.fn(),
 }))
 
 const fixedUuid = 'aaaaaaaa-aaaa-4aaa-aaaa-aaaaaaaaaaaa'
@@ -50,7 +51,12 @@ const activeApplication: AiApplication = {
   name: 'web-chat',
   tenantId: 'acme',
   projectId: 'chat',
-  policy: null,
+  policy: {
+    schemaVersion: 1,
+    executables: [{ id: '00000000-0000-4000-8000-0000000000aa', version: 3 }],
+    controls: ['abort'],
+    maxSideEffect: 'idempotent_write',
+  },
   status: 'active',
   secretPrefix: 'ai_abcd01234',
   createdAt: '2026-08-20T00:00:00.000Z',
@@ -81,11 +87,7 @@ beforeEach(() => {
   vi.spyOn(crypto, 'randomUUID').mockReturnValue(fixedUuid)
   getCurrentPermissions.mockReset()
   getCurrentPermissions.mockResolvedValue(createCurrentPermissions([PermissionKeys.AI_CONFIG_MANAGE]))
-  mocks.useAgentDefinitionsQuery.mockReturnValue({
-    data: { items: [], total: 0, page: 1, pageSize: 100 },
-    isLoading: false,
-    error: null,
-  })
+  mocks.fetchAllEnabledAgentDefinitions.mockReset().mockResolvedValue([])
   mocks.useAiApplicationsQuery.mockReturnValue({
     data: [activeApplication, revokedApplication],
     isLoading: false,
@@ -95,6 +97,7 @@ beforeEach(() => {
   mocks.useCreateAiApplicationMutation.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })
   mocks.useRevokeAiApplicationMutation.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })
   mocks.useRotateAiApplicationSecretMutation.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })
+  mocks.useUpdateAiApplicationPolicyMutation.mockReturnValue({ mutateAsync: vi.fn(), isPending: false })
 })
 
 afterEach(() => cleanup())
@@ -211,12 +214,50 @@ describe('应用凭据管理页', () => {
     expect(await screen.findByText('只能用字母、数字、下划线、点、冒号和连字符，首字符不能是点或冒号')).toBeTruthy()
   })
 
-  it('已撤销的凭据不提供轮换和撤销操作', async () => {
+  it('已撤销的凭据不提供轮换、撤销和编辑策略操作', async () => {
     renderPage()
 
     expect(await screen.findByRole('button', { name: '轮换 secret' })).toBeTruthy()
     expect(screen.getAllByRole('button', { name: '轮换 secret' })).toHaveLength(1)
     expect(screen.getAllByRole('button', { name: '撤销' })).toHaveLength(1)
+    expect(screen.getAllByRole('button', { name: '编辑策略' })).toHaveLength(1)
+  })
+
+  it('编辑策略提交 PATCH，不在启用列表的 Agent 保留原策略版本', async () => {
+    const mutateAsync = vi.fn().mockResolvedValue(activeApplication)
+    mocks.useUpdateAiApplicationPolicyMutation.mockReturnValue({ mutateAsync, isPending: false })
+    renderPage()
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑策略' }))[0]!)
+    // 回显当前策略：maxSideEffect、controls 与原策略一致。
+    await waitFor(() => expect(screen.getByText('编辑策略：web-chat')).toBeTruthy())
+    expect(screen.getByText('幂等写')).toBeTruthy()
+    // Agent 列表为空时显示裸 id，提交时保留原策略的 version。
+    expect(screen.getByTitle('00000000-0000-4000-8000-0000000000aa')).toBeTruthy()
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    await waitFor(() =>
+      expect(mutateAsync).toHaveBeenCalledWith({
+        appId: activeApplication.appId,
+        values: { policy: activeApplication.policy },
+      }),
+    )
+    // 打开编辑弹窗时拉取全部启用 Agent。
+    expect(mocks.fetchAllEnabledAgentDefinitions).toHaveBeenCalledTimes(1)
+  })
+
+  it('编辑策略提交失败时展示错误提示', async () => {
+    const mutateAsync = vi.fn().mockRejectedValue(new Error('策略校验失败'))
+    mocks.useUpdateAiApplicationPolicyMutation.mockReturnValue({ mutateAsync, isPending: false })
+    renderPage()
+
+    fireEvent.click((await screen.findAllByRole('button', { name: '编辑策略' }))[0]!)
+    await waitFor(() => expect(screen.getByText('编辑策略：web-chat')).toBeTruthy())
+    fireEvent.click(screen.getByRole('button', { name: /保\s*存/ }))
+
+    expect(await screen.findByText('策略校验失败')).toBeTruthy()
+    // 弹窗保持打开，用户可以重试。
+    expect(screen.getByText('编辑策略：web-chat')).toBeTruthy()
   })
 
   it('没有管理权限时不显示写操作入口', async () => {

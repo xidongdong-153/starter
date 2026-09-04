@@ -422,6 +422,168 @@ it('终态事务抛异常时仍关闭初始 SSE queue', async () => {
   }
 })
 
+it('客户端主动断开时不发送 stream.resume_required frame', async () => {
+  let calls = 0
+  let returnCalled = false
+  const first = transportEvent(1, 'message.delta', { partId: '0:0', delta: 'a' })
+  // 第二次 next 永不 resolve，模拟 Run 仍在执行；断开只能靠 onAbort 退出循环。
+  const iterable: AsyncIterable<RunEvent> = {
+    [Symbol.asyncIterator]: () => ({
+      next: async () => {
+        calls += 1
+        if (calls === 1) return { done: false, value: first }
+        await new Promise<void>(() => undefined)
+        return { done: true, value: undefined }
+      },
+      return: async () => {
+        returnCalled = true
+        return { done: true, value: undefined }
+      },
+    }),
+  }
+  const app = new Hono<HonoEnv>()
+  app.get('/hang', (c) => writeRunEventStream(c, iterable))
+
+  const response = await app.request('/hang')
+  expect(response.status).toBe(200)
+  const { prefix, reader } = await readFirstSseFrame(response)
+  expect(prefix).toContain('event: message.delta')
+  // 客户端主动断开：只结束当前订阅，不发 resume frame。
+  await reader.cancel()
+  await vi.waitFor(() => expect(returnCalled).toBe(true))
+  expect(prefix).not.toContain('stream.resume_required')
+})
+
+it('json 模式启动后 start queue 立即结束，幂等命中的回放流同样结束', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-json-queue-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const endSpy = vi.spyOn(AsyncEventQueue.prototype, 'end')
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, 'JSON 启动正文'),
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'json-queue@example.com')
+    const sessionId = await createSession(test.app, user.cookie)
+    const start = () =>
+      test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+        method: 'POST',
+        headers: {
+          cookie: user.cookie,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({ agentId, input: 'JSON queue 生命周期', idempotencyKey: 'json-queue-key' }),
+      })
+
+    const first = await readSuccess<{ runId: string }>(await start())
+    const runId = first.data.runId
+    // 响应返回时 start queue 已被结束，Run 仍挂在 running，事件不再积累。
+    const endsAfterStart = endSpy.mock.calls.length
+    expect(endsAfterStart).toBeGreaterThan(0)
+
+    // 幂等命中（Run 仍 running）：为本次请求建立的回放流同样立即结束。
+    const second = await readSuccess<{ runId: string }>(await start())
+    expect(second.data.runId).toBe(runId)
+    await vi.waitFor(() => expect(endSpy.mock.calls.length).toBeGreaterThan(endsAfterStart))
+
+    // queue 提前结束不影响 Run 执行：事件完整持久、正常落终态。
+    release()
+    await vi.waitFor(
+      async () => {
+        const detail = await test.app.request(`/api/ai/sessions/${sessionId}/runs/${runId}`, {
+          headers: { cookie: user.cookie },
+        })
+        const body = await readSuccess<{ status: string }>(detail)
+        expect(body.data.status).toBe('completed')
+      },
+      { timeout: 8000 },
+    )
+    const timeline = await test.app.request(`/api/ai/sessions/${sessionId}/runs/${runId}/timeline?pageSize=200`, {
+      headers: { cookie: user.cookie },
+    })
+    const timelineBody = await readSuccess<{ items: Array<{ sequence: number; type: string }> }>(timeline)
+    expect(timelineBody.data.items.at(-1)?.type).toBe('run.completed')
+  } finally {
+    release()
+    endSpy.mockRestore()
+    test.cleanup()
+    await store.close()
+  }
+})
+
+it('终态收尾路径抛错时不产生 unhandled rejection，Run 仍落终态', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-finalize-throw-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, '收尾异常后仍完成'),
+  })
+  const rejections: unknown[] = []
+  const onUnhandledRejection = (reason: unknown) => {
+    rejections.push(reason)
+  }
+  process.on('unhandledRejection', onUnhandledRejection)
+  let releaseThrowCount = 0
+  const releaseSpy = vi.spyOn(test.runtime.laneLeaseStore, 'release').mockImplementation(() => {
+    releaseThrowCount += 1
+    throw new Error('终态收尾 release 失败')
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'finalize-throw@example.com')
+    const sessionId = await createSession(test.app, user.cookie)
+    const response = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, input: '终态收尾异常' }),
+    })
+    const { prefix, reader } = await readFirstSseFrame(response)
+    const runId = parseSseEvents(prefix)[0]?.runId
+    expect(runId).toBeTruthy()
+
+    release()
+    const events = parseSseEvents(await readRemainingSse(prefix, reader))
+    expect(events.at(-1)?.type).toBe('run.completed')
+    // 兜底 catch 已消化收尾异常：release 抛错路径确实执行，且无 unhandled rejection。
+    await vi.waitFor(() => expect(releaseThrowCount).toBeGreaterThan(0))
+    await new Promise((resolve) => setImmediate(resolve))
+    await new Promise((resolve) => setImmediate(resolve))
+
+    const detail = await test.app.request(`/api/ai/sessions/${sessionId}/runs/${runId}`, {
+      headers: { cookie: user.cookie },
+    })
+    const detailBody = await readSuccess<{ status: string }>(detail)
+    expect(detailBody.data.status).toBe('completed')
+    expect(rejections).toEqual([])
+  } finally {
+    process.off('unhandledRejection', onUnhandledRejection)
+    releaseSpy.mockRestore()
+    release()
+    test.cleanup()
+    await store.close()
+  }
+})
+
 it('从最后一个 message.delta 和 tool.progress 之后继续到 terminal', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'starter-recovery-cursor-'))
   const store = createPiSessionStore({

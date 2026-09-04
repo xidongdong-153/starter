@@ -58,7 +58,8 @@ it.each([
     expect(response.headers.get('content-type')).toContain('application/json')
     expect((await response.json()) as unknown).toMatchObject({ ok: true, data: { runId } })
     expect(tracked.nextCalls).toBe(0)
-    expect(tracked.returnCalls).toBe(0)
+    // JSON 模式无消费者：立即结束 start queue，事件不积累。
+    expect(tracked.returnCalls).toBe(1)
   }
   expect(subscribeCalled).toBe(false)
 })

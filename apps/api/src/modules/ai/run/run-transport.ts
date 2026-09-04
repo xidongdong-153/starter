@@ -14,6 +14,9 @@ import { writeRunEventStream } from './run-sse.js'
 export async function startRunTransport(c: Context<HonoEnv>, port: AgentRuntimePort, input: AgentRuntimeStartInput) {
   const result = await port.start(input)
   if (acceptsJson(c.req.header('accept'))) {
+    // JSON 模式没有消费者：立即结束 start queue，事件不再积累。
+    // push 对已关闭 queue 是 no-op，Run 执行与终态不受影响；幂等命中的回放流同样结束。
+    await result.events[Symbol.asyncIterator]().return?.()
     return c.json(createSuccessResponse(startAgentRunJsonSchema.parse({ runId: result.runId }), c.var.requestId), 200)
   }
   return writeRunEventStream(c, result.events)

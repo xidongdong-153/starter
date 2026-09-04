@@ -2,7 +2,7 @@ import type { Context } from 'hono'
 import { streamSSE } from 'hono/streaming'
 
 import type { HonoEnv } from '@api/shared/hono-env.js'
-import { streamResumeRequiredFrameSchema, type RunEvent } from '@starter/contracts'
+import { AI_EVENT_PROTOCOL_VERSION, streamResumeRequiredFrameSchema, type RunEvent } from '@starter/contracts'
 
 /**
  * 订阅 Run 事件队列并以 SSE 写出。
@@ -64,7 +64,7 @@ export function writeRunEventStream(c: Context<HonoEnv>, events: AsyncIterable<R
             data: JSON.stringify(
               streamResumeRequiredFrameSchema.parse({
                 type: 'stream.resume_required',
-                eventProtocolVersion: 1,
+                eventProtocolVersion: AI_EVENT_PROTOCOL_VERSION,
                 lastSequence,
                 reason: 'transport_closed',
               }),

@@ -10,6 +10,7 @@ export {
 } from './agent.api'
 export {
   agentQueryKeys,
+  fetchAllEnabledAgentDefinitions,
   useAdminAgentDefinitionQuery,
   useAdminAgentDefinitionsQuery,
   useAdminAiToolsQuery,
@@ -79,12 +80,14 @@ export {
   getAiApplications,
   revokeAiApplication,
   rotateAiApplicationSecret,
+  updateAiApplicationPolicy,
 } from './application.api'
 export {
   useAiApplicationsQuery,
   useCreateAiApplicationMutation,
   useRevokeAiApplicationMutation,
   useRotateAiApplicationSecretMutation,
+  useUpdateAiApplicationPolicyMutation,
 } from './application.query'
 export {
   createAiSkill,

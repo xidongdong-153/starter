@@ -1108,26 +1108,31 @@ export function createAiAgentRunService(input: {
     startNextAttempt: (attemptNo: number) => PreparedAgentExecution,
   ): Promise<void> {
     const { runId, sessionId, requestId } = context.execution
-    let prepared = first
-    let pump = pumpExecutorEvents(prepared, context, publish)
-    while (true) {
-      let terminal: ExecutorTerminalResult
-      try {
-        const [result] = await Promise.all([prepared.result, pump])
-        terminal = result
-      } catch (cause) {
-        prepared.controls.abort()
-        logger.error({ err: cause, runId, sessionId, requestId }, 'Run 事件持久化失败，转入存储失败终态')
-        terminal = storageFailureTerminal()
+    // 兜底：调用方以 void fire-and-forget，收尾异常不能变成 unhandled rejection。
+    try {
+      let prepared = first
+      let pump = pumpExecutorEvents(prepared, context, publish)
+      while (true) {
+        let terminal: ExecutorTerminalResult
+        try {
+          const [result] = await Promise.all([prepared.result, pump])
+          terminal = result
+        } catch (cause) {
+          prepared.controls.abort()
+          logger.error({ err: cause, runId, sessionId, requestId }, 'Run 事件持久化失败，转入存储失败终态')
+          terminal = storageFailureTerminal()
+        }
+        const next = maybeRetryAttempt(context, terminal, startNextAttempt)
+        if (next) {
+          prepared = next
+          pump = pumpExecutorEvents(prepared, context, publish)
+          continue
+        }
+        await finalizeRun(context, terminal)
+        return
       }
-      const next = maybeRetryAttempt(context, terminal, startNextAttempt)
-      if (next) {
-        prepared = next
-        pump = pumpExecutorEvents(prepared, context, publish)
-        continue
-      }
-      await finalizeRun(context, terminal)
-      return
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Run 终态收尾失败（兜底）')
     }
   }
 
@@ -1199,53 +1204,59 @@ export function createAiAgentRunService(input: {
 
   async function finalizeRun(context: RunContext, terminal: ExecutorTerminalResult): Promise<void> {
     const { runId, sessionId, lane, requestId } = context.execution
-    const finishedAt = new Date()
-    // 终态事务前先把待合并的增量刷出，终态事件才能拿到最后一个 sequence。
+    // 兜底：调用方以 void fire-and-forget，收尾异常不能变成 unhandled rejection；
+    // 此处只记日志，Run 已落终态或由恢复扫描处理。
     try {
-      context.publisher.flush()
-    } catch {
-      // onStorageFailure 已经记录并标记，下面统一转存储失败终态。
-    }
-    if (context.storageFailed) {
-      terminal = storageFailureTerminal()
-    } else if (
-      terminal.status === 'completed' &&
-      context.outputMode === 'required' &&
-      (!structuredOutputRepository || structuredOutputRepository.listByRun(runId).length === 0)
-    ) {
-      terminal = {
-        status: 'failed',
-        finalEntryId: terminal.finalEntryId,
-        errorCode: ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+      const finishedAt = new Date()
+      // 终态事务前先把待合并的增量刷出，终态事件才能拿到最后一个 sequence。
+      try {
+        context.publisher.flush()
+      } catch {
+        // onStorageFailure 已经记录并标记，下面统一转存储失败终态。
       }
-    }
-    try {
-      await sessionStore.appendRunTerminalEntry({
-        sessionId,
-        lane,
-        data: toStarterRunData({
-          runId,
+      if (context.storageFailed) {
+        terminal = storageFailureTerminal()
+      } else if (
+        terminal.status === 'completed' &&
+        context.outputMode === 'required' &&
+        (!structuredOutputRepository || structuredOutputRepository.listByRun(runId).length === 0)
+      ) {
+        terminal = {
+          status: 'failed',
+          finalEntryId: terminal.finalEntryId,
+          errorCode: ApiErrorCodes.AI_AGENT_CONFIG_INVALID,
+        }
+      }
+      try {
+        await sessionStore.appendRunTerminalEntry({
           sessionId,
           lane,
-          agentId: context.execution.agentId,
-          agentRevision: context.execution.agentRevision,
-          status: terminal.status,
+          data: toStarterRunData({
+            runId,
+            sessionId,
+            lane,
+            agentId: context.execution.agentId,
+            agentRevision: context.execution.agentRevision,
+            status: terminal.status,
+            finalEntryId: terminal.finalEntryId,
+            errorCode: terminal.errorCode,
+            finishedAt,
+          }),
+        })
+      } catch (cause) {
+        logger.error({ err: cause, runId, sessionId, requestId }, 'starter.run 写入失败')
+        await commitTerminal(context, {
+          status: 'failed',
           finalEntryId: terminal.finalEntryId,
-          errorCode: terminal.errorCode,
-          finishedAt,
-        }),
-      })
-    } catch (cause) {
-      logger.error({ err: cause, runId, sessionId, requestId }, 'starter.run 写入失败')
-      await commitTerminal(context, {
-        status: 'failed',
-        finalEntryId: terminal.finalEntryId,
-        errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
-      })
-      return
-    }
+          errorCode: ApiErrorCodes.AI_SESSION_STORAGE_FAILED,
+        })
+        return
+      }
 
-    await commitTerminal(context, terminal)
+      await commitTerminal(context, terminal)
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Run 终态收尾失败（兜底）')
+    }
   }
 
   async function commitTerminal(context: RunContext, terminal: ExecutorTerminalResult): Promise<void> {

@@ -1,5 +1,6 @@
 import type { AgentDefinitionSummary, ExecutableManifestV1 } from '@starter/contracts'
 import {
+  AI_EVENT_PROTOCOL_VERSION,
   executableAgentControls,
   executableAgentInputSchema,
   executableJsonObjectSchema,
@@ -40,7 +41,7 @@ export function toExecutableManifestV1(
     version: resolved.revision,
     inputSchema,
     output,
-    eventProtocolVersion: 1,
+    eventProtocolVersion: AI_EVENT_PROTOCOL_VERSION,
     controls: executableAgentControls,
     sideEffect,
     execution: {

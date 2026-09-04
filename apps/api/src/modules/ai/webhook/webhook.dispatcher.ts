@@ -1,6 +1,6 @@
 import { createHmac } from 'node:crypto'
 import type { Logger } from 'pino'
-import { webhookRunTerminalPayloadSchema } from '@starter/contracts'
+import { AI_EVENT_PROTOCOL_VERSION, webhookRunTerminalPayloadSchema } from '@starter/contracts'
 import type { AppDatabase } from '@api/infra/db/client.js'
 import { AiUrlGuardError } from '@api/infra/ai/index.js'
 import { generateId } from '@api/shared/id.js'
@@ -16,7 +16,7 @@ import type { WebhookCrypto } from './webhook.crypto.js'
 const ENQUEUE_BATCH_LIMIT = 200
 const DELIVER_BATCH_LIMIT = 50
 const LAST_ERROR_MAX_LENGTH = 500
-// claim TTL 必须大于单次出站请求超时（AI_WEBHOOK_TIMEOUT_MS，默认 10s）；
+// claim TTL 必须大于单次出站请求超时（AI_WEBHOOK_TIMEOUT_MS，默认 10s，上限 30000ms 在 parseEnv 校验）；
 // 超时配得比 TTL 长时，多实例下会出现 claim 过期被重领的合法重复 POST，接收方按 X-Starter-Delivery-Id 去重。
 const DELIVERY_CLAIM_TTL_MS = 60_000
 
@@ -117,7 +117,7 @@ export function createAiWebhookDispatcher(deps: AiWebhookDispatcherDeps): AiWebh
           payloadJson,
           eventId: run.eventId,
           sequence: run.sequence,
-          eventProtocolVersion: 1,
+          eventProtocolVersion: AI_EVENT_PROTOCOL_VERSION,
           status: 'pending',
           attempts: 0,
           nextAttemptAt: null,
@@ -262,7 +262,7 @@ function buildPayloadJson(run: TerminalProductAppRunRow, now: Date): string {
     sessionId: run.sessionId,
     eventId: run.eventId,
     sequence: run.sequence,
-    eventProtocolVersion: 1,
+    eventProtocolVersion: AI_EVENT_PROTOCOL_VERSION,
     lane: run.lane,
     agentId: run.agentId,
     agentRevision: run.agentRevision,

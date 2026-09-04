@@ -1,4 +1,9 @@
-import type { AiApplication, AiApplicationSecret, CreateAiApplicationInput } from '@starter/contracts'
+import type {
+  AiApplication,
+  AiApplicationSecret,
+  CreateAiApplicationInput,
+  UpdateAiApplicationPolicyInput,
+} from '@starter/contracts'
 
 import { apiRpc, unwrapApiData } from '@admin/api/rpc'
 
@@ -18,4 +23,12 @@ export function rotateAiApplicationSecret(appId: string): Promise<AiApplicationS
 
 export function revokeAiApplication(appId: string): Promise<AiApplication> {
   return unwrapApiData(apiRpc.api.ai.admin.applications[':appId'].revoke.$post({ param: { appId } }))
+}
+
+/** 更新应用能力策略；revoked 凭据返回 409。 */
+export function updateAiApplicationPolicy(
+  appId: string,
+  input: UpdateAiApplicationPolicyInput,
+): Promise<AiApplication> {
+  return unwrapApiData(apiRpc.api.ai.admin.applications[':appId'].policy.$patch({ param: { appId }, json: input }))
 }

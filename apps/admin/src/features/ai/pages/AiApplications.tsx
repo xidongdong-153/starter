@@ -2,6 +2,7 @@ import type {
   AiApplication,
   AiApplicationPolicy,
   AiApplicationSecret,
+  AgentDefinitionSummary,
   CreateAiApplicationInput,
   ExecutableControl,
 } from '@starter/contracts'
@@ -25,16 +26,18 @@ import {
   Tooltip,
   Typography,
 } from 'antd'
-import { Copy, KeyRound, Plus, RefreshCw, Trash2 } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Copy, KeyRound, Plus, RefreshCw, SlidersHorizontal, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import {
-  useAgentDefinitionsQuery,
+  fetchAllEnabledAgentDefinitions,
   useAiApplicationsQuery,
   useCreateAiApplicationMutation,
   useRevokeAiApplicationMutation,
   useRotateAiApplicationSecretMutation,
+  useUpdateAiApplicationPolicyMutation,
 } from '@admin/api/ai'
 import { AdminPageHeader, PageToolbar, PermissionGuard } from '@admin/components/common'
 import { formatDate } from '@admin/utils/dayjs'
@@ -48,6 +51,64 @@ interface ApplicationFormValues {
   maxSideEffect: AiApplicationPolicy['maxSideEffect']
 }
 
+interface PolicyFormValues {
+  executableIds: string[]
+  controls: ExecutableControl[]
+  maxSideEffect: AiApplicationPolicy['maxSideEffect']
+}
+
+/** 创建与编辑两个 Modal 共用的 policy 字段；提交逻辑在页面层，不进组件。 */
+function PolicyFormFields({ agents, loading }: { agents: AgentDefinitionSummary[]; loading: boolean }) {
+  const { t } = useTranslation()
+  return (
+    <>
+      <Form.Item name="maxSideEffect" label={t('ai.applications.policy.maxSideEffect')}>
+        <Select
+          options={(
+            [
+              ['read_only', 'maxSideEffectReadOnly'],
+              ['idempotent_write', 'maxSideEffectIdempotentWrite'],
+              ['non_idempotent_write', 'maxSideEffectNonIdempotentWrite'],
+            ] as const
+          ).map(([value, labelKey]) => ({
+            value,
+            label: t(`ai.applications.policy.${labelKey}`),
+          }))}
+        />
+      </Form.Item>
+      <Form.Item name="controls" label={t('ai.applications.policy.controls')}>
+        <Checkbox.Group
+          options={(
+            [
+              ['abort', 'controlsAbort'],
+              ['steer', 'controlsSteer'],
+              ['follow_up', 'controlsFollowUp'],
+            ] as const
+          ).map(([value, labelKey]) => ({
+            value,
+            label: t(`ai.applications.policy.${labelKey}`),
+          }))}
+        />
+      </Form.Item>
+      <Form.Item
+        name="executableIds"
+        label={t('ai.applications.policy.executables')}
+        extra={t('ai.applications.policy.hint')}
+      >
+        <Select
+          mode="multiple"
+          loading={loading}
+          options={agents.map((agent) => ({
+            value: agent.id,
+            label: `${agent.name} · v${agent.revision}`,
+          }))}
+          placeholder={t('ai.applications.policy.executablesPlaceholder')}
+        />
+      </Form.Item>
+    </>
+  )
+}
+
 /** 生成满足 aiScopeIdSchema 的随机 scope id：前缀 + 32 位 hex。 */
 function generateScopeId(prefix: 'ten' | 'prj'): string {
   return `${prefix}_${crypto.randomUUID().replaceAll('-', '')}`
@@ -56,15 +117,19 @@ function generateScopeId(prefix: 'ten' | 'prj'): string {
 export function AiApplications() {
   const { t } = useTranslation()
   const { message } = App.useApp()
+  const queryClient = useQueryClient()
   const applicationsQuery = useAiApplicationsQuery()
-  // 策略里的 executables 只能选启用中的 Agent，用公开列表（启用状态）而不是 admin 全量列表。
-  const agentsQuery = useAgentDefinitionsQuery({ page: 1, pageSize: 100 })
-  const agents = agentsQuery.data?.items ?? []
+  // 策略里的 executables 只能选启用中的 Agent：打开 Modal 时循环分页拉取全部启用 Agent。
+  const [agents, setAgents] = useState<AgentDefinitionSummary[]>([])
+  const [agentsLoading, setAgentsLoading] = useState(false)
   const createApplication = useCreateAiApplicationMutation()
   const rotateSecret = useRotateAiApplicationSecretMutation()
   const revokeApplication = useRevokeAiApplicationMutation()
+  const updatePolicy = useUpdateAiApplicationPolicyMutation()
 
   const [createOpen, setCreateOpen] = useState(false)
+  const [editing, setEditing] = useState<AiApplication | null>(null)
+  const [editForm] = Form.useForm<PolicyFormValues>()
   // 每次打开弹窗重新生成，随 destroyOnHidden 重建表单时作为 initialValues 生效。
   const [generatedScopes, setGeneratedScopes] = useState({ tenantId: '', projectId: '' })
   const [form] = Form.useForm<ApplicationFormValues>()
@@ -73,12 +138,29 @@ export function AiApplications() {
 
   const applications = applicationsQuery.data ?? []
 
+  const loadAgents = async () => {
+    setAgentsLoading(true)
+    try {
+      setAgents(await fetchAllEnabledAgentDefinitions(queryClient))
+    } catch {
+      // Agent 列表加载失败不阻塞弹窗，选择器为空列表。
+    } finally {
+      setAgentsLoading(false)
+    }
+  }
+
   const openCreate = () => {
     setGeneratedScopes({
       tenantId: generateScopeId('ten'),
       projectId: generateScopeId('prj'),
     })
     setCreateOpen(true)
+    void loadAgents()
+  }
+
+  const openEdit = (application: AiApplication) => {
+    setEditing(application)
+    void loadAgents()
   }
 
   const submitCreate = async () => {
@@ -122,6 +204,44 @@ export function AiApplications() {
       message.success(t('ai.applications.rotateSuccess'))
     } catch (error) {
       message.error(error instanceof Error ? error.message : t('ai.applications.rotateFailed'))
+    }
+  }
+
+  const submitEdit = async () => {
+    const application = editing
+    if (!application) return
+    let values: PolicyFormValues
+    try {
+      values = await editForm.validateFields()
+    } catch {
+      return
+    }
+
+    // version 优先取 Agent 当前 revision；不在启用列表的 id（已禁用或删除）
+    // 保留原策略的 version，不静默丢弃已有授权。
+    const previous = new Map((application.policy?.executables ?? []).map((item) => [item.id, item.version] as const))
+    const executables = values.executableIds.flatMap((id) => {
+      const agent = agents.find((candidate) => candidate.id === id)
+      if (agent) return [{ id, version: agent.revision }]
+      const version = previous.get(id)
+      return version !== undefined ? [{ id, version }] : []
+    })
+    try {
+      await updatePolicy.mutateAsync({
+        appId: application.appId,
+        values: {
+          policy: {
+            schemaVersion: 1,
+            executables,
+            controls: values.controls,
+            maxSideEffect: values.maxSideEffect,
+          },
+        },
+      })
+      setEditing(null)
+      message.success(t('ai.applications.policy.updateSuccess'))
+    } catch (error) {
+      message.error(error instanceof Error ? error.message : t('ai.applications.policy.updateFailed'))
     }
   }
 
@@ -225,11 +345,18 @@ export function AiApplications() {
       key: 'actions',
       title: t('common.actions'),
       fixed: 'right',
-      width: 120,
+      width: 150,
       render: (_, application) =>
         application.status === 'revoked' ? null : (
           <PermissionGuard permission={PermissionKeys.AI_CONFIG_MANAGE}>
             <Space size="small">
+              <Tooltip title={t('ai.applications.policy.edit')}>
+                <Button
+                  aria-label={t('ai.applications.policy.edit')}
+                  icon={<SlidersHorizontal className="size-3.5" />}
+                  onClick={() => openEdit(application)}
+                />
+              </Tooltip>
               <Popconfirm
                 title={t('ai.applications.rotateConfirm')}
                 okText={t('common.confirm')}
@@ -337,49 +464,7 @@ export function AiApplications() {
           >
             <Input maxLength={120} placeholder={t('ai.applications.namePlaceholder')} />
           </Form.Item>
-          <Form.Item name="maxSideEffect" label={t('ai.applications.policy.maxSideEffect')}>
-            <Select
-              options={(
-                [
-                  ['read_only', 'maxSideEffectReadOnly'],
-                  ['idempotent_write', 'maxSideEffectIdempotentWrite'],
-                  ['non_idempotent_write', 'maxSideEffectNonIdempotentWrite'],
-                ] as const
-              ).map(([value, labelKey]) => ({
-                value,
-                label: t(`ai.applications.policy.${labelKey}`),
-              }))}
-            />
-          </Form.Item>
-          <Form.Item name="controls" label={t('ai.applications.policy.controls')}>
-            <Checkbox.Group
-              options={(
-                [
-                  ['abort', 'controlsAbort'],
-                  ['steer', 'controlsSteer'],
-                  ['follow_up', 'controlsFollowUp'],
-                ] as const
-              ).map(([value, labelKey]) => ({
-                value,
-                label: t(`ai.applications.policy.${labelKey}`),
-              }))}
-            />
-          </Form.Item>
-          <Form.Item
-            name="executableIds"
-            label={t('ai.applications.policy.executables')}
-            extra={t('ai.applications.policy.hint')}
-          >
-            <Select
-              mode="multiple"
-              loading={agentsQuery.isLoading}
-              options={agents.map((agent) => ({
-                value: agent.id,
-                label: `${agent.name} · v${agent.revision}`,
-              }))}
-              placeholder={t('ai.applications.policy.executablesPlaceholder')}
-            />
-          </Form.Item>
+          <PolicyFormFields agents={agents} loading={agentsLoading} />
           <Collapse
             ghost
             items={[
@@ -410,6 +495,30 @@ export function AiApplications() {
               },
             ]}
           />
+        </Form>
+      </Modal>
+
+      <Modal
+        title={t('ai.applications.policy.editTitle', { name: editing?.name ?? '' })}
+        open={editing !== null}
+        onOk={submitEdit}
+        onCancel={() => setEditing(null)}
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
+        confirmLoading={updatePolicy.isPending}
+        destroyOnHidden
+      >
+        <Form
+          form={editForm}
+          layout="vertical"
+          initialValues={{
+            // 存量 null policy（fail closed）按默认值展示，提交后变成显式策略。
+            executableIds: editing?.policy?.executables.map((item) => item.id) ?? [],
+            controls: editing?.policy?.controls ?? ['abort', 'steer', 'follow_up'],
+            maxSideEffect: editing?.policy?.maxSideEffect ?? 'read_only',
+          }}
+        >
+          <PolicyFormFields agents={agents} loading={agentsLoading} />
         </Form>
       </Modal>
 

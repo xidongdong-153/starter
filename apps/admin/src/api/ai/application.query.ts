@@ -1,4 +1,4 @@
-import type { AiApplication, CreateAiApplicationInput } from '@starter/contracts'
+import type { AiApplication, CreateAiApplicationInput, UpdateAiApplicationPolicyInput } from '@starter/contracts'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
@@ -7,6 +7,7 @@ import {
   getAiApplications,
   revokeAiApplication,
   rotateAiApplicationSecret,
+  updateAiApplicationPolicy,
 } from './application.api'
 import { aiQueryKeys } from './ai.query'
 
@@ -34,6 +35,17 @@ export function useRotateAiApplicationSecretMutation() {
   const queryClient = useQueryClient()
   return useMutation({
     mutationFn: rotateAiApplicationSecret,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: aiQueryKeys.applications() })
+    },
+  })
+}
+
+export function useUpdateAiApplicationPolicyMutation() {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (input: { appId: string; values: UpdateAiApplicationPolicyInput }) =>
+      updateAiApplicationPolicy(input.appId, input.values),
     onSuccess: async () => {
       await queryClient.invalidateQueries({ queryKey: aiQueryKeys.applications() })
     },

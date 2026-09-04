@@ -1272,6 +1272,12 @@ export const executableManifestOutputSchema = z.strictObject({
 })
 export type ExecutableManifestOutput = z.infer<typeof executableManifestOutputSchema>
 
+/**
+ * RunEvent 协议版本的唯一常量源。manifest、SSE transport frame、webhook
+ * payload 和投递记录的 eventProtocolVersion 字段全部引用它。
+ */
+export const AI_EVENT_PROTOCOL_VERSION = 1 as const
+
 export const executableManifestV1Schema = z.strictObject({
   manifestSchemaVersion: z.literal(1),
   kind: z.literal('agent'),
@@ -1281,7 +1287,7 @@ export const executableManifestV1Schema = z.strictObject({
   description: agentDefinitionDescriptionSchema,
   inputSchema: executableJsonObjectSchema,
   output: executableManifestOutputSchema.nullable(),
-  eventProtocolVersion: z.literal(1),
+  eventProtocolVersion: z.literal(AI_EVENT_PROTOCOL_VERSION),
   controls: executableAgentControlsSchema,
   sideEffect: aiToolSideEffectSchema,
   manifestHash: sha256HexSchema,
@@ -1945,7 +1951,7 @@ export type CompletionStreamEvent = z.infer<typeof completionStreamEventSchema>
 
 export const streamResumeRequiredFrameSchema = z.strictObject({
   type: z.literal('stream.resume_required'),
-  eventProtocolVersion: z.literal(1),
+  eventProtocolVersion: z.literal(AI_EVENT_PROTOCOL_VERSION),
   lastSequence: z.number().int().min(0),
   reason: z.literal('transport_closed'),
 })
@@ -1964,7 +1970,7 @@ export const webhookRunTerminalPayloadSchema = z.strictObject({
   sessionId: uuidSchema,
   eventId: uuidSchema.nullable(),
   sequence: z.number().int().min(1).nullable(),
-  eventProtocolVersion: z.literal(1),
+  eventProtocolVersion: z.literal(AI_EVENT_PROTOCOL_VERSION),
   lane: agentLaneSchema,
   agentId: uuidSchema,
   agentRevision: z.number().int().min(1),
@@ -2029,6 +2035,10 @@ export const aiWebhookDeliverySchema = z.strictObject({
   appId: uuidSchema,
   runId: uuidSchema,
   eventType: z.string().min(1).max(64),
+  /** 对应 terminal RunEvent 的 identity；interrupted Run 没有事件行时两列为 null。 */
+  eventId: uuidSchema.nullable(),
+  sequence: z.number().int().min(1).nullable(),
+  eventProtocolVersion: z.literal(AI_EVENT_PROTOCOL_VERSION).nullable(),
   status: aiWebhookDeliveryStatusSchema,
   attempts: z.number().int().min(0),
   nextAttemptAt: isoDateTimeSchema.nullable(),

@@ -30,7 +30,12 @@ const envSchema = z.object({
   AI_TEST_TOOLS_ENABLED: z.stringbool().default(false),
   AI_WEBHOOK_ENABLED: z.stringbool().default(false),
   AI_WEBHOOK_SWEEP_INTERVAL_MS: z.coerce.number().int().min(1_000).default(5_000),
-  AI_WEBHOOK_TIMEOUT_MS: z.coerce.number().int().min(1_000).default(10_000),
+  AI_WEBHOOK_TIMEOUT_MS: z.coerce
+    .number()
+    .int()
+    .min(1_000)
+    .max(30_000, '必须 ≤ 30000ms（delivery claim TTL 60s 的安全边界）')
+    .default(10_000),
   AI_WEBHOOK_MAX_ATTEMPTS: z.coerce.number().int().min(1).max(10).default(5),
   AI_WEBHOOK_BACKOFF_MS: z.string().default('0,30000,120000,600000,1800000'),
   BETTER_AUTH_SECRET: z.string().min(32),

@@ -7,7 +7,13 @@ import {
   useUpdateAiPreferenceMutation,
   useUpdateAiProviderConfigMutation,
 } from '@admin/api/ai/ai.query'
-import { useCreateAiApplicationMutation, useRevokeAiApplicationMutation } from '@admin/api/ai/application.query'
+import { fetchAllEnabledAgentDefinitions } from '@admin/api/ai/agent.query'
+import {
+  useCreateAiApplicationMutation,
+  useRevokeAiApplicationMutation,
+  useUpdateAiApplicationPolicyMutation,
+} from '@admin/api/ai/application.query'
+import { QueryClient } from '@tanstack/react-query'
 import { renderHook, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
@@ -20,9 +26,14 @@ const { checkAiProvider, createCustomAiProvider, updateAiPreference, updateAiPro
   updateAiProviderConfig: vi.fn(),
 }))
 
-const { createAiApplication, revokeAiApplication } = vi.hoisted(() => ({
+const { createAiApplication, revokeAiApplication, updateAiApplicationPolicy } = vi.hoisted(() => ({
   createAiApplication: vi.fn(),
   revokeAiApplication: vi.fn(),
+  updateAiApplicationPolicy: vi.fn(),
+}))
+
+const { getAgentDefinitions } = vi.hoisted(() => ({
+  getAgentDefinitions: vi.fn(),
 }))
 
 vi.mock('@admin/api/ai/application.api', () => ({
@@ -30,7 +41,13 @@ vi.mock('@admin/api/ai/application.api', () => ({
   getAiApplications: vi.fn(),
   revokeAiApplication,
   rotateAiApplicationSecret: vi.fn(),
+  updateAiApplicationPolicy,
 }))
+
+vi.mock('@admin/api/ai/agent.api', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@admin/api/ai/agent.api')>()
+  return { ...actual, getAgentDefinitions }
+})
 
 vi.mock('@admin/api/ai/ai.api', () => ({
   checkAiProvider,
@@ -79,6 +96,8 @@ beforeEach(() => {
   updateAiProviderConfig.mockReset()
   createAiApplication.mockReset()
   revokeAiApplication.mockReset()
+  updateAiApplicationPolicy.mockReset()
+  getAgentDefinitions.mockReset()
 })
 
 describe('ai query 状态', () => {
@@ -229,5 +248,78 @@ describe('ai query 状态', () => {
 
     await expect(result.current.mutateAsync('app-1')).rejects.toThrow('409')
     expect(invalidateQueries).not.toHaveBeenCalled()
+  })
+
+  it('更新应用策略成功后失效应用列表', async () => {
+    updateAiApplicationPolicy.mockResolvedValue({ appId: 'app-1' })
+    const queryClient = createTestQueryClient()
+    const invalidateQueries = vi.spyOn(queryClient, 'invalidateQueries')
+    const { result } = renderHook(() => useUpdateAiApplicationPolicyMutation(), {
+      wrapper: createQueryClientWrapper(queryClient),
+    })
+
+    await result.current.mutateAsync({
+      appId: 'app-1',
+      values: { policy: { schemaVersion: 1, executables: [], controls: [], maxSideEffect: 'read_only' } },
+    })
+
+    expect(updateAiApplicationPolicy).toHaveBeenCalledWith('app-1', {
+      policy: { schemaVersion: 1, executables: [], controls: [], maxSideEffect: 'read_only' },
+    })
+    await waitFor(() => expect(invalidateQueries).toHaveBeenCalledTimes(1))
+    expect(invalidateQueries).toHaveBeenCalledWith({ queryKey: aiQueryKeys.applications() })
+  })
+})
+
+describe('fetchAllEnabledAgentDefinitions', () => {
+  const agentAt = (index: number) => ({
+    id: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
+    name: `agent-${index}`,
+    description: '',
+    status: 'enabled',
+    revision: 1,
+    createdAt: '2026-08-20T00:00:00.000Z',
+    updatedAt: '2026-08-20T00:00:00.000Z',
+  })
+
+  const pageOf = (page: number, count: number) => ({
+    items: Array.from({ length: count }, (_, index) => agentAt((page - 1) * 100 + index)),
+    total: page * 100,
+    page,
+    pageSize: 100,
+  })
+
+  it('单页装得下时只拉一次', async () => {
+    getAgentDefinitions.mockResolvedValue(pageOf(1, 30))
+    const agents = await fetchAllEnabledAgentDefinitions(new QueryClient())
+
+    expect(agents).toHaveLength(30)
+    expect(getAgentDefinitions).toHaveBeenCalledTimes(1)
+    expect(getAgentDefinitions).toHaveBeenCalledWith({ page: 1, pageSize: 100 })
+  })
+
+  it('超过一页时循环分页拉完全部启用 Agent，某页不满即终止', async () => {
+    getAgentDefinitions.mockImplementation(async (query: { page: number }) =>
+      query.page === 1 ? pageOf(1, 100) : pageOf(2, 50),
+    )
+    const agents = await fetchAllEnabledAgentDefinitions(new QueryClient())
+
+    expect(agents).toHaveLength(150)
+    expect(getAgentDefinitions).toHaveBeenCalledTimes(2)
+    expect(getAgentDefinitions).toHaveBeenNthCalledWith(2, { page: 2, pageSize: 100 })
+  })
+
+  it('达到 20 页安全上限后停止拉取并告警', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    getAgentDefinitions.mockImplementation(async (query: { page: number }) => pageOf(query.page, 100))
+    try {
+      const agents = await fetchAllEnabledAgentDefinitions(new QueryClient())
+
+      expect(agents).toHaveLength(2000)
+      expect(getAgentDefinitions).toHaveBeenCalledTimes(20)
+      expect(warn).toHaveBeenCalledTimes(1)
+    } finally {
+      warn.mockRestore()
+    }
   })
 })

@@ -46,6 +46,7 @@ pnpm --filter @starter/api test
 - `executable-manifest-guidelines.md`：可执行 Agent 发现、Manifest V1、稳定 hash 和 Run revision 前置校验。
 - `pi-agent-execution-guidelines.md`：Pi Agent executor、原生 stream、Tool adapter、Session entry、compaction、active Run 和审计边界。
 - `ai-integration-guidelines.md`：AI Provider、加密凭据、模型目录、白名单、默认模型和 SSE 调用契约。
+- `webhook-guidelines.md`：Webhook 端点、补登扫描、投递协议、claim 互斥和重试策略。
 - `product-module-guidelines.md`：chat / flow 等产品模块的薄代理约定、RPC 类型导出和主 AppType 类型上限。
 - `ai-system-design.md`：AI 系统总设计、输入到输出的数据流、事件、双库状态归属、Run 恢复和审计记录。
 - `quality-guidelines.md`：API、数据库和 smoke test 检查项。

@@ -1,0 +1,9 @@
+{"file":".trellis/tasks/09-04-stage-d-risk-remediation/design.md","reason":"12 项修复的方案细节：R1 兜底 catch 位置、R2 queue 结束安全性、R4 投影链、R10 分页拉取、R12 spec 拆分"}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run 终态顺序、queue 生命周期、transport 约定——R1/R2/R7 的行为基准"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"Webhook 投递器职责与 env 约定（R5）、delivery 表字段（R4）、§8 待修正段落（R11）、拆分来源（R12）"}
+{"file":".trellis/spec/api/backend/product-module-guidelines.md","reason":"run-transport 共享规则——R2 改动的三入口同构约束"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"AppError 与错误 envelope 约定——R5 启动失败信息写法"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API 检查命令与测试风格"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"run/webhook/application 文件归属，spec 拆分后的文件组织（R12）"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"eventProtocolVersion 常量只留一处定义（R3）、PolicyFormFields 共享组件（R9）"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"delivery DTO 从 DB 列到 contracts 到 openapi 的跨层一致性（R4）"}

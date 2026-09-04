@@ -269,6 +269,9 @@ interface DeliveryView {
   appId: string
   runId: string
   eventType: string
+  eventId: string | null
+  sequence: number | null
+  eventProtocolVersion: number | null
   status: string
   attempts: number
   nextAttemptAt: string | null
@@ -668,6 +671,10 @@ it('端到端：Run 终态推送带可验证签名，payload 与 Run 终态一�
           expect(page.items[0]?.lastResponseCode).toBe(200)
           expect(page.items[0]?.lastError).toBeNull()
           expect(page.items[0]?.eventType).toBe('run.terminal')
+          // 投递记录响应的 identity 与持久 terminal RunEvent 一致。
+          expect(page.items[0]?.eventId).toBe(terminalRows[0]?.eventId)
+          expect(page.items[0]?.sequence).toBe(terminalRows[0]?.sequence)
+          expect(page.items[0]?.eventProtocolVersion).toBe(1)
           expect(page.items[0]?.deliveredAt).not.toBeNull()
         },
         { timeout: 8000 },
@@ -995,6 +1002,12 @@ it('interrupted Run 无 terminal RunEvent，delivery 的 eventId/sequence 为 nu
       expect(row.eventId).toBeNull()
       expect(row.sequence).toBeNull()
       expect(row.eventProtocolVersion).toBe(1)
+
+      // 投递记录查询响应与行值一致：两列 null，协议版本仍为 1。
+      const page = await listDeliveries(context.app, context.admin.cookie, { endpointId })
+      expect(page.items[0]?.eventId).toBeNull()
+      expect(page.items[0]?.sequence).toBeNull()
+      expect(page.items[0]?.eventProtocolVersion).toBe(1)
     } finally {
       context.cleanup()
     }
