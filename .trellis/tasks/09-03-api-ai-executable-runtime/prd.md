@@ -51,15 +51,15 @@
 
 ## Acceptance Criteria
 
-- [ ] D1、D2、D3 均按依赖顺序完成各自验收并归档。
-- [ ] 第三方能发现 policy 允许的当前 Agent capability，并能判断输入、输出、controls、副作用和事件协议。
-- [ ] 版本检查失败发生在 lane lease 和 Run row 创建前，不执行错误版本，也不自动切换版本。
-- [ ] chat、flow 和 AI Run 入口共用同一运行端口和 transport 规则，公开 URL 与现有响应保持兼容。
-- [ ] `product_app` 的 Agent、版本、controls 和副作用权限由服务端 policy 强制执行。
-- [ ] 终态 Webhook 可按稳定 event/delivery identity 去重，批量扫描和多实例 dispatcher 不漏发、不并发重复领取。
-- [ ] SSE 正常终态不增加额外 frame；非终态结束返回可校验的恢复提示和最后 sequence。
-- [ ] 每个子任务完成时运行自己的 API/contracts 检查；父任务归档前运行 `pnpm check`、`pnpm test` 和 `pnpm build`。
-- [ ] 最终更新 `.trellis/spec/api/backend/` 中的 Agent Runtime、产品模块和事件交付规则。
+- [x] D1、D2、D3 均按依赖顺序完成各自验收并归档。（D1 `a38cef8`/`d803274`、D2 `a2f8636`/`6ee4dff`、D3 `be24217`/`130f51c`；三份归档 prd 验收全勾选）
+- [x] 第三方能发现 policy 允许的当前 Agent capability，并能判断输入、输出、controls、副作用和事件协议。（`executableManifestV1Schema` 含 inputSchema/outputContract/controls/sideEffect/eventProtocolVersion；discovery 经精确 revision + policy 过滤；`ai-application-policy.test.ts` 断言）
+- [x] 版本检查失败发生在 lane lease 和 Run row 创建前，不执行错误版本，也不自动切换版本。（run.service.ts 的 expectedAgentRevision 409 与 `enforceStartPolicy` 403 均在幂等预检查 / lease / Run row 之前；测试断言 403 后 0 Run 行、同 lane 可启动、幂等键未消费）
+- [x] chat、flow 和 AI Run 入口共用同一运行端口和 transport 规则，公开 URL 与现有响应保持兼容。（三 route 均调 `startRunTransport` / `resumeRunTransport`；chat/flow 只收窄依赖；contracts diff 仅 6 行等价重构删除）
+- [x] `product_app` 的 Agent、版本、controls 和副作用权限由服务端 policy 强制执行。（`app-policy.ts` 唯一判定点，只在 service 层；completion 403；guard fail closed）
+- [x] 终态 Webhook 可按稳定 event/delivery identity 去重，批量扫描和多实例 dispatcher 不漏发、不并发重复领取。（`(finishedAt, runId)` 复合游标；claim 条件 UPDATE；`(endpoint_id, run_id)` 唯一约束；201 条同时间戳与双 dispatcher 互斥测试）
+- [x] SSE 正常终态不增加额外 frame；非终态结束返回可校验的恢复提示和最后 sequence。（run-sse.ts `!terminal && !aborted` 才发 frame，过 strict schema parse；四类流边界测试）
+- [x] 每个子任务完成时运行自己的 API/contracts 检查；父任务归档前运行 `pnpm check`、`pnpm test` 和 `pnpm build`。（子任务各自记录全绿；父任务本次三项全绿 + `git diff --check` clean）
+- [x] 最终更新 `.trellis/spec/api/backend/` 中的 Agent Runtime、产品模块和事件交付规则。（新增 `executable-manifest-guidelines.md`；更新 `agent-run-guidelines.md`、`ai-system-design.md`、`product-module-guidelines.md`）
 
 ## Out Of Scope
 

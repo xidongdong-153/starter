@@ -3,7 +3,7 @@
   "name": "api-ai-executable-runtime",
   "title": "阶段 D：Executable Manifest 与窄运行端口",
   "description": "把已发布 Agent 变成可发现、可按版本校验并经窄运行端口调用的 capability。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",
