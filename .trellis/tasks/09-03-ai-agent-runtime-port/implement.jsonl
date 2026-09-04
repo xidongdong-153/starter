@@ -1,1 +1,9 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"Run、事件、订阅和终态生命周期的 API 约束"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"AI 模块边界、运行入口和跨层依赖规则"}
+{"file":".trellis/spec/api/backend/product-module-guidelines.md","reason":"chat/flow 产品路由的窄依赖、同构和 principal 规则"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"未知 Last-Event-ID 与 Hono 错误响应的稳定行为"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"API 类型、Lint、Format、测试和边界检查要求"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"runtime 与 run transport 文件归属和导出约定"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"跨 route、transport、port、service 的数据流检查方法"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"共享 Accept/SSE 规则的复用边界与重复实现检查"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"D2 当前代码面、边界、风险和验收研究结论"}

@@ -4,13 +4,16 @@ import { zValidator } from '@hono/zod-validator'
 import { OpenAPIHono, z } from '@hono/zod-openapi'
 
 import { createRequireAuth } from '@api/modules/auth/index.js'
-import type { AiServices } from '@api/modules/ai/index.js'
+import type { AiAgentDefinitionService } from '@api/modules/ai/agent/index.js'
+import type { AiAttachmentService } from '@api/modules/ai/attachment/index.js'
+import type { AgentRuntimePort } from '@api/modules/ai/runtime/index.js'
+import type { AiAgentSessionService } from '@api/modules/ai/session/index.js'
 import { toRuntimeAccessContext } from '@api/modules/ai/principal.js'
-import { writeRunEventStream } from '@api/modules/ai/run/run-sse.js'
+import { startRunTransport, resumeRunTransport } from '@api/modules/ai/run/run-transport.js'
 import { AppError } from '@api/shared/app-error.js'
 import { createSuccessResponse } from '@api/shared/response.js'
 import { throwValidationError } from '@api/shared/validator.js'
-import { ApiErrorCodes, startAgentRunJsonSchema, uuidSchema } from '@starter/contracts'
+import { ApiErrorCodes, uuidSchema } from '@starter/contracts'
 
 import {
   abortChatRunRoute,
@@ -37,7 +40,14 @@ const attachmentParamsSchema = z.object({ attachmentId: uuidSchema })
  * `modules/ai` 的 service 层，行为与对应 /api/ai/* 端点完全等价，
  * 同一份 contracts 契约；产品语义后续迭代再收进来。
  */
-export function createChatRoute(runtime: AppRuntime, services: AiServices) {
+export interface ChatRouteServices {
+  agentDefinitionService: Pick<AiAgentDefinitionService, 'listPublic'>
+  sessionService: Pick<AiAgentSessionService, 'list' | 'create' | 'get' | 'update' | 'archive'>
+  runtimePort: AgentRuntimePort
+  attachmentService: Pick<AiAttachmentService, 'upload' | 'readContent'>
+}
+
+export function createChatRoute(runtime: AppRuntime, services: ChatRouteServices) {
   const requireAuth = createRequireAuth(runtime.auth)
   const access = (c: { var: HonoEnv['Variables'] }) => toRuntimeAccessContext(c.var.principal, c.var.resourceScope)
 
@@ -90,7 +100,7 @@ export function createChatRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...getChatSessionTranscriptRoute, middleware: requireAuth }, async (c) =>
       c.json(
         createSuccessResponse(
-          await services.sessionService.transcript(
+          await services.runtimePort.transcript(
             access(c),
             c.req.valid('param').sessionId,
             c.req.valid('query'),
@@ -104,41 +114,28 @@ export function createChatRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...startChatRunRoute, middleware: requireAuth }, async (c) => {
       const params = c.req.valid('param')
       const accessContext = access(c)
-      const result = await services.runService.startRun({
+      return startRunTransport(c, services.runtimePort, {
         access: accessContext,
         sessionId: params.sessionId,
         input: c.req.valid('json'),
         requestId: c.var.requestId,
       })
-      // Accept 分流：显式 application/json 且不含 text/event-stream 返回 JSON 启动模式；
-      // 缺省、*/* 或仅 text/event-stream 维持 SSE，向后兼容既有客户端。
-      const accept = c.req.header('accept') ?? ''
-      if (accept.includes('application/json') && !accept.includes('text/event-stream')) {
-        return c.json(
-          createSuccessResponse(startAgentRunJsonSchema.parse({ runId: result.runId }), c.var.requestId),
-          200,
-        )
-      }
-      const runId = result.runId
-      const events = services.runService.subscribe(accessContext, params.sessionId, runId, 0)
-      return writeRunEventStream(c, events)
     })
     .openapi({ ...getChatRunEventsStreamRoute, middleware: requireAuth }, async (c) => {
       const params = c.req.valid('param')
       const query = c.req.valid('query')
       const accessContext = access(c)
-      let afterSequence = query.afterSequence
-      const lastEventId = c.req.header('Last-Event-ID')
-      if (lastEventId && afterSequence === 0) {
-        afterSequence = services.runService.sequenceForEvent(accessContext, params.sessionId, params.runId, lastEventId)
-      }
-      const events = services.runService.subscribe(accessContext, params.sessionId, params.runId, afterSequence)
-      return writeRunEventStream(c, events)
+      return resumeRunTransport(c, services.runtimePort, {
+        access: accessContext,
+        sessionId: params.sessionId,
+        runId: params.runId,
+        afterSequence: query.afterSequence,
+      })
     })
     .openapi({ ...getChatRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          services.runService.get(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
+          services.runtimePort.get(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
           c.var.requestId,
         ),
         200,
@@ -148,14 +145,14 @@ export function createChatRoute(runtime: AppRuntime, services: AiServices) {
       const params = c.req.valid('param')
       const query = c.req.valid('query')
       return c.json(
-        createSuccessResponse(services.runService.activeRun(access(c), params.sessionId, query.lane), c.var.requestId),
+        createSuccessResponse(services.runtimePort.active(access(c), params.sessionId, query.lane), c.var.requestId),
         200,
       )
     })
     .openapi({ ...abortChatRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          services.runService.abort(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
+          services.runtimePort.abort(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
           c.var.requestId,
         ),
         200,

@@ -3,11 +3,12 @@ import type { HonoEnv } from '@api/shared/hono-env.js'
 import { OpenAPIHono } from '@hono/zod-openapi'
 
 import { createRequireAuth } from '@api/modules/auth/index.js'
-import type { AiServices } from '@api/modules/ai/index.js'
+import type { AiAgentDefinitionService } from '@api/modules/ai/agent/index.js'
+import type { AgentRuntimePort } from '@api/modules/ai/runtime/index.js'
+import type { AiAgentSessionService } from '@api/modules/ai/session/index.js'
 import { toRuntimeAccessContext } from '@api/modules/ai/principal.js'
-import { writeRunEventStream } from '@api/modules/ai/run/run-sse.js'
+import { startRunTransport } from '@api/modules/ai/run/run-transport.js'
 import { createSuccessResponse } from '@api/shared/response.js'
-import { startAgentRunJsonSchema } from '@starter/contracts'
 
 import {
   abortFlowRunRoute,
@@ -26,7 +27,13 @@ import {
  * `modules/ai` 的 service 层，行为与对应 /api/ai/* 端点完全等价，
  * 同一份 contracts 契约；产品语义后续迭代再收进来。
  */
-export function createFlowRoute(runtime: AppRuntime, services: AiServices) {
+export interface FlowRouteServices {
+  agentDefinitionService: Pick<AiAgentDefinitionService, 'listPublic'>
+  sessionService: Pick<AiAgentSessionService, 'create'>
+  runtimePort: AgentRuntimePort
+}
+
+export function createFlowRoute(runtime: AppRuntime, services: FlowRouteServices) {
   const requireAuth = createRequireAuth(runtime.auth)
   const access = (c: { var: HonoEnv['Variables'] }) => toRuntimeAccessContext(c.var.principal, c.var.resourceScope)
 
@@ -49,7 +56,7 @@ export function createFlowRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...getFlowSessionTranscriptRoute, middleware: requireAuth }, async (c) =>
       c.json(
         createSuccessResponse(
-          await services.sessionService.transcript(
+          await services.runtimePort.transcript(
             access(c),
             c.req.valid('param').sessionId,
             c.req.valid('query'),
@@ -63,29 +70,17 @@ export function createFlowRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...startFlowRunRoute, middleware: requireAuth }, async (c) => {
       const params = c.req.valid('param')
       const accessContext = access(c)
-      const result = await services.runService.startRun({
+      return startRunTransport(c, services.runtimePort, {
         access: accessContext,
         sessionId: params.sessionId,
         input: c.req.valid('json'),
         requestId: c.var.requestId,
       })
-      // Accept 分流：显式 application/json 且不含 text/event-stream 返回 JSON 启动模式；
-      // 缺省、*/* 或仅 text/event-stream 维持 SSE，向后兼容既有客户端。
-      const accept = c.req.header('accept') ?? ''
-      if (accept.includes('application/json') && !accept.includes('text/event-stream')) {
-        return c.json(
-          createSuccessResponse(startAgentRunJsonSchema.parse({ runId: result.runId }), c.var.requestId),
-          200,
-        )
-      }
-      const runId = result.runId
-      const events = services.runService.subscribe(accessContext, params.sessionId, runId, 0)
-      return writeRunEventStream(c, events)
     })
     .openapi({ ...getFlowRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          services.runService.get(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
+          services.runtimePort.get(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
           c.var.requestId,
         ),
         200,
@@ -94,7 +89,7 @@ export function createFlowRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...abortFlowRunRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          services.runService.abort(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
+          services.runtimePort.abort(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
           c.var.requestId,
         ),
         200,
@@ -103,7 +98,7 @@ export function createFlowRoute(runtime: AppRuntime, services: AiServices) {
     .openapi({ ...getFlowRunStructuredOutputsRoute, middleware: requireAuth }, (c) =>
       c.json(
         createSuccessResponse(
-          services.runService.structuredOutputs(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
+          services.runtimePort.outputs(access(c), c.req.valid('param').sessionId, c.req.valid('param').runId),
           c.var.requestId,
         ),
         200,

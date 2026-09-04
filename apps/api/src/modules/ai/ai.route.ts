@@ -79,6 +79,7 @@ export function createAiRoute(runtime: AppRuntime, services: AiServices) {
       '/',
       createAiAgentRunRoute({
         service: services.runService,
+        runtimePort: services.runtimePort,
         requireAuth: requireRuntimePrincipal,
         requireRead,
       }),

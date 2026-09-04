@@ -18,14 +18,14 @@
 
 ## Acceptance Criteria
 
-- [ ] `AgentRuntimePort` 不 import Hono、repository、Pi 包或 concrete service return type。
-- [ ] AI/chat/flow 的 JSON 与 SSE 启动使用同一 transport helper。
-- [ ] 缺省、`*/*`、仅 SSE、仅 JSON 和同时包含两种 Accept 的行为与现有约定一致。
-- [ ] 初始 SSE 使用 start 返回的 iterable，不创建第二个 sequence 0 订阅。
-- [ ] `afterSequence > 0` 优先于 Last-Event-ID，未知 eventId 保持 400。
-- [ ] 连接断开不 abort Run，终态后停止迭代。
-- [ ] chat active/transcript 与 flow outputs 行为不变。
-- [ ] product module 同构、SSE 恢复和全量 API 检查通过。
+- [x] `AgentRuntimePort` 不 import Hono、repository、Pi 包或 concrete service return type。（静态断言见 `agent-runtime-port.test.ts`）
+- [x] AI/chat/flow 的 JSON 与 SSE 启动使用同一 transport helper。（`startRunTransport` / `resumeRunTransport`）
+- [x] 缺省、`*/*`、仅 SSE、仅 JSON 和同时包含两种 Accept 的行为与现有约定一致。（`run-transport.test.ts` 五种组合）
+- [x] 初始 SSE 使用 start 返回的 iterable，不创建第二个 sequence 0 订阅。（transport 测试断言 `subscribe` 不被调用）
+- [x] `afterSequence > 0` 优先于 Last-Event-ID，未知 eventId 保持 400。（`resolveRunEventCursor` + adapter `sequenceForEvent`）
+- [x] 连接断开不 abort Run，终态后停止迭代。（`run-event-recovery.test.ts` 取消/终态回归）
+- [x] chat active/transcript 与 flow outputs 行为不变。（`product-modules.smoke.test.ts` 同构断言）
+- [x] product module 同构、SSE 恢复和全量 API 检查通过。（见 implement.md 验证记录）
 
 ## Out Of Scope
 

@@ -1,6 +1,6 @@
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai'
 import type { Api, Context, Model, SimpleStreamOptions } from '@earendil-works/pi-ai'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 import { z } from 'zod'
 import { mkdtemp } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -10,6 +10,7 @@ import { createApp } from '@api/bootstrap/create-app.js'
 import { createRuntime } from '@api/bootstrap/create-runtime.js'
 import { createPiSessionStore } from '@api/infra/agent/pi-session-store.js'
 import { createAiToolRegistry, defineAiTool } from '@api/modules/ai/tool/tool-registry.js'
+import { AsyncEventQueue } from '@api/infra/agent/pi-event-mapper.js'
 
 import { readSuccess, register } from './helpers.js'
 import {
@@ -195,6 +196,144 @@ it('按 session 查到进行中的 Run 后可以从 sequence 1 恢复事件流',
     const afterTerminalBody = await readSuccess<{ id: string } | null>(afterTerminal)
     expect(afterTerminalBody.data).toBeNull()
   } finally {
+    test.cleanup()
+    await store.close()
+  }
+})
+
+it('恢复 SSE 断开会立即清理挂起的 subscriber', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-recovery-cancel-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const endSpy = vi.spyOn(AsyncEventQueue.prototype, 'end')
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, '恢复取消后继续完成'),
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'recovery-cancel@example.com')
+    const sessionId = await createSession(test.app, user.cookie)
+    const response = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, input: '取消恢复流' }),
+    })
+    const { prefix, reader } = await readFirstSseFrame(response)
+    const startedRunId = parseSseEvents(prefix)[0]?.runId
+    expect(startedRunId).toBeTruthy()
+    await reader.cancel()
+    await vi.waitFor(() => expect(endSpy.mock.calls.length).toBeGreaterThan(0))
+
+    const endsBeforeResumeCancel = endSpy.mock.calls.length
+    const resumed = await test.app.request(
+      `/api/ai/sessions/${sessionId}/runs/${startedRunId}/events/stream?afterSequence=0`,
+      { headers: { cookie: user.cookie } },
+    )
+    const { prefix: resumedPrefix, reader: resumedReader } = await readFirstSseFrame(resumed)
+    expect(parseSseEvents(resumedPrefix)[0]?.type).toBe('run.started')
+    await resumedReader.cancel()
+    await vi.waitFor(() => expect(endSpy.mock.calls.length).toBeGreaterThan(endsBeforeResumeCancel))
+
+    release()
+    const completed = await test.app.request(
+      `/api/ai/sessions/${sessionId}/runs/${startedRunId}/events/stream?afterSequence=0`,
+      { headers: { cookie: user.cookie } },
+    )
+    const completedEvents = parseSseEvents(await readSseBody(completed))
+    expect(completedEvents.at(-1)?.type).toBe('run.completed')
+  } finally {
+    release()
+    endSpy.mockRestore()
+    test.cleanup()
+    await store.close()
+  }
+})
+
+it('终态事务返回 false 时仍关闭初始 SSE queue', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-terminal-false-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, '终态事务已被其他写入抢先完成'),
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'terminal-false@example.com')
+    const sessionId = await createSession(test.app, user.cookie)
+    const response = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, input: '终态事务 false' }),
+    })
+    const { prefix, reader } = await readFirstSseFrame(response)
+    const runId = parseSseEvents(prefix)[0]?.runId
+    if (!runId) throw new Error('SSE 缺少 runId')
+    test.runtime.database.sqlite
+      .prepare('UPDATE ai_agent_runs SET status = ?, finished_at = ? WHERE id = ?')
+      .run('completed', new Date().toISOString(), runId)
+
+    release()
+    const events = parseSseEvents(await readRemainingSse(prefix, reader))
+    expect(events.some((event) => ['run.completed', 'run.failed', 'run.aborted'].includes(event.type))).toBe(false)
+  } finally {
+    release()
+    test.cleanup()
+    await store.close()
+  }
+})
+
+it('终态事务抛异常时仍关闭初始 SSE queue', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-terminal-throw-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedTextStream(gate, '终态事务抛错后仍收尾'),
+  })
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'terminal-throw@example.com')
+    const sessionId = await createSession(test.app, user.cookie)
+    const response = await test.app.request(`/api/ai/sessions/${sessionId}/runs`, {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ agentId, input: '终态事务 throw' }),
+    })
+    const { prefix, reader } = await readFirstSseFrame(response)
+    expect(parseSseEvents(prefix)[0]?.type).toBe('run.started')
+    test.runtime.database.sqlite.exec('DROP TABLE ai_agent_runs')
+
+    release()
+    const events = parseSseEvents(await readRemainingSse(prefix, reader))
+    expect(events.some((event) => ['run.completed', 'run.failed', 'run.aborted'].includes(event.type))).toBe(false)
+  } finally {
+    release()
     test.cleanup()
     await store.close()
   }

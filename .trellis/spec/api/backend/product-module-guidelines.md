@@ -27,7 +27,21 @@ export function createAiServices(runtime: AppRuntime): AiServices;
 
 ```ts
 // modules/chat/chat.route.ts
-export function createChatRoute(runtime: AppRuntime, services: AiServices);
+export interface ChatRouteServices {
+  agentDefinitionService: Pick<AiAgentDefinitionService, 'listPublic'>
+  sessionService: Pick<AiAgentSessionService, 'list' | 'create' | 'get' | 'update' | 'archive'>
+  runtimePort: AgentRuntimePort
+  attachmentService: Pick<AiAttachmentService, 'upload' | 'readContent'>
+}
+export function createChatRoute(runtime: AppRuntime, services: ChatRouteServices);
+
+// modules/flow/flow.route.ts
+export interface FlowRouteServices {
+  agentDefinitionService: Pick<AiAgentDefinitionService, 'listPublic'>
+  sessionService: Pick<AiAgentSessionService, 'create'>
+  runtimePort: AgentRuntimePort
+}
+export function createFlowRoute(runtime: AppRuntime, services: FlowRouteServices);
 // modules/chat/index.ts 只导出 createChatRoute
 ```
 
@@ -45,7 +59,9 @@ export type ChatAppType = OpenAPIHono<Env, ChatSchema>;
 
 ### 装配
 
-`routes/index.ts` 里 `createAiServices(runtime)` 只调用一次，结果传给 `createAiRoute`、`createChatRoute`、`createFlowRoute`。webhook dispatcher 启动、session 一致性检查、run 恢复扫描三个副作用在 `createAiServices` 内部触发，恰好一次。
+`routes/index.ts` 里 `createAiServices(runtime)` 只调用一次，结果传给 `createAiRoute`，并把对应的 Agent list、Session CRUD、Attachment 方法和 `runtimePort` 组装成 chat/flow 的窄依赖。webhook dispatcher 启动、session 一致性检查、run 恢复扫描三个副作用在 `createAiServices` 内部触发，恰好一次。
+
+产品模块的运行、恢复、active、transcript 和 outputs 必须只通过 `AgentRuntimePort`；route 不直接引用 Run Service、repository、Pi 或 `sequenceForEvent`。
 
 产品路由挂载必须做类型断言，不并入主 `ApiRpcType`：
 
@@ -62,6 +78,8 @@ export type ChatAppType = OpenAPIHono<Env, ChatSchema>;
 - 响应 data 用 `genericSuccessResponse`（`@api/openapi/responses`，data 为 unknown）：同一 service 产出，与对应 `/api/ai/*` 端点同构；复制完整响应 schema 会放大类型体积（见上面的 TS7056）。
 - handler 与 ai 侧对齐：`toRuntimeAccessContext(c.var.principal, c.var.resourceScope)` 构造上下文，`createSuccessResponse(data, c.var.requestId)` 包装，状态码一致。
 - SSE 端点用 `writeRunEventStream(c, events)`（`modules/ai/run/run-sse.ts`），不要自己写心跳和去重。
+- chat、flow 和 AI start handler 共用 `startRunTransport`；AI/chat 恢复 handler 共用 `resumeRunTransport`。显式 `Accept: application/json` 且不含 `text/event-stream` 时返回 JSON 启动 envelope，其余 Accept 维持 SSE。
+- `startRunTransport` 直接消费 `AgentRuntimePort.start()` 返回的 events iterable，不追加 `subscribe(0)`。恢复时 `afterSequence > 0` 优先，只有为 0 且有 `Last-Event-ID` 才交给 port 的 eventId cursor。
 - 暴露哪些端点由产品需要决定，映射表见 `.trellis/tasks/08-31-ai-service-layer-split/design.md`（chat 13 个、flow 7 个）。新增端点先确认对应 AI service 方法存在。
 
 ### middleware
@@ -89,7 +107,11 @@ export type ChatAppType = OpenAPIHono<Env, ChatSchema>;
 
 - `GET /api/<product>/agents` 与 `GET /api/ai/agents` 的 `data` 用 `toEqual` 断言同构。
 - session 创建 → transcript 读取全链路（flow 加 `?lane=` 断言）。
+- `apps/api/src/test/product-modules.smoke.test.ts` 除 agents 和 Session transcript 外，还要覆盖 chat 的 JSON start、active/transcript，以及 flow 的 SSE start/outputs；两个产品都应复用同一 RunEvent 和响应 envelope。
+- `apps/api/src/test/agent-runtime-port.test.ts` 和 `run-transport.test.ts` 负责验证 port 依赖边界、Accept 矩阵、初始 iterable 直连和恢复 cursor 优先级。
 - 未登录 401。
+
+产品路由测试还必须断言运行面端口的实际链路；不要只 mock `AiServices` 的完整对象，否则无法发现产品模块重新依赖 Run Service 或复制 transport 逻辑。
 
 现有 `/api/ai` 测试不允许改断言语义；`rpc-type.probe.ts` 零改动是「产品路由不入 AppType」的守护断言。
 

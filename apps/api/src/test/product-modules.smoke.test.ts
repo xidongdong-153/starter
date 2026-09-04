@@ -1,9 +1,26 @@
 // Chat / Flow 产品模块薄代理的 smoke tests。
 // 每个用例用 helpers.ts 注入的临时 SQLite 和临时附件目录，不读写开发库。
 // 薄代理不新增 DTO，这里校验 /api/chat/* 与对应 /api/ai/* 端点返回同构 data。
+import { mkdtemp, rm } from 'node:fs/promises'
+import { join } from 'node:path'
+import { tmpdir } from 'node:os'
+import { createAssistantMessageEventStream } from '@earendil-works/pi-ai'
 import { expect, it } from 'vitest'
+import type { AgentRun, AgentTranscript } from '@starter/contracts'
+
+import { createPiSessionStore } from '@api/infra/agent/pi-session-store.js'
+import { createAiToolRegistry } from '@api/modules/ai/tool/tool-registry.js'
 
 import { createTestApp, readFailure, readSuccess, register } from './helpers.js'
+import {
+  assistantMessage,
+  parseSseEvents,
+  readSseBody,
+  runTestApp,
+  seedAgent,
+  seedEnabledModel,
+  streamAssistant,
+} from './ai-run-harness.js'
 
 async function requestJson(
   app: ReturnType<typeof createTestApp>['app'],
@@ -127,3 +144,123 @@ it('flow sessions：创建后读取 lane=main transcript；未登录 401', async
     cleanup()
   }
 })
+
+it('chat 和 flow 的 Run 入口共用 JSON/SSE transport，active、transcript、outputs 保持同构', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starter-product-runtime-'))
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const store = createPiSessionStore({
+    cwd: directory,
+    databasePath: join(directory, 'agent-sessions.db'),
+  })
+  const test = runTestApp({
+    store,
+    tools: createAiToolRegistry([]),
+    streamSimple: () => delayedStream(gate, 'product answer'),
+  })
+
+  try {
+    seedEnabledModel(test.runtime)
+    const agentId = seedAgent(test.runtime, [])
+    const user = await register(test.app, 'product-runtime@example.com')
+
+    const chatSessionResponse = await test.app.request('/api/chat/sessions', {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'chat runtime' }),
+    })
+    const chatSession = await readSuccess<{ id: string }>(chatSessionResponse)
+    const chatStart = await test.app.request(`/api/chat/sessions/${chatSession.data.id}/runs`, {
+      method: 'POST',
+      headers: {
+        cookie: user.cookie,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      body: JSON.stringify({ agentId, input: 'chat input' }),
+    })
+    expect(chatStart.status).toBe(200)
+    expect(chatStart.headers.get('content-type')).toContain('application/json')
+    const chatStartBody = await readSuccess<{ runId: string }>(chatStart)
+
+    const active = await test.app.request(`/api/chat/sessions/${chatSession.data.id}/active-run`, {
+      headers: { cookie: user.cookie },
+    })
+    expect(active.status).toBe(200)
+    const activeBody = await readSuccess<AgentRun | null>(active)
+    expect(activeBody.data).toMatchObject({ id: chatStartBody.data.runId, status: 'running' })
+
+    release()
+    const chatRun = await waitForCompletedRun(test.app, user.cookie, chatSession.data.id, chatStartBody.data.runId)
+    expect(chatRun.status).toBe('completed')
+    const chatTranscript = await readSuccess<AgentTranscript>(
+      await test.app.request(`/api/chat/sessions/${chatSession.data.id}/transcript`, {
+        headers: { cookie: user.cookie },
+      }),
+    )
+    expect(chatTranscript.data.items.some((item) => item.type === 'assistant_message')).toBe(true)
+
+    const flowSessionResponse = await test.app.request('/api/flow/sessions', {
+      method: 'POST',
+      headers: { cookie: user.cookie, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ title: 'flow runtime' }),
+    })
+    const flowSession = await readSuccess<{ id: string }>(flowSessionResponse)
+    const flowStart = await test.app.request(`/api/flow/sessions/${flowSession.data.id}/runs`, {
+      method: 'POST',
+      headers: {
+        cookie: user.cookie,
+        'Content-Type': 'application/json',
+        Accept: 'text/event-stream',
+      },
+      body: JSON.stringify({ agentId, input: 'flow input' }),
+    })
+    expect(flowStart.status).toBe(200)
+    expect(flowStart.headers.get('content-type')).toContain('text/event-stream')
+    const flowEvents = parseSseEvents(await readSseBody(flowStart))
+    expect(flowEvents.at(-1)?.type).toBe('run.completed')
+    const flowRunId = flowEvents[0]?.runId
+    if (!flowRunId) throw new Error('flow SSE 缺少 runId')
+
+    const flowRun = await waitForCompletedRun(test.app, user.cookie, flowSession.data.id, flowRunId)
+    expect(flowRun.status).toBe('completed')
+    const flowOutputs = await test.app.request(
+      `/api/flow/sessions/${flowSession.data.id}/runs/${flowRunId}/structured-outputs`,
+      { headers: { cookie: user.cookie } },
+    )
+    expect(flowOutputs.status).toBe(200)
+    expect((await readSuccess<{ items: unknown[] }>(flowOutputs)).data.items).toEqual([])
+  } finally {
+    test.cleanup()
+    await store.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})
+
+async function waitForCompletedRun(
+  app: ReturnType<typeof createTestApp>['app'],
+  cookie: string,
+  sessionId: string,
+  runId: string,
+): Promise<AgentRun> {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const response = await app.request(`/api/ai/sessions/${sessionId}/runs/${runId}`, {
+      headers: { cookie },
+    })
+    const body = await readSuccess<AgentRun>(response)
+    if (body.data.status !== 'starting' && body.data.status !== 'running') return body.data
+    await new Promise((resolve) => setTimeout(resolve, 5))
+  }
+  throw new Error('Run 未在预期时间内进入终态')
+}
+
+function delayedStream(gate: Promise<void>, text: string): ReturnType<typeof createAssistantMessageEventStream> {
+  const stream = createAssistantMessageEventStream()
+  void gate.then(async () => {
+    const source = streamAssistant(assistantMessage([{ type: 'text', text }], 'stop'), 'stop')
+    for await (const event of source) stream.push(event)
+  })
+  return stream
+}

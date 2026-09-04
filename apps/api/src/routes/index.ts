@@ -23,8 +23,23 @@ export function createRoutes(runtime: AppRuntime) {
       // AI 运行面结构相近，三份叠加会超出 TS 声明序列化上限（TS7056，dts
       // 构建与 typed client 推断双双超限）。产品面的 RPC 类型独立导出，
       // 见 src/rpc/chat.ts、src/rpc/flow.ts；运行时行为与文档不受影响。
-      .route('/', createChatRoute(runtime, aiServices) as unknown as Hono<HonoEnv>)
-      .route('/', createFlowRoute(runtime, aiServices) as unknown as Hono<HonoEnv>)
+      .route(
+        '/',
+        createChatRoute(runtime, {
+          agentDefinitionService: aiServices.agentDefinitionService,
+          sessionService: aiServices.sessionService,
+          runtimePort: aiServices.runtimePort,
+          attachmentService: aiServices.attachmentService,
+        }) as unknown as Hono<HonoEnv>,
+      )
+      .route(
+        '/',
+        createFlowRoute(runtime, {
+          agentDefinitionService: aiServices.agentDefinitionService,
+          sessionService: aiServices.sessionService,
+          runtimePort: aiServices.runtimePort,
+        }) as unknown as Hono<HonoEnv>,
+      )
       .route('/', createAuthorizationRoute(runtime))
       .route('/', createSystemRoute(runtime))
       .route('/', createProfileRoute(runtime))

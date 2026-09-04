@@ -374,6 +374,7 @@ export function createAiAgentRunService(input: {
         repository: eventRepository,
         sink: {
           push: (event) => {
+            context.events.push(event)
             for (const subscriber of context.subscribers) subscriber.push(event)
           },
         },
@@ -748,34 +749,73 @@ export function createAiAgentRunService(input: {
     })
   }
 
-  async function* replayAndSubscribe(input: {
+  function replayAndSubscribe(input: {
     record: AiAgentRunRecord
     context: RunContext | undefined
     runId: string
     afterSequence: number
-  }): AsyncGenerator<RunEvent> {
+  }): AsyncIterable<RunEvent> {
     const { record, context, runId, afterSequence } = input
     if (!context) {
-      yield* listAllEventsAfter(runId, afterSequence)
-      return
+      const history = listAllEventsAfter(runId, afterSequence)
+      const historyIterator = history[Symbol.iterator]()
+      return {
+        [Symbol.asyncIterator]: () => ({
+          next: async () => historyIterator.next(),
+          return: async () => {
+            historyIterator.return?.(undefined)
+            return { done: true, value: undefined }
+          },
+        }),
+      }
     }
 
     const queue = new AsyncEventQueue<RunEvent>(MAX_PENDING_EVENTS)
+    const queueIterator = queue[Symbol.asyncIterator]()
     context.subscribers.add(queue)
     const watermark = eventRepository.watermark(runId)
-    try {
-      // 先回放订阅建立时的持久 watermark，回放期间产生的新事件留在实时队列。
-      yield* listEventsThrough(runId, afterSequence, watermark)
-      if (record.status !== 'starting' && record.status !== 'running') return
+    const replayIterator = listEventsThrough(runId, afterSequence, watermark)[Symbol.iterator]()
+    let live = false
+    let closed = false
 
-      for await (const event of queue) {
-        if (event.sequence <= watermark) continue
-        yield event
-      }
-    } finally {
+    const cleanup = () => {
+      if (closed) return
+      closed = true
       context.subscribers.delete(queue)
       queue.end()
     }
+
+    const iterator: AsyncIterator<RunEvent> = {
+      next: async () => {
+        if (closed) return { done: true, value: undefined }
+        if (!live) {
+          const replay = replayIterator.next()
+          if (!replay.done) return { done: false, value: replay.value }
+          live = true
+          if (record.status !== 'starting' && record.status !== 'running') {
+            cleanup()
+            return { done: true, value: undefined }
+          }
+        }
+
+        while (true) {
+          if (closed) return { done: true, value: undefined }
+          const next = await queueIterator.next()
+          if (next.done) {
+            cleanup()
+            return { done: true, value: undefined }
+          }
+          if (next.value.sequence <= watermark) continue
+          return { done: false, value: next.value }
+        }
+      },
+      return: async () => {
+        cleanup()
+        return { done: true, value: undefined }
+      },
+    }
+
+    return { [Symbol.asyncIterator]: () => iterator }
   }
 
   function* listEventsThrough(runId: string, afterSequence: number, watermark: number): Generator<RunEvent> {
@@ -1201,20 +1241,25 @@ export function createAiAgentRunService(input: {
 
   async function commitTerminal(context: RunContext, terminal: ExecutorTerminalResult): Promise<void> {
     const { runId, sessionId, lane, requestId } = context.execution
-    const committed = repository.completeWithTerminalEvent({
-      id: runId,
-      status: terminal.status,
-      finalEntryId: terminal.finalEntryId,
-      errorCode: terminal.errorCode,
-      finishedAt: new Date(),
-      event: terminalEvent({ runId, sessionId, lane, attemptNo: context.currentAttemptNo }, terminal),
-      lease: { ownerId: context.laneLease.ownerId },
-      attempt: { attemptNo: context.currentAttemptNo },
-    })
-    if (committed) {
-      context.publisher.publishPersisted(committed)
-    } else {
-      logger.error({ runId, sessionId, requestId }, 'Run 主库终态事务未提交，不发布 terminal event')
+    let committed: RunEvent | false = false
+    try {
+      committed = repository.completeWithTerminalEvent({
+        id: runId,
+        status: terminal.status,
+        finalEntryId: terminal.finalEntryId,
+        errorCode: terminal.errorCode,
+        finishedAt: new Date(),
+        event: terminalEvent({ runId, sessionId, lane, attemptNo: context.currentAttemptNo }, terminal),
+        lease: { ownerId: context.laneLease.ownerId },
+        attempt: { attemptNo: context.currentAttemptNo },
+      })
+      if (committed) {
+        context.publisher.publishPersisted(committed)
+      } else {
+        logger.error({ runId, sessionId, requestId }, 'Run 主库终态事务未提交，不发布 terminal event')
+      }
+    } catch (cause) {
+      logger.error({ err: cause, runId, sessionId, requestId }, 'Run 主库终态事务失败，不发布 terminal event')
     }
     context.telemetry.close({
       attributes: runSpanEndAttributes(terminal, committed !== false),
@@ -1222,6 +1267,7 @@ export function createAiAgentRunService(input: {
     })
     // Run 结束：清掉合并定时器与续租定时器，不留悬挂 timer。
     context.publisher.close()
+    context.events.end()
     if (context.renewTimer) {
       clearInterval(context.renewTimer)
       context.renewTimer = null

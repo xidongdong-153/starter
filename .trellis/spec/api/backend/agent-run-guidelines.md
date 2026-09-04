@@ -34,6 +34,34 @@ interface AiAgentRunService {
 }
 ```
 
+AgentRuntimePort 是产品运行面窄依赖：
+
+```ts
+interface AgentRuntimePort {
+  start(input: AgentRuntimeStartInput): Promise<{ runId: string; events: AsyncIterable<RunEvent> }>
+  get(access: RuntimeAccessContext, sessionId: string, runId: string): AgentRun
+  active(access: RuntimeAccessContext, sessionId: string, lane: string): AgentRun | null
+  subscribe(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    runId: string,
+    cursor: { afterSequence: number } | { lastEventId: string },
+  ): AsyncIterable<RunEvent>
+  abort(access: RuntimeAccessContext, sessionId: string, runId: string): AgentRun
+  steer(access: RuntimeAccessContext, sessionId: string, runId: string, input: SteerAgentRunInput): Promise<AgentRun>
+  followUp(access: RuntimeAccessContext, sessionId: string, runId: string, input: FollowUpAgentRunInput): Promise<AgentRun>
+  transcript(
+    access: RuntimeAccessContext,
+    sessionId: string,
+    query: AgentTranscriptQuery,
+    requestId?: string,
+  ): Promise<AgentTranscript>
+  outputs(access: RuntimeAccessContext, sessionId: string, runId: string): StructuredOutputList
+}
+```
+
+port 文件只能依赖 contracts DTO 和 `RuntimeAccessContext`，不得依赖 Hono、repository、Pi 包或 concrete service `ReturnType`。adapter 接收结构化 Run/Session backend；`sequenceForEvent` 只在 adapter 内部把 `{ lastEventId }` 转成 service 的数字游标。
+
 Repository 方法见 `apps/api/src/modules/ai/run/run.repository.ts`：`create`、`findOwned`（join session 校验 owner）、`findById`、`markRunning`、`updateTerminal`（条件更新）、`listNonTerminal`、`findActiveInScope`（按 session + lane 取 `starting`/`running` 的一条）。
 
 Route 10 个 endpoint：
@@ -78,7 +106,10 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - 活跃快照按 Run row 状态判定是否返回，不按 registry handle。`finalizeRun` 先更新主库终态、后 release registry，按 handle 判断会在这个窗口返回「终态 + 非空快照」的非法组合。快照只在内存，release 时随之删除。
 - `activeRun` 的判据只有主库 Run 行的 `starting` / `running`，不查 `ActiveRunRegistry`：registry 是进程内索引，进程重启后 `recoverInterrupted` 已经把非终态 Run 落成 `interrupted`，此时应该返回 null，让客户端保持静态历史。查询参数 `lane` 默认 `main`，响应 data 与 `GET /runs/{runId}` 同源（`toAgentRun(record, readLiveSnapshot(record))`），没有在跑的 Run 时 data 是 null 而不是 404。
 - SSE 的 `id` 是 eventId、`event` 是 `RunEvent.type`、`data` 是完整 RunEvent JSON；heartbeat 用 comment，不创建 RunEvent。两处 SSE handler（创建流与恢复流）的心跳写入必须都是真实换行 `": heartbeat\n\n"`——写字面量 `\\n` 会产出永不封帧的垃圾字节并粘连下一帧。
-- `POST /runs` 按 Accept 分流：请求 Accept 含 `application/json` 且不含 `text/event-stream` 时返回 JSON `{ ok, data: { runId }, meta }`，不订阅事件流（Run 照常执行，客户端用 `GET /runs/{runId}` + timeline 轮询）；缺省、`*/*` 或仅 `text/event-stream` 时维持 SSE，向后兼容既有客户端。
+- `AgentRuntimePort` 是 chat、flow 和 AI 运行路由的唯一运行面窄依赖。port 文件只能依赖 contracts DTO 和 `RuntimeAccessContext`，不得依赖 Hono、repository、Pi 包或 concrete service `ReturnType`。adapter 接收结构化 Run/Session backend；`sequenceForEvent` 只在 adapter 内部把 `{ lastEventId }` 转成 service 的数字游标。
+- `startRunTransport` 必须把 `start()` 返回的 `events` iterable 直接交给 SSE writer，不能再调用 `subscribe(0)`。`resumeRunTransport` 在 `afterSequence > 0` 时传 `{ afterSequence }`；只有为 0 且存在 `Last-Event-ID` 时才传 `{ lastEventId }`；否则传 `{ afterSequence: 0 }`。
+- RunEvent publisher 成功持久化事件时同时推入 start queue 和已有恢复 subscribers。终态提交成功、终态未提交或终态事务抛错后都必须关闭 start queue；SSE iterator 提前 `return()` 只关闭当前 queue，不 abort Run。
+- 恢复订阅返回的 iterable 必须是显式 iterator：`return()` 同步移除 subscriber 并结束 queue。不能退回 async generator——它的 `return()` 会排在挂起的 `next()` 之后，客户端断开时 subscriber 要等下一个事件才被清理。`AsyncEventQueue` 的 iterator `return()` 结束整个 queue，一个 queue 只有一个消费者，需要扇出时为每个消费者建独立 queue。
 - 结构化输出读取（运行面与 admin 两路）的可见性规则：contract `visibility=product` 时运行面返回 value、`visibility=admin` 时返回 `value: null`；admin 路由恒返回 value。contract ref 组装用 `toStructuredOutputContractRef`（`output/output-contract-registry.ts`）：`schemaHash` / `renderKind` / `visibility` / `mode` 都取表内记录（emit 时刻的事实）；存量行的 `visibility` / `mode` 为 NULL 时回退 registry 当前定义。该函数与 transcript 回放（session 模块）共用，改一处必须同步另一处。contract 已从代码注册表移除且行内无表内值的记录不返回，记 WARN；有表内值的仍可渲染。
 - Run 启动在 run row 之后、executor 启动之前写入 `ai_run_resolved_manifests`（manifest 只含资源 revision、content hash、tool manifestHash、contract schemaHash，无 Prompt 正文无 secret）。写入失败按 starting 失败收尾：发布 run.failed、释放两层 lease，不存在无 manifest 的 starting/running Run。`describeResolvedManifest(runId)` 读回经 `aiRunResolvedManifestSchema` 校验的 DTO。
 - Prompt/Skill 的 content、description、name（name 拼进 system prompt 的 available_skills 块且 read_skill 按 name 查找）变化都在单事务内追加 revision 行、刷新主表镜像、bump 引用 Agent 的 revision 与记录列；仅 enabled 变化不触发。resolve 按 Agent 行 pinned revision 读不可变 revision 行，行缺失时回退主表当前值（测试种子兼容）。不变量：Agent revision 变化当且仅当其执行输入可能变化。skill description 的历史 revision 行只存 content，description-only 变化产生的 revision 行与上一行内容相同，事后无法重建当时的 available_skills 块——这是已知边界。`read_skill` 执行期按 name 读主表当前内容，长 Run 中途更新 skill 会读到比 manifest 记录更新的内容，留阶段 C 处理。`ai_output_contract_snapshots` 表当前只写不读（define 时 upsert 全量元数据 + schema JSON），供阶段 D manifest presenter 使用，是预写存储。
@@ -103,12 +134,16 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 | structured-outputs admin 路由：无 AI_CONFIG_READ 权限 | 403 | 既有权限错误码 |
 | `starter.run` 写入失败 | 持久化 failed | 主库 `AI.SESSION_STORAGE_FAILED`，发布 run.failed |
 | `starter.run` 写入后主库终态更新失败 | 不发布 terminal event | 记录日志、关闭 transport、release，等恢复修复 |
+| 恢复 `afterSequence > 0` | 忽略 `Last-Event-ID`，按数字游标订阅 | 不调用 `sequenceForEvent` |
+| 恢复 `afterSequence = 0` 且有 `Last-Event-ID` | adapter 解析 eventId；未知 ID 返回 400 | `COMMON.INVALID_REQUEST` |
 
 ## 5. Good / Base / Bad Cases
 
 - Good：`registry.reserve` + db lease acquire 在 Run row 创建前检查，busy 直接 409 不产生 Run；Run row 创建后的失败窗口（prepare/attach/markRunning）持久化 failed 并发布 `run.failed` 作为 sequence 1 的唯一 SSE event，不发送 `run.started`，并直接释放原始 lane lease（registry + db 两层）。
 - Good：正常路径只在 prepare、attach 和 starting -> running 更新成功后才发布 sequence 1 的 `run.started`；message/tool 事件与 terminal event 的 sequence 均由 RunEventPublisher 分配。
 - Good：客户端断开只停止向该连接写数据（transport 移除），不调用 abort；Run 继续执行并持久化终态。
+- Good：正常 start SSE 消费 `start()` 返回的初始 iterable，首个持久事件从 `run.started` 开始；终态后 queue 和 publisher 都关闭，writer 调用 iterator cleanup。
+- Good：恢复流的数字游标优先于 `Last-Event-ID`；数字游标为 0 时才把 eventId 交给 adapter 解析。
 - Base：abort 幂等，正在取消时重复调用返回当前 Run 状态；终态后没有 handle 返回 `AI.RUN_NOT_ACTIVE`。
 - Base：启动恢复扫描非终态 Run；有 active handle 的跳过；Pi 侧唯一合法 terminal entry 投影主库终态；无 entry、重复 entry、schema 解析失败都标记 `AI.RUN_INTERRUPTED`。
 - `recoverInterrupted()` 是 API 启动时的批量修复扫描，不创建单次 Run 的 `starter.ai.run` span；其结果通过 `RunRecoveryReport` 返回。
@@ -130,6 +165,11 @@ GET    /api/ai/admin/runs/{runId}/structured-outputs                   # 结构�
 - 终态原因：撞 `maxTurns` 的 Run 的 `run.completed.data.reason` 为 `max_turns`，正常结束为 `model_finished`。
 - 同构回归：`apps/api/src/test/run-live-snapshot.test.ts` 读取 `test-fixtures/run-event-timeline-isomorphism.json`，断言 `applyRunEvent` 折叠结果与 fixture 里的快照完全相等；产品前端自己折叠事件时使用同一份 fixture 校验。任一边漂移都会红。
 - `run-event-recovery.test.ts` 覆盖回放窗口竞态、delta/progress 游标、进程重启后的持久 Timeline 和 GET `/events/stream` 的 `Last-Event-ID`；测试通过 `createTestApp` 注入测试 Provider，不依赖真实模型。
+- `apps/api/src/test/agent-runtime-port.test.ts`：验证每个 port 方法映射、数字游标透传、`lastEventId` 转换、transcript/outputs 映射和 port 源文件依赖边界。
+- `apps/api/src/test/run-transport.test.ts`：覆盖缺省、`*/*`、仅 SSE、仅 JSON、JSON/SSE 同时出现；断言 start iterable 直接消费、`subscribe(0)` 不调用、终态停止和 iterator cleanup，并断言恢复游标优先级。
+- `apps/api/src/test/product-modules.smoke.test.ts`：chat JSON start、active、transcript 与 flow SSE start、outputs 同构。
+- `run-event-recovery.test.ts`：恢复流未知 `Last-Event-ID` 仍为 400；断线不 abort，恢复从持久 sequence 连续收尾。
+- `run-event-recovery.test.ts` subscriber 生命周期回归三条：恢复 SSE 断开后 queue 立即 end（不等下一个事件）；终态事务返回 false 与终态事务抛错都不发布 terminal event，但初始 start queue 必须关闭，SSE 以非终态 EOF 结束不悬挂。
 - 刷新恢复链路（`run-event-recovery.test.ts`，用挂住的 streamFn 把 Run 停在 running）：`GET /active-run` 返回该 Run 且 `status` 为 `running`；同一时刻 transcript 已含本轮 `user_message`、不含 `assistant_message`；断掉原来那条 SSE 后 Run 继续跑；用查到的 runId 连 `events/stream?afterSequence=0` 能收到从 sequence 1 开始的连续事件并以终态事件收尾；Run 进终态后 `GET /active-run` 的 data 为 null；他人查同一 session 的 `active-run` 返回 404。
 - 第三方接入链路（`apps/api/src/test/ai-third-party-access.test.ts`，Bearer product_app 视角）：CORS 预检覆盖 7 个运行面头；agent 公共列表只含 enabled、伪造 Bearer 401；`Accept: application/json` 启动返回 runId 后轮询到 completed 且 timeline 完整，显式 `text/event-stream` 仍走 SSE；structured-outputs 路由的 product/admin 可见性打码、admin 路由不打码、跨 scope 404；transcript 中 `emit_structured_output` 的 tool_activity 携带 structuredOutput。心跳修复无集成测试（15s 定时器不可观测），由两处写法一致性与既有 sse parser 测试覆盖。
 - lane lease（`apps/api/src/test/ai-lane-lease.test.ts`）：store 级条件更新（插入 token=1、未过期 busy、过期接管 token+1、旧 owner renew/release 无效果、`releaseExpired` 只删过期行）；双 runtime（`runDualRuntimeApps`，共享 Starter db、不同 `APP_INSTANCE_ID`）同 lane 互斥（一成功一 `AI.SESSION_BUSY`、主库单条非终态 Run、终态后可再启动）、不同 lane 不互斥；lease 被接管后旧 owner 终态落成 `interrupted` 且不删新 owner 的 lease 行；短 TTL / 续租间隔注入（`RuntimeDeps.laneLeaseOptions`）验证续租失败后 executor 中止；readiness 未 resolve 时 startRun 等待且不建 Run、不领 lease。双 runtime 底座共享同一个 Pi Session store 实例：Pi SQLite backend 对同一 session 只允许一个写者，两个 repository 打开同一文件会互相拒绝，与本组用例验证的 Starter lease 粒度无关。
@@ -152,6 +192,38 @@ const lease = registry.reserve(sessionId, lane)   // 进程内快速失败，bus
 const laneLease = laneLeaseStore.acquire({ ... })  // 排他权威；busy -> 409 并释放 registry lease
 await ensureLane(sessionStore, sessionId, lane)   // 非 main lane 显式创建
 repository.create({ ..., executionFencingToken }) // 之后失败走 failed 终态
+```
+
+### Wrong：产品路由接收完整 AiServices
+
+```ts
+createChatRoute(runtime, aiServices)
+// route 可以意外依赖管理 service、repository 形状或 sequenceForEvent
+```
+
+### Correct：产品路由只接收 port 和本产品所需的窄服务
+
+```ts
+createChatRoute(runtime, {
+  agentDefinitionService: aiServices.agentDefinitionService,
+  sessionService: aiServices.sessionService,
+  runtimePort: aiServices.runtimePort,
+  attachmentService: aiServices.attachmentService,
+})
+```
+
+### Wrong：start SSE 再从 service subscribe(0)
+
+```ts
+const result = await runtimePort.start(input)
+return writeRunEventStream(c, runtimePort.subscribe(access, sessionId, result.runId, { afterSequence: 0 }))
+```
+
+### Correct：直接消费 start 返回的 iterable
+
+```ts
+const result = await runtimePort.start(input)
+return writeRunEventStream(c, result.events)
 ```
 
 > **Warning**: Pi 只自动创建 `main` lane。非 main lane 必须由 Run Service 显式 `createLane`（已存在会抛 `already_exists`，需幂等忽略），否则 executor 打开 session 时 `Lane not found`。

@@ -1,1 +1,9 @@
-{"_example": "Fill with {\"file\": \"<path>\", \"reason\": \"<why>\"}. Put spec/research files only — no code paths. Run `python3 .trellis/scripts/get_context.py --mode packages` to list available specs. Delete this line once real entries are added."}
+{"file":".trellis/spec/api/backend/agent-run-guidelines.md","reason":"核对 AgentRuntimePort、事件订阅、终态和断开语义"}
+{"file":".trellis/spec/api/backend/ai-system-design.md","reason":"核对 AI 模块边界与 adapter 装配方向"}
+{"file":".trellis/spec/api/backend/product-module-guidelines.md","reason":"核对 chat/flow 不依赖完整 AiServices 且保持同构"}
+{"file":".trellis/spec/api/backend/error-handling.md","reason":"核对 Accept/cursor 错误路径和稳定错误信封"}
+{"file":".trellis/spec/api/backend/quality-guidelines.md","reason":"执行质量门禁、测试覆盖和静态边界检查"}
+{"file":".trellis/spec/api/backend/directory-structure.md","reason":"核对新增 runtime/transport 文件位置与导出"}
+{"file":".trellis/spec/guides/cross-layer-thinking-guide.md","reason":"检查 route 到 transport、port、service 的跨层数据流"}
+{"file":".trellis/spec/guides/code-reuse-thinking-guide.md","reason":"检查三条运行路由是否只保留一个 transport 主路径"}
+{"file":".trellis/tasks/09-03-api-ai-executable-runtime/research/current-stage-d-surface.md","reason":"对照阶段 D 研究中的 D2 验收与非目标"}

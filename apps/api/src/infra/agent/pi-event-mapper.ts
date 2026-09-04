@@ -514,6 +514,10 @@ export class AsyncEventQueue<T> implements AsyncIterable<T> {
           this.waiters.push(resolve)
         })
       },
+      return: async () => {
+        this.end()
+        return { done: true, value: undefined }
+      },
     }
   }
 }

@@ -3,7 +3,7 @@
   "name": "ai-agent-runtime-port",
   "title": "D2：窄运行端口与共享传输适配",
   "description": "提取 AgentRuntimePort，并让 AI、chat、flow 共用 JSON/SSE 传输规则。",
-  "status": "planning",
+  "status": "in_progress",
   "dev_type": null,
   "scope": null,
   "package": "api",

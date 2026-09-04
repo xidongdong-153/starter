@@ -40,6 +40,7 @@ import {
   createAiAgentRunService,
 } from './run/index.js'
 import { createAiAgentSessionRepository, createAiAgentSessionService } from './session/index.js'
+import { createAgentRuntimePort, type AgentRuntimePort } from './runtime/index.js'
 
 /**
  * AI 模块 service 集合。产品模块（chat / flow）经 `modules/ai/index.ts`
@@ -54,6 +55,7 @@ export interface AiServices {
   skillService: ReturnType<typeof createAiSkillService>
   agentDefinitionService: ReturnType<typeof createAiAgentDefinitionService>
   sessionService: ReturnType<typeof createAiAgentSessionService>
+  runtimePort: AgentRuntimePort
   runService: ReturnType<typeof createAiAgentRunService>
   /**
    * AI readiness 门禁：Run 恢复扫描完成后 resolve。
@@ -215,6 +217,10 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     instanceId: runtime.env.APP_INSTANCE_ID,
     readiness,
   })
+  const runtimePort = createAgentRuntimePort({
+    run: runService,
+    session: sessionService,
+  })
   const completionService = createAiCompletionService({
     invocationRunner,
     requireAllowedModel: configurationService.resolveAgentModel,
@@ -249,6 +255,7 @@ export function createAiServices(runtime: AppRuntime): AiServices {
     skillService,
     agentDefinitionService,
     sessionService,
+    runtimePort,
     runService,
     readiness,
     completionService,
